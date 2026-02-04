@@ -138,15 +138,25 @@ const MenuEditor: React.FC = () => {
     }));
   };
 
-  const appendStockItem = (mealKey: keyof DayContent, supplyName: string) => {
+  const appendStockItem = (mealKey: keyof DayContent, supplyName: string, supplyUnit: string) => {
+    const quantityInput = window.prompt(`Informe a quantidade de ${supplyName} (${supplyUnit}):`, '1');
+    if (quantityInput === null) return;
+    const parsedQuantity = Number(quantityInput.replace(',', '.'));
+    if (!Number.isFinite(parsedQuantity) || parsedQuantity <= 0) {
+      setError('Quantidade invalida. Informe um valor maior que zero.');
+      return;
+    }
+
     const current = items[activeDay][mealKey].trim();
     const exists = current
       .split(',')
       .map((token) => token.trim().toLowerCase())
-      .includes(supplyName.toLowerCase());
+      .some((token) => token.startsWith(`${supplyName.toLowerCase()} (`) || token === supplyName.toLowerCase());
     if (exists) return;
-    const nextValue = current ? `${current}, ${supplyName}` : supplyName;
+    const foodWithPortion = `${supplyName} (${parsedQuantity}${supplyUnit})`;
+    const nextValue = current ? `${current}, ${foodWithPortion}` : foodWithPortion;
     updateDay(mealKey, nextValue);
+    setError('');
   };
 
   const buildPayloadItems = () => {
@@ -326,7 +336,7 @@ const MenuEditor: React.FC = () => {
           </div>
           <div className="flex flex-wrap gap-2">
             {stockItems.map((stockItem) => (
-              <button key={`${stockItem.id}-breakfast`} type="button" onClick={() => appendStockItem('breakfast', stockItem.name)} className="px-2.5 py-1 rounded-full text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:border-primary hover:text-primary">
+              <button key={`${stockItem.id}-breakfast`} type="button" onClick={() => appendStockItem('breakfast', stockItem.name, stockItem.unit)} className="px-2.5 py-1 rounded-full text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:border-primary hover:text-primary">
                 {stockItem.name} ({stockItem.quantity}{stockItem.unit})
               </button>
             ))}
@@ -343,7 +353,7 @@ const MenuEditor: React.FC = () => {
           </div>
           <div className="flex flex-wrap gap-2">
             {stockItems.map((stockItem) => (
-              <button key={`${stockItem.id}-lunch`} type="button" onClick={() => appendStockItem('lunch', stockItem.name)} className="px-2.5 py-1 rounded-full text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:border-primary hover:text-primary">
+              <button key={`${stockItem.id}-lunch`} type="button" onClick={() => appendStockItem('lunch', stockItem.name, stockItem.unit)} className="px-2.5 py-1 rounded-full text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:border-primary hover:text-primary">
                 {stockItem.name} ({stockItem.quantity}{stockItem.unit})
               </button>
             ))}
@@ -360,7 +370,7 @@ const MenuEditor: React.FC = () => {
           </div>
           <div className="flex flex-wrap gap-2">
             {stockItems.map((stockItem) => (
-              <button key={`${stockItem.id}-snack`} type="button" onClick={() => appendStockItem('snack', stockItem.name)} className="px-2.5 py-1 rounded-full text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:border-primary hover:text-primary">
+              <button key={`${stockItem.id}-snack`} type="button" onClick={() => appendStockItem('snack', stockItem.name, stockItem.unit)} className="px-2.5 py-1 rounded-full text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:border-primary hover:text-primary">
                 {stockItem.name} ({stockItem.quantity}{stockItem.unit})
               </button>
             ))}
