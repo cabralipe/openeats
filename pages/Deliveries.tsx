@@ -47,6 +47,18 @@ const Deliveries: React.FC = () => {
     return items.every((item) => item.supply && Number(item.planned_quantity) > 0);
   }, [schoolId, deliveryDate, items]);
 
+  const conferencesBySchool = useMemo(() => {
+    const grouped: Record<string, any[]> = {};
+    deliveries
+      .filter((delivery) => delivery.status !== 'DRAFT')
+      .forEach((delivery) => {
+        const key = delivery.school_name || 'Sem escola';
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(delivery);
+      });
+    return Object.entries(grouped).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [deliveries]);
+
   const updateItem = (index: number, patch: Partial<DraftItem>) => {
     setItems((prev) => prev.map((item, idx) => (idx === index ? { ...item, ...patch } : item)));
   };
@@ -189,6 +201,42 @@ const Deliveries: React.FC = () => {
               {linkByDelivery[delivery.id] && (
                 <p className="text-xs text-primary mt-2 break-all">{window.location.origin}/#{linkByDelivery[delivery.id]}</p>
               )}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
+        <h3 className="text-lg font-bold mb-3">Conferencias por escola</h3>
+        {conferencesBySchool.length === 0 && (
+          <p className="text-sm text-slate-500">Nenhuma conferencia habilitada no momento.</p>
+        )}
+        <div className="flex flex-col gap-3">
+          {conferencesBySchool.map(([schoolName, schoolDeliveries]) => (
+            <div key={schoolName} className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-semibold">{schoolName}</p>
+                <span className="text-xs text-slate-500">{schoolDeliveries.length} conferencia(s)</span>
+              </div>
+              <div className="mt-2 flex flex-col gap-2">
+                {schoolDeliveries.map((delivery) => (
+                  <div key={delivery.id} className="rounded-md bg-slate-50 dark:bg-slate-800/60 px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm">Entrega: {delivery.delivery_date}</p>
+                      <span className={`text-[11px] font-bold uppercase ${delivery.status === 'CONFERRED' ? 'text-green-600' : 'text-amber-600'}`}>
+                        {delivery.status}
+                      </span>
+                    </div>
+                    {linkByDelivery[delivery.id] ? (
+                      <p className="text-xs text-primary mt-1 break-all">{window.location.origin}/#{linkByDelivery[delivery.id]}</p>
+                    ) : (
+                      <button onClick={() => handleGenerateLink(delivery.id)} className="mt-2 h-8 px-3 rounded-lg bg-slate-100 dark:bg-slate-700 text-xs font-semibold">
+                        Gerar link desta conferencia
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
         </div>
