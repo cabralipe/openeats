@@ -87,6 +87,8 @@ class DeliverySerializer(serializers.ModelSerializer):
             'school',
             'school_name',
             'delivery_date',
+            'responsible_name',
+            'responsible_phone',
             'notes',
             'status',
             'conference_enabled',

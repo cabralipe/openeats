@@ -73,7 +73,7 @@ class MenuExportCsvView(viewsets.ViewSet):
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename=\"menus.csv\"'
         writer = csv.writer(response)
-        writer.writerow(['Escola', 'Semana Inicio', 'Semana Fim', 'Status', 'Dia', 'Refeicao', 'Descricao'])
+        writer.writerow(['Escola', 'Semana Inicio', 'Semana Fim', 'Status', 'Dia', 'Refeicao', 'Nome Refeicao', 'Quantidade', 'Imagem', 'Descricao'])
         for menu in queryset:
             for item in menu.items.all():
                 writer.writerow([
@@ -83,6 +83,9 @@ class MenuExportCsvView(viewsets.ViewSet):
                     menu.status,
                     item.day_of_week,
                     item.meal_type,
+                    item.meal_name,
+                    item.portion_text,
+                    item.image_url,
                     item.description,
                 ])
         return response
@@ -117,7 +120,9 @@ class MenuExportPdfView(viewsets.ViewSet):
             if y < 60:
                 pdf.showPage()
                 y = height - 40
-            pdf.drawString(40, y, f"{item.day_of_week} - {item.meal_type}: {item.description}")
+            title = item.meal_name or item.meal_type
+            portion = f" ({item.portion_text})" if item.portion_text else ""
+            pdf.drawString(40, y, f"{item.day_of_week} - {title}{portion}: {item.description}")
             y -= 16
         pdf.showPage()
         pdf.save()

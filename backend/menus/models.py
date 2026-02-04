@@ -39,14 +39,23 @@ class MenuItem(models.Model):
         FRI = 'FRI', 'Sexta'
 
     class MealType(models.TextChoices):
-        BREAKFAST = 'BREAKFAST', 'Cafe'
+        BREAKFAST_1 = 'BREAKFAST1', 'Desjejum'
+        SNACK_1 = 'SNACK1', 'Lanche'
         LUNCH = 'LUNCH', 'Almoco'
-        SNACK = 'SNACK', 'Lanche'
+        SNACK_2 = 'SNACK2', 'Lanche'
+        BREAKFAST_2 = 'BREAKFAST2', 'Desjejum'
+        DINNER_COFFEE = 'DINNER_COFFEE', 'Cafe da noite'
+        BREAKFAST = 'BREAKFAST', 'Cafe (legado)'
+        SNACK = 'SNACK', 'Lanche (legado)'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     menu = models.ForeignKey(Menu, on_delete=models.CASCADE, related_name='items')
     day_of_week = models.CharField(max_length=3, choices=DayOfWeek.choices)
     meal_type = models.CharField(max_length=16, choices=MealType.choices)
+    meal_name = models.CharField(max_length=120, blank=True)
+    portion_text = models.CharField(max_length=120, blank=True)
+    image_url = models.URLField(blank=True)
+    image_data = models.TextField(blank=True)
     description = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
 

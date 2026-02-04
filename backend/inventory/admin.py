@@ -30,7 +30,7 @@ class DeliveryItemInline(admin.TabularInline):
 
 @admin.register(Delivery)
 class DeliveryAdmin(admin.ModelAdmin):
-    list_display = ('school', 'delivery_date', 'status', 'conference_enabled', 'sent_at', 'conference_submitted_at')
+    list_display = ('school', 'delivery_date', 'responsible_name', 'responsible_phone', 'status', 'conference_enabled', 'sent_at', 'conference_submitted_at')
     list_filter = ('status', 'conference_enabled', 'delivery_date')
     search_fields = ('school__name', 'notes')
     inlines = [DeliveryItemInline]

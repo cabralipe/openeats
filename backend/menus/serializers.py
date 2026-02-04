@@ -6,7 +6,17 @@ from .models import Menu, MenuItem
 class MenuItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = MenuItem
-        fields = ['id', 'day_of_week', 'meal_type', 'description', 'created_at']
+        fields = [
+            'id',
+            'day_of_week',
+            'meal_type',
+            'meal_name',
+            'portion_text',
+            'image_url',
+            'image_data',
+            'description',
+            'created_at',
+        ]
         read_only_fields = ['id', 'created_at']
 
 

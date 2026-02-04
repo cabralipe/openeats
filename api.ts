@@ -267,6 +267,8 @@ export async function getDeliveries(params?: { school?: string; status?: string;
 export async function createDelivery(payload: {
   school: string;
   delivery_date: string;
+  responsible_name?: string;
+  responsible_phone?: string;
   notes?: string;
   items: Array<{ supply: string; planned_quantity: number }>;
 }) {
@@ -320,6 +322,10 @@ export async function updateMenu(id: string, payload: Partial<{
 export async function bulkMenuItems(menuId: string, items: Array<{
   day_of_week: string;
   meal_type: string;
+  meal_name?: string;
+  portion_text?: string;
+  image_url?: string;
+  image_data?: string;
   description: string;
 }>) {
   return apiFetch(`/api/menus/${menuId}/items/bulk/`, {

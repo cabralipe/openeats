@@ -136,9 +136,9 @@ const Dashboard: React.FC = () => {
 
       {/* Chart */}
       <h3 className="text-[#0d141b] dark:text-slate-100 text-lg font-bold leading-tight tracking-[-0.015em] px-4 pb-2 pt-6">Consumo Mensal (Saidas)</h3>
-      <div className="px-4">
-        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 h-48 shadow-sm">
-          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={180}>
+      <div className="px-4 min-w-0">
+        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 min-h-[220px] shadow-sm min-w-0">
+          <ResponsiveContainer width="100%" height={180} minWidth={0}>
             <BarChart data={series}>
               <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={false} />
               <Tooltip 

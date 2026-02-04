@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createDelivery, getDeliveries, getDeliveryConferenceLink, getSchools, getSupplies, sendDelivery } from '../api';
 
 const today = new Date().toISOString().slice(0, 10);
+const RESPONSIBLES_STORAGE_KEY = 'semed_delivery_responsibles';
 
 type DraftItem = { supply: string; planned_quantity: string };
+type Responsible = { id: string; name: string; phone: string };
 
 const Deliveries: React.FC = () => {
   const [schools, setSchools] = useState<any[]>([]);
@@ -18,6 +20,39 @@ const Deliveries: React.FC = () => {
   const [success, setSuccess] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [linkByDelivery, setLinkByDelivery] = useState<Record<string, string>>({});
+
+  const [responsibles, setResponsibles] = useState<Responsible[]>([]);
+  const [selectedResponsibleId, setSelectedResponsibleId] = useState('');
+  const [responsibleName, setResponsibleName] = useState('');
+  const [responsiblePhone, setResponsiblePhone] = useState('');
+  const [newResponsibleName, setNewResponsibleName] = useState('');
+  const [newResponsiblePhone, setNewResponsiblePhone] = useState('');
+
+  const persistResponsibles = (next: Responsible[]) => {
+    setResponsibles(next);
+    localStorage.setItem(RESPONSIBLES_STORAGE_KEY, JSON.stringify(next));
+  };
+
+  useEffect(() => {
+    const saved = localStorage.getItem(RESPONSIBLES_STORAGE_KEY);
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        setResponsibles(parsed);
+      }
+    } catch {
+      setResponsibles([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!selectedResponsibleId) return;
+    const selected = responsibles.find((r) => r.id === selectedResponsibleId);
+    if (!selected) return;
+    setResponsibleName(selected.name);
+    setResponsiblePhone(selected.phone);
+  }, [selectedResponsibleId, responsibles]);
 
   const loadData = async () => {
     setError('');
@@ -71,6 +106,35 @@ const Deliveries: React.FC = () => {
     setItems((prev) => (prev.length === 1 ? prev : prev.filter((_, idx) => idx !== index)));
   };
 
+  const handleAddResponsible = () => {
+    const name = newResponsibleName.trim();
+    const phone = newResponsiblePhone.trim();
+    if (!name) {
+      setError('Informe o nome do responsavel para cadastrar.');
+      return;
+    }
+    const next: Responsible[] = [
+      { id: crypto.randomUUID(), name, phone },
+      ...responsibles.filter((item) => !(item.name === name && item.phone === phone)),
+    ];
+    persistResponsibles(next);
+    setSelectedResponsibleId(next[0].id);
+    setResponsibleName(name);
+    setResponsiblePhone(phone);
+    setNewResponsibleName('');
+    setNewResponsiblePhone('');
+    setError('');
+    setSuccess('Responsavel cadastrado para uso rapido.');
+  };
+
+  const handleRemoveResponsible = (id: string) => {
+    const next = responsibles.filter((item) => item.id !== id);
+    persistResponsibles(next);
+    if (selectedResponsibleId === id) {
+      setSelectedResponsibleId('');
+    }
+  };
+
   const handleCreate = async (event: React.FormEvent) => {
     event.preventDefault();
     setError('');
@@ -91,6 +155,8 @@ const Deliveries: React.FC = () => {
       await createDelivery({
         school: schoolId,
         delivery_date: deliveryDate,
+        responsible_name: responsibleName.trim() || undefined,
+        responsible_phone: responsiblePhone.trim() || undefined,
         notes,
         items: items.map((item) => ({
           supply: item.supply,
@@ -137,6 +203,30 @@ const Deliveries: React.FC = () => {
     <div className="flex flex-col gap-4 p-4 pb-24">
       <section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
         <h3 className="text-lg font-bold mb-3">Planejar entrega para escola</h3>
+
+        <div className="mb-4 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 p-3">
+          <p className="text-sm font-semibold mb-2">Cadastro rapido de responsaveis</p>
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_200px_140px] gap-2">
+            <input value={newResponsibleName} onChange={(e) => setNewResponsibleName(e.target.value)} className="h-10 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3" placeholder="Nome do responsavel" />
+            <input value={newResponsiblePhone} onChange={(e) => setNewResponsiblePhone(e.target.value)} className="h-10 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3" placeholder="Telefone" />
+            <button type="button" onClick={handleAddResponsible} className="h-10 rounded-lg bg-primary text-white text-sm font-semibold">Cadastrar</button>
+          </div>
+          {responsibles.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {responsibles.map((item) => (
+                <button key={item.id} type="button" onClick={() => setSelectedResponsibleId(item.id)} className={`h-8 px-3 rounded-full text-xs border ${selectedResponsibleId === item.id ? 'border-primary text-primary bg-primary/10' : 'border-slate-200 text-slate-600'}`}>
+                  {item.name} {item.phone ? `• ${item.phone}` : ''}
+                </button>
+              ))}
+            </div>
+          )}
+          {selectedResponsibleId && (
+            <button type="button" onClick={() => handleRemoveResponsible(selectedResponsibleId)} className="mt-2 text-xs text-red-600 underline">
+              Remover responsavel selecionado
+            </button>
+          )}
+        </div>
+
         <form onSubmit={handleCreate} className="flex flex-col gap-3">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <select value={schoolId} onChange={(e) => setSchoolId(e.target.value)} className="h-11 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3">
@@ -146,6 +236,11 @@ const Deliveries: React.FC = () => {
             </select>
             <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className="h-11 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3" />
             <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Observacoes da entrega" className="h-11 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3" />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <input value={responsibleName} onChange={(e) => setResponsibleName(e.target.value)} className="h-10 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3" placeholder="Responsavel pela entrega" />
+            <input value={responsiblePhone} onChange={(e) => setResponsiblePhone(e.target.value)} className="h-10 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3" placeholder="Telefone do responsavel" />
           </div>
 
           <div className="flex flex-col gap-2">
@@ -191,6 +286,12 @@ const Deliveries: React.FC = () => {
                 </div>
                 <span className="text-xs font-bold uppercase text-primary">{delivery.status}</span>
               </div>
+              {(delivery.responsible_name || delivery.responsible_phone) && (
+                <p className="text-xs text-slate-600 mt-1">
+                  Responsavel: {delivery.responsible_name || 'Nao informado'}
+                  {delivery.responsible_phone ? ` • ${delivery.responsible_phone}` : ''}
+                </p>
+              )}
               <p className="text-xs text-slate-500 mt-2">{delivery.items?.length || 0} item(ns)</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {delivery.status === 'DRAFT' && (
@@ -227,6 +328,12 @@ const Deliveries: React.FC = () => {
                         {delivery.status}
                       </span>
                     </div>
+                    {(delivery.responsible_name || delivery.responsible_phone) && (
+                      <p className="text-xs text-slate-600 mt-1">
+                        Responsavel: {delivery.responsible_name || 'Nao informado'}
+                        {delivery.responsible_phone ? ` • ${delivery.responsible_phone}` : ''}
+                      </p>
+                    )}
                     {linkByDelivery[delivery.id] ? (
                       <p className="text-xs text-primary mt-1 break-all">{window.location.origin}/#{linkByDelivery[delivery.id]}</p>
                     ) : (

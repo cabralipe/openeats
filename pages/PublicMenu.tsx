@@ -44,23 +44,41 @@ const PublicMenu: React.FC = () => {
   const groupedItems = useMemo(() => {
     if (!menu?.items) return [];
     const byDay: Record<string, any> = {};
+    const mealTypeLabel: Record<string, string> = {
+      BREAKFAST1: 'Desjejum',
+      SNACK1: 'Lanche',
+      LUNCH: 'Almoco',
+      SNACK2: 'Lanche',
+      BREAKFAST2: 'Desjejum',
+      DINNER_COFFEE: 'Cafe da noite',
+      BREAKFAST: 'Cafe da manha',
+      SNACK: 'Lanche',
+    };
+
     for (const item of menu.items) {
       if (!byDay[item.day_of_week]) {
-        byDay[item.day_of_week] = { day: dayNames[item.day_of_week] || item.day_of_week };
+        byDay[item.day_of_week] = {
+          day: dayNames[item.day_of_week] || item.day_of_week,
+          meals: [],
+        };
       }
-      if (item.meal_type === 'LUNCH') {
-        byDay[item.day_of_week].lunch = item.description;
-      }
-      if (item.meal_type === 'SNACK') {
-        byDay[item.day_of_week].snack = item.description;
-      }
+      byDay[item.day_of_week].meals.push({
+        mealType: item.meal_type,
+        mealLabel: mealTypeLabel[item.meal_type] || item.meal_type,
+        mealName: item.meal_name || '',
+        portionText: item.portion_text || '',
+        description: item.description || '',
+        image: item.image_data || item.image_url || '',
+      });
     }
+
     const order = ['MON', 'TUE', 'WED', 'THU', 'FRI'];
+    const fallbackImages = [IMAGES.food1, IMAGES.food2, IMAGES.food3, IMAGES.food4, IMAGES.food5];
     return order
       .filter((day) => byDay[day])
       .map((day, index) => ({
         ...byDay[day],
-        image: [IMAGES.food1, IMAGES.food2, IMAGES.food3, IMAGES.food4, IMAGES.food5][index % 5],
+        fallbackImage: fallbackImages[index % fallbackImages.length],
       }));
   }, [menu]);
 
@@ -98,18 +116,26 @@ const PublicMenu: React.FC = () => {
              <div key={idx} className="flex flex-col gap-3 pb-3 bg-white dark:bg-slate-900 rounded-xl overflow-hidden border border-slate-100 dark:border-slate-800 shadow-sm">
                 <div 
                     className="w-full bg-center bg-no-repeat aspect-video bg-cover" 
-                    style={{ backgroundImage: `url("${item.image}")` }}
+                    style={{ backgroundImage: `url("${item.meals?.[0]?.image || item.fallbackImage}")` }}
                 >
                 </div>
                 <div className="p-4">
                     <p className="text-[#0d141b] dark:text-slate-100 text-base font-bold leading-normal">{item.day}</p>
-                    <div className="mt-2 space-y-1">
-                        <p className="text-[#4c739a] dark:text-slate-400 text-sm font-normal leading-normal">
-                            <span className="font-bold text-primary">Almoço:</span> {item.lunch}
-                        </p>
-                        <p className="text-[#4c739a] dark:text-slate-400 text-sm font-normal leading-normal">
-                            <span className="font-bold text-primary">Lanche:</span> {item.snack}
-                        </p>
+                    <div className="mt-2 space-y-3">
+                      {item.meals?.map((meal: any, mealIndex: number) => (
+                        <div key={`${item.day}-${mealIndex}`} className="rounded-lg border border-slate-100 dark:border-slate-800 p-3">
+                          <p className="text-sm font-bold text-primary">{meal.mealLabel}</p>
+                          {meal.mealName && (
+                            <p className="text-sm font-semibold text-[#0d141b] dark:text-slate-100">{meal.mealName}</p>
+                          )}
+                          {meal.portionText && (
+                            <p className="text-xs text-slate-500">Quantidade: {meal.portionText}</p>
+                          )}
+                          {meal.description && (
+                            <p className="text-sm text-[#4c739a] dark:text-slate-400 mt-1">{meal.description}</p>
+                          )}
+                        </div>
+                      ))}
                     </div>
                 </div>
              </div>
