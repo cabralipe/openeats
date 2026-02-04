@@ -1,0 +1,32 @@
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-merenda_semed}
+      POSTGRES_USER: ${POSTGRES_USER:-merenda}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-merenda}
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  web:
+    build: ./backend
+    env_file:
+      - ./backend/.env
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    command: >
+      /bin/sh -c "python manage.py migrate &&
+      python manage.py seed &&
+      python manage.py runserver 0.0.0.0:8000"
+
+volumes:
+  postgres_data:

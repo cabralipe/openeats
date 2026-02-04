@@ -1,18 +1,32 @@
-import React, { useState } from 'react';
-import { HashRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { HashRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Schools from './pages/Schools';
 import Inventory from './pages/Inventory';
 import MenuEditor from './pages/MenuEditor';
 import ConsumptionRegistry from './pages/ConsumptionRegistry';
+import Deliveries from './pages/Deliveries';
 import PublicMenu from './pages/PublicMenu';
+import PublicDeliveryConference from './pages/PublicDeliveryConference';
 import { BottomNav, Sidebar } from './components/Navigation';
+import { AUTH_EXPIRED_EVENT, tokenStore } from './api';
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+
+  useEffect(() => {
+    const handleAuthExpired = () => navigate('/', { replace: true });
+    window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
+  }, [navigate]);
+
+  const handleLogout = () => {
+    tokenStore.clear();
+    navigate('/', { replace: true });
+  };
 
   // Mapping paths to titles
   const getTitle = () => {
@@ -20,6 +34,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       case '/admin': return 'SEMED Admin';
       case '/admin/schools': return 'Escolas';
       case '/admin/inventory': return 'Insumos';
+      case '/admin/deliveries': return 'Entregas';
       case '/admin/editor': return 'Editor de Cardápio';
       case '/admin/consumption': return 'Registro de Consumo';
       default: return 'Merenda SEMED';
@@ -50,6 +65,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
            <button onClick={() => navigate('/admin/inventory')} className={`flex items-center gap-3 px-3 py-3 rounded-lg font-bold ${location.pathname === '/admin/inventory' ? 'bg-primary/10 text-primary' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
              <span className="material-symbols-outlined">inventory_2</span> Insumos
            </button>
+           <button onClick={() => navigate('/admin/deliveries')} className={`flex items-center gap-3 px-3 py-3 rounded-lg font-bold ${location.pathname === '/admin/deliveries' ? 'bg-primary/10 text-primary' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
+             <span className="material-symbols-outlined">local_shipping</span> Entregas
+           </button>
            <button onClick={() => navigate('/admin/editor')} className={`flex items-center gap-3 px-3 py-3 rounded-lg font-bold ${location.pathname === '/admin/editor' ? 'bg-primary/10 text-primary' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
              <span className="material-symbols-outlined">edit_calendar</span> Editor
            </button>
@@ -58,7 +76,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
            </button>
         </nav>
         <div className="p-4 border-t border-slate-200 dark:border-slate-800">
-           <button onClick={() => navigate('/')} className="flex items-center gap-3 px-3 py-2 text-slate-500 hover:text-red-500 transition-colors font-medium">
+           <button onClick={handleLogout} className="flex items-center gap-3 px-3 py-2 text-slate-500 hover:text-red-500 transition-colors font-medium">
              <span className="material-symbols-outlined">logout</span> Sair
            </button>
         </div>
@@ -102,22 +120,33 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   );
 };
 
+const RequireAuth: React.FC<{ children: React.ReactElement }> = ({ children }) => {
+  if (!tokenStore.getAccess()) {
+    return <Navigate to="/" replace />;
+  }
+  return children;
+};
+
 const App: React.FC = () => {
   return (
     <HashRouter>
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/public/menu" element={<PublicMenu />} />
+        <Route path="/public/delivery" element={<PublicDeliveryConference />} />
         <Route path="/admin/*" element={
-          <Layout>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/schools" element={<Schools />} />
-              <Route path="/inventory" element={<Inventory />} />
-              <Route path="/editor" element={<MenuEditor />} />
-              <Route path="/consumption" element={<ConsumptionRegistry />} />
-            </Routes>
-          </Layout>
+          <RequireAuth>
+            <Layout>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/schools" element={<Schools />} />
+                <Route path="/inventory" element={<Inventory />} />
+                <Route path="/deliveries" element={<Deliveries />} />
+                <Route path="/editor" element={<MenuEditor />} />
+                <Route path="/consumption" element={<ConsumptionRegistry />} />
+              </Routes>
+            </Layout>
+          </RequireAuth>
         } />
       </Routes>
     </HashRouter>

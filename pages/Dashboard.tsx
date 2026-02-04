@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { useNavigate } from 'react-router-dom';
+import { getDashboard, getDashboardSeries } from '../api';
 
 const data = [
   { name: 'Jan', value: 40 },
@@ -12,6 +13,28 @@ const data = [
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
+  const [metrics, setMetrics] = useState({
+    schools_total: 0,
+    schools_active: 0,
+    supplies_total: 0,
+    low_stock: 0,
+    menus_published: 0,
+  });
+  const [error, setError] = useState('');
+  const [series, setSeries] = useState(data);
+
+  useEffect(() => {
+    getDashboard()
+      .then((data) => setMetrics(data))
+      .catch(() => setError('Nao foi possivel carregar o painel.'));
+    getDashboardSeries()
+      .then((data) => {
+        if (data?.consumption_by_month?.length) {
+          setSeries(data.consumption_by_month);
+        }
+      })
+      .catch(() => setError('Nao foi possivel carregar o grafico.'));
+  }, []);
 
   return (
     <div className="pb-24">
@@ -22,15 +45,15 @@ const Dashboard: React.FC = () => {
             <span className="material-symbols-outlined text-primary text-lg">school</span>
             <p className="text-[#4e7397] dark:text-slate-400 text-xs font-semibold uppercase tracking-wider">Escolas</p>
           </div>
-          <p className="text-[#0d141b] dark:text-slate-100 tracking-tight text-2xl font-bold">32</p>
-          <p className="text-green-500 text-[10px] font-bold">Ativas</p>
+          <p className="text-[#0d141b] dark:text-slate-100 tracking-tight text-2xl font-bold">{metrics.schools_total}</p>
+          <p className="text-green-500 text-[10px] font-bold">{metrics.schools_active} Ativas</p>
         </div>
         <div className="flex flex-col gap-1 rounded-xl p-4 bg-white dark:bg-slate-800 shadow-sm border border-slate-100 dark:border-slate-700">
           <div className="flex items-center gap-2 mb-1">
             <span className="material-symbols-outlined text-primary text-lg">inventory_2</span>
             <p className="text-[#4e7397] dark:text-slate-400 text-xs font-semibold uppercase tracking-wider">Insumos</p>
           </div>
-          <p className="text-[#0d141b] dark:text-slate-100 tracking-tight text-2xl font-bold">120</p>
+          <p className="text-[#0d141b] dark:text-slate-100 tracking-tight text-2xl font-bold">{metrics.supplies_total}</p>
           <p className="text-slate-500 text-[10px] font-bold uppercase">Cadastrados</p>
         </div>
         <div className="flex flex-col gap-1 rounded-xl p-4 bg-white dark:bg-slate-800 shadow-sm border border-red-100 dark:border-red-900/30">
@@ -38,7 +61,7 @@ const Dashboard: React.FC = () => {
             <span className="material-symbols-outlined text-red-500 text-lg">warning</span>
             <p className="text-[#4e7397] dark:text-slate-400 text-xs font-semibold uppercase tracking-wider">Estoque</p>
           </div>
-          <p className="text-red-600 dark:text-red-400 tracking-tight text-2xl font-bold">5</p>
+          <p className="text-red-600 dark:text-red-400 tracking-tight text-2xl font-bold">{metrics.low_stock}</p>
           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 w-fit">Alertas Críticos</span>
         </div>
         <div className="flex flex-col gap-1 rounded-xl p-4 bg-white dark:bg-slate-800 shadow-sm border border-slate-100 dark:border-slate-700">
@@ -46,10 +69,11 @@ const Dashboard: React.FC = () => {
             <span className="material-symbols-outlined text-primary text-lg">restaurant_menu</span>
             <p className="text-[#4e7397] dark:text-slate-400 text-xs font-semibold uppercase tracking-wider">Cardápios</p>
           </div>
-          <p className="text-[#0d141b] dark:text-slate-100 tracking-tight text-2xl font-bold">28</p>
+          <p className="text-[#0d141b] dark:text-slate-100 tracking-tight text-2xl font-bold">{metrics.menus_published}</p>
           <p className="text-blue-500 text-[10px] font-bold uppercase">Publicados</p>
         </div>
       </div>
+      {error && <div className="px-4 text-red-600 text-sm">{error}</div>}
 
       {/* Quick Actions Section */}
       <h3 className="text-[#0d141b] dark:text-slate-100 text-lg font-bold leading-tight tracking-[-0.015em] px-4 pb-2 pt-2">Ações Rápidas</h3>
@@ -111,18 +135,18 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Chart */}
-      <h3 className="text-[#0d141b] dark:text-slate-100 text-lg font-bold leading-tight tracking-[-0.015em] px-4 pb-2 pt-6">Consumo Mensal (Insumos)</h3>
+      <h3 className="text-[#0d141b] dark:text-slate-100 text-lg font-bold leading-tight tracking-[-0.015em] px-4 pb-2 pt-6">Consumo Mensal (Saidas)</h3>
       <div className="px-4">
         <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 h-48 shadow-sm">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data}>
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={180}>
+            <BarChart data={series}>
               <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={false} />
               <Tooltip 
                 cursor={{fill: 'transparent'}}
                 contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
               />
               <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                {data.map((entry, index) => (
+                {series.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.name === 'Mar' ? '#137fec' : '#cbd5e1'} />
                 ))}
               </Bar>

@@ -1,16 +1,27 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { IMAGES } from '../constants';
+import { login } from '../api';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Simulate login
-    navigate('/admin');
+    setError('');
+    setIsSubmitting(true);
+    try {
+      await login(email, password);
+      navigate('/admin');
+    } catch (err) {
+      setError('Credenciais invalidas ou servidor indisponivel.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -73,10 +84,13 @@ const Login: React.FC = () => {
           </label>
         </div>
         <div className="flex flex-col gap-4 pt-4">
-          <button type="submit" className="w-full bg-primary text-white font-bold h-14 rounded-xl flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors">
+          <button disabled={isSubmitting} type="submit" className="w-full bg-primary text-white font-bold h-14 rounded-xl flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-70">
             <span>Entrar</span>
             <span className="material-symbols-outlined">login</span>
           </button>
+          {error && (
+            <p className="text-red-600 text-sm text-center">{error}</p>
+          )}
           <a className="text-primary text-sm font-semibold text-center py-2 hover:underline" href="#">
             Esqueci minha senha
           </a>

@@ -4,12 +4,14 @@ export interface School {
   location: string;
   status: 'active' | 'pending';
   image?: string;
+  publicSlug?: string;
+  publicToken?: string;
 }
 
 export interface InventoryItem {
   id: string;
   name: string;
-  category: 'Grãos' | 'Proteínas' | 'Hortifrúti' | 'Mercearia';
+  category: string;
   unit: string;
   quantity: number;
   minQuantity: number;

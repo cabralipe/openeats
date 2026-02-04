@@ -1,5 +1,6 @@
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { tokenStore } from '../api';
 
 interface NavItem {
   icon: string;
@@ -11,6 +12,7 @@ const navItems: NavItem[] = [
   { icon: 'dashboard', label: 'Home', path: '/admin' },
   { icon: 'school', label: 'Escolas', path: '/admin/schools' },
   { icon: 'inventory_2', label: 'Insumos', path: '/admin/inventory' },
+  { icon: 'local_shipping', label: 'Entregas', path: '/admin/deliveries' },
   { icon: 'edit_calendar', label: 'Editor', path: '/admin/editor' },
   { icon: 'checklist', label: 'Consumo', path: '/admin/consumption' },
 ];
@@ -75,7 +77,8 @@ export const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
           })}
            <li 
                 onClick={() => {
-                  navigate('/');
+                  tokenStore.clear();
+                  navigate('/', { replace: true });
                   onClose();
                 }}
                 className="flex h-12 items-center gap-4 rounded-lg px-4 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 mt-auto border-t border-slate-200 dark:border-slate-800"
