@@ -42,6 +42,7 @@ class StockMovement(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     supply = models.ForeignKey(Supply, on_delete=models.CASCADE, related_name='movements')
+    school = models.ForeignKey(School, on_delete=models.SET_NULL, related_name='stock_movements', null=True, blank=True)
     type = models.CharField(max_length=3, choices=Types.choices)
     quantity = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0.01)])
     movement_date = models.DateField()
@@ -69,6 +70,8 @@ class Delivery(models.Model):
     conference_enabled = models.BooleanField(default=False)
     sent_at = models.DateTimeField(blank=True, null=True)
     conference_submitted_at = models.DateTimeField(blank=True, null=True)
+    conference_signature = models.TextField(blank=True)
+    conference_signed_by = models.CharField(max_length=255, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='created_deliveries')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

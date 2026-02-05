@@ -42,4 +42,6 @@ class SchoolViewSet(viewsets.ModelViewSet):
             'slug': school.public_slug,
             'token': school.public_token,
             'url': f"/public/schools/{school.public_slug}/menu/current/?token={school.public_token}",
+            'consumption_url': f"/public/schools/{school.public_slug}/consumption/?token={school.public_token}",
+            'consumption_page_url': f"/public/consumption?slug={school.public_slug}&token={school.public_token}",
         })

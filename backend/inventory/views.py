@@ -3,6 +3,12 @@ from django.db import transaction
 from django.http import HttpResponse
 from django.utils import timezone
 import csv
+import io
+from openpyxl import Workbook
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfgen import canvas
+import base64
 from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -68,6 +74,7 @@ class StockMovementViewSet(viewsets.ModelViewSet):
         date_to = self.request.query_params.get('date_to')
         movement_type = self.request.query_params.get('type')
         supply = self.request.query_params.get('supply')
+        school = self.request.query_params.get('school')
         if date_from:
             queryset = queryset.filter(movement_date__gte=date_from)
         if date_to:
@@ -76,6 +83,8 @@ class StockMovementViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(type=movement_type)
         if supply:
             queryset = queryset.filter(supply_id=supply)
+        if school:
+            queryset = queryset.filter(school_id=school)
         return queryset
 
 
@@ -97,6 +106,248 @@ class StockExportCsvView(viewsets.ViewSet):
                 balance.supply.min_stock,
                 'sim' if balance.quantity < balance.supply.min_stock else 'nao',
             ])
+        return response
+
+
+class DeliveryExportPdfView(viewsets.ViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def list(self, request):
+        queryset = Delivery.objects.select_related('school').prefetch_related('items').all().order_by('-delivery_date')
+        school = request.query_params.get('school')
+        status_value = request.query_params.get('status')
+        date_from = request.query_params.get('date_from')
+        date_to = request.query_params.get('date_to')
+        if school:
+            queryset = queryset.filter(school_id=school)
+        if status_value:
+            queryset = queryset.filter(status=status_value)
+        if date_from:
+            queryset = queryset.filter(delivery_date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(delivery_date__lte=date_to)
+
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = 'attachment; filename=\"deliveries.pdf\"'
+        pdf = canvas.Canvas(response, pagesize=A4)
+        width, height = A4
+        y = height - 40
+        pdf.setFont('Helvetica-Bold', 14)
+        pdf.drawString(40, y, 'Relatorio de Entregas')
+        y -= 18
+        pdf.setFont('Helvetica', 9)
+        pdf.drawString(40, y, f"Gerado em: {timezone.now().strftime('%Y-%m-%d %H:%M')}")
+        y -= 20
+
+        pdf.setFont('Helvetica', 10)
+        for delivery in queryset:
+            if y < 120:
+                pdf.showPage()
+                y = height - 40
+                pdf.setFont('Helvetica', 10)
+            items_count = len(delivery.items.all())
+            status_label = delivery.get_status_display()
+            line = f"{delivery.delivery_date} - {delivery.school.name} - {status_label} - Itens: {items_count}"
+            pdf.drawString(40, y, line[:120])
+            y -= 14
+            if delivery.conference_submitted_at:
+                pdf.drawString(40, y, f"Conferida em: {delivery.conference_submitted_at.strftime('%Y-%m-%d %H:%M')}")
+                y -= 14
+            if delivery.conference_signed_by:
+                pdf.drawString(40, y, f"Assinada por: {delivery.conference_signed_by}")
+                y -= 14
+            if delivery.conference_signature:
+                try:
+                    header, encoded = delivery.conference_signature.split(',', 1)
+                    image_bytes = base64.b64decode(encoded)
+                    image = ImageReader(io.BytesIO(image_bytes))
+                    pdf.drawImage(image, 40, y - 50, width=200, height=50, preserveAspectRatio=True, mask='auto')
+                    y -= 60
+                except Exception:
+                    pdf.drawString(40, y, "Assinatura: [erro ao carregar imagem]")
+                    y -= 14
+            y -= 6
+
+        pdf.showPage()
+        pdf.save()
+        return response
+
+
+class DeliveryExportXlsxView(viewsets.ViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def list(self, request):
+        queryset = Delivery.objects.select_related('school').prefetch_related('items').all().order_by('-delivery_date')
+        school = request.query_params.get('school')
+        status_value = request.query_params.get('status')
+        date_from = request.query_params.get('date_from')
+        date_to = request.query_params.get('date_to')
+        if school:
+            queryset = queryset.filter(school_id=school)
+        if status_value:
+            queryset = queryset.filter(status=status_value)
+        if date_from:
+            queryset = queryset.filter(delivery_date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(delivery_date__lte=date_to)
+
+        workbook = Workbook()
+        summary_sheet = workbook.active
+        summary_sheet.title = 'Entregas'
+        summary_sheet.append(['Data', 'Escola', 'Status', 'Itens', 'Responsavel', 'Telefone', 'Observacoes'])
+
+        items_sheet = workbook.create_sheet(title='Itens')
+        items_sheet.append([
+            'Data',
+            'Escola',
+            'Status',
+            'Insumo',
+            'Unidade',
+            'Quantidade Planejada',
+            'Quantidade Recebida',
+            'Falta',
+            'Observacao Divergencia',
+        ])
+
+        for delivery in queryset:
+            items = list(delivery.items.select_related('supply').all())
+            summary_sheet.append([
+                str(delivery.delivery_date),
+                delivery.school.name,
+                delivery.get_status_display(),
+                len(items),
+                delivery.responsible_name,
+                delivery.responsible_phone,
+                delivery.notes,
+            ])
+            for item in items:
+                shortage = None
+                if item.received_quantity is not None:
+                    shortage_value = item.planned_quantity - item.received_quantity
+                    shortage = float(shortage_value) if shortage_value > 0 else 0
+                items_sheet.append([
+                    str(delivery.delivery_date),
+                    delivery.school.name,
+                    delivery.get_status_display(),
+                    item.supply.name,
+                    item.supply.unit,
+                    float(item.planned_quantity),
+                    float(item.received_quantity) if item.received_quantity is not None else None,
+                    shortage,
+                    item.divergence_note,
+                ])
+
+        buffer = io.BytesIO()
+        workbook.save(buffer)
+        buffer.seek(0)
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        response['Content-Disposition'] = 'attachment; filename=\"deliveries.xlsx\"'
+        return response
+
+
+class ConsumptionExportPdfView(viewsets.ViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def list(self, request):
+        queryset = StockMovement.objects.select_related('supply').filter(type=StockMovement.Types.OUT).order_by('-movement_date')
+        supply = request.query_params.get('supply')
+        school = request.query_params.get('school')
+        date_from = request.query_params.get('date_from')
+        date_to = request.query_params.get('date_to')
+        if supply:
+            queryset = queryset.filter(supply_id=supply)
+        if school:
+            queryset = queryset.filter(school_id=school)
+        if date_from:
+            queryset = queryset.filter(movement_date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(movement_date__lte=date_to)
+
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = 'attachment; filename=\"consumption.pdf\"'
+        pdf = canvas.Canvas(response, pagesize=A4)
+        width, height = A4
+        y = height - 40
+        pdf.setFont('Helvetica-Bold', 14)
+        pdf.drawString(40, y, 'Relatorio de Consumo')
+        y -= 18
+        pdf.setFont('Helvetica', 9)
+        pdf.drawString(40, y, f"Gerado em: {timezone.now().strftime('%Y-%m-%d %H:%M')}")
+        y -= 20
+
+        pdf.setFont('Helvetica', 10)
+        for movement in queryset:
+            if y < 60:
+                pdf.showPage()
+                y = height - 40
+                pdf.setFont('Helvetica', 10)
+            line = f"{movement.movement_date} - {movement.supply.name} - {movement.quantity}{movement.supply.unit}"
+            pdf.drawString(40, y, line[:120])
+            y -= 16
+
+        pdf.showPage()
+        pdf.save()
+        return response
+
+
+class ConsumptionExportXlsxView(viewsets.ViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def list(self, request):
+        queryset = StockMovement.objects.select_related('supply').filter(type=StockMovement.Types.OUT).order_by('-movement_date')
+        supply = request.query_params.get('supply')
+        school = request.query_params.get('school')
+        date_from = request.query_params.get('date_from')
+        date_to = request.query_params.get('date_to')
+        if supply:
+            queryset = queryset.filter(supply_id=supply)
+        if school:
+            queryset = queryset.filter(school_id=school)
+        if date_from:
+            queryset = queryset.filter(movement_date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(movement_date__lte=date_to)
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = 'Consumo'
+        sheet.append(['Data', 'Insumo', 'Unidade', 'Quantidade', 'Observacao'])
+
+        totals_sheet = workbook.create_sheet(title='Resumo por Insumo')
+        totals_sheet.append(['Insumo', 'Unidade', 'Quantidade Total'])
+
+        totals = {}
+        for movement in queryset:
+            sheet.append([
+                str(movement.movement_date),
+                movement.supply.name,
+                movement.supply.unit,
+                float(movement.quantity),
+                movement.note,
+            ])
+            key = movement.supply_id
+            if key not in totals:
+                totals[key] = {
+                    'name': movement.supply.name,
+                    'unit': movement.supply.unit,
+                    'total': 0.0,
+                }
+            totals[key]['total'] += float(movement.quantity)
+
+        for entry in totals.values():
+            totals_sheet.append([entry['name'], entry['unit'], entry['total']])
+
+        buffer = io.BytesIO()
+        workbook.save(buffer)
+        buffer.seek(0)
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        response['Content-Disposition'] = 'attachment; filename=\"consumption.xlsx\"'
         return response
 
 
@@ -145,6 +396,7 @@ class DeliveryViewSet(viewsets.ModelViewSet):
                 balance.save()
                 StockMovement.objects.create(
                     supply=item.supply,
+                    school=delivery.school,
                     type=StockMovement.Types.OUT,
                     quantity=item.planned_quantity,
                     movement_date=delivery.delivery_date,

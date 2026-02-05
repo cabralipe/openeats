@@ -8,8 +8,13 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from inventory.models import Delivery
-from inventory.serializers import DeliveryConferenceInputSerializer, PublicDeliverySerializer
+from inventory.models import Delivery, StockMovement, Supply
+from inventory.serializers import (
+    DeliveryConferenceInputSerializer,
+    PublicConsumptionInputSerializer,
+    PublicDeliverySerializer,
+    SupplySerializer,
+)
 from menus.models import Menu
 from menus.serializers import MenuSerializer
 from schools.models import School
@@ -121,9 +126,69 @@ class PublicDeliveryCurrentView(PublicBaseView):
                 item.divergence_note = entry.get('note', '')
                 item.save(update_fields=['received_quantity', 'divergence_note'])
 
+            for entry in payload_items:
+                item = delivery_items.get(str(entry['item_id']))
+                if not item:
+                    continue
+                StockMovement.objects.create(
+                    supply=item.supply,
+                    school=school,
+                    type=StockMovement.Types.IN,
+                    quantity=entry['received_quantity'],
+                    movement_date=delivery.delivery_date,
+                    note=f"Entrada confirmada da entrega {delivery.id}.",
+                    created_by=delivery.created_by,
+                )
+
             delivery.status = Delivery.Status.CONFERRED
             delivery.conference_submitted_at = timezone.now()
-            delivery.save(update_fields=['status', 'conference_submitted_at', 'updated_at'])
+            delivery.conference_signature = serializer.validated_data['signature_data']
+            delivery.conference_signed_by = serializer.validated_data['signer_name']
+            delivery.save(update_fields=['status', 'conference_submitted_at', 'conference_signature', 'conference_signed_by', 'updated_at'])
 
         delivery = self._get_delivery(school, delivery_id=delivery_id)
         return Response(PublicDeliverySerializer(delivery).data)
+
+
+class PublicConsumptionView(PublicBaseView):
+    def get(self, request, slug):
+        school = get_object_or_404(School, public_slug=slug)
+        token = request.query_params.get('token')
+        self._validate_token(school, token)
+        supplies = Supply.objects.filter(is_active=True).order_by('name')
+        return Response(SupplySerializer(supplies, many=True).data)
+
+    def post(self, request, slug):
+        school = get_object_or_404(School, public_slug=slug)
+        token = request.query_params.get('token')
+        self._validate_token(school, token)
+
+        serializer = PublicConsumptionInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        items = serializer.validated_data['items']
+
+        supplies = {
+            str(supply.id): supply
+            for supply in Supply.objects.filter(id__in=[item['supply'] for item in items])
+        }
+        if len(supplies) != len(items):
+            raise PermissionDenied('Insumo invalido informado.')
+
+        created_by = Delivery.objects.filter(school=school).order_by('-created_at').values_list('created_by', flat=True).first()
+        if not created_by:
+            raise PermissionDenied('Nao foi possivel registrar consumo sem responsavel.')
+
+        with transaction.atomic():
+            for entry in items:
+                supply = supplies.get(str(entry['supply']))
+                StockMovement.objects.create(
+                    supply=supply,
+                    school=school,
+                    type=StockMovement.Types.OUT,
+                    quantity=entry['quantity'],
+                    movement_date=entry['movement_date'],
+                    note=entry.get('note', ''),
+                    created_by_id=created_by,
+                )
+
+        return Response({'detail': 'Consumo registrado com sucesso.'})

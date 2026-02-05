@@ -7,8 +7,10 @@ import Inventory from './pages/Inventory';
 import MenuEditor from './pages/MenuEditor';
 import ConsumptionRegistry from './pages/ConsumptionRegistry';
 import Deliveries from './pages/Deliveries';
+import Reports from './pages/Reports';
 import PublicMenu from './pages/PublicMenu';
 import PublicDeliveryConference from './pages/PublicDeliveryConference';
+import PublicConsumption from './pages/PublicConsumption';
 import { BottomNav, Sidebar } from './components/Navigation';
 import { AUTH_EXPIRED_EVENT, tokenStore } from './api';
 
@@ -37,6 +39,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       case '/admin/deliveries': return 'Entregas';
       case '/admin/editor': return 'Editor de Cardápio';
       case '/admin/consumption': return 'Registro de Consumo';
+      case '/admin/reports': return 'Relatorios';
       default: return 'Merenda SEMED';
     }
   };
@@ -73,6 +76,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
            </button>
            <button onClick={() => navigate('/admin/consumption')} className={`flex items-center gap-3 px-3 py-3 rounded-lg font-bold ${location.pathname === '/admin/consumption' ? 'bg-primary/10 text-primary' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
              <span className="material-symbols-outlined">checklist</span> Consumo
+           </button>
+           <button onClick={() => navigate('/admin/reports')} className={`flex items-center gap-3 px-3 py-3 rounded-lg font-bold ${location.pathname === '/admin/reports' ? 'bg-primary/10 text-primary' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
+             <span className="material-symbols-outlined">insert_chart</span> Relatorios
            </button>
         </nav>
         <div className="p-4 border-t border-slate-200 dark:border-slate-800">
@@ -134,6 +140,7 @@ const App: React.FC = () => {
         <Route path="/" element={<Login />} />
         <Route path="/public/menu" element={<PublicMenu />} />
         <Route path="/public/delivery" element={<PublicDeliveryConference />} />
+        <Route path="/public/consumption" element={<PublicConsumption />} />
         <Route path="/admin/*" element={
           <RequireAuth>
             <Layout>
@@ -144,6 +151,7 @@ const App: React.FC = () => {
                 <Route path="/deliveries" element={<Deliveries />} />
                 <Route path="/editor" element={<MenuEditor />} />
                 <Route path="/consumption" element={<ConsumptionRegistry />} />
+                <Route path="/reports" element={<Reports />} />
               </Routes>
             </Layout>
           </RequireAuth>

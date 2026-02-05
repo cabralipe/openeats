@@ -67,6 +67,15 @@ const Schools: React.FC = () => {
       }
     };
 
+    const openPublicConsumption = async (school: School) => {
+      try {
+        const link = await getPublicLink(school.id);
+        navigate(`/public/consumption?slug=${link.slug}&token=${link.token}`);
+      } catch {
+        setError('Nao foi possivel gerar o link publico.');
+      }
+    };
+
     const openCreate = () => {
       setEditing(null);
       setForm({ name: '', address: '', city: '', is_active: true });
@@ -173,12 +182,15 @@ const Schools: React.FC = () => {
                 {school.status === 'active' ? 'Ativo' : 'Pendente'}
               </span>
             </div>
-            <div className="flex gap-2 mt-2 border-t dark:border-slate-800 pt-3">
+            <div className="flex flex-wrap gap-2 mt-2 border-t dark:border-slate-800 pt-3">
               <button onClick={() => openEdit(school)} className="flex-1 flex items-center justify-center gap-1 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-[#0d141b] dark:text-white text-xs font-semibold hover:bg-slate-200 dark:hover:bg-slate-700">
                 <span className="material-symbols-outlined text-sm">edit</span> Editar
               </button>
               <button onClick={() => openPublicMenu(school)} className="flex-1 flex items-center justify-center gap-1 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-[#0d141b] dark:text-white text-xs font-semibold hover:bg-slate-200 dark:hover:bg-slate-700">
                 <span className="material-symbols-outlined text-sm">link</span> Link
+              </button>
+              <button onClick={() => openPublicConsumption(school)} className="flex-1 flex items-center justify-center gap-1 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-[#0d141b] dark:text-white text-xs font-semibold hover:bg-slate-200 dark:hover:bg-slate-700">
+                <span className="material-symbols-outlined text-sm">inventory_2</span> Consumo
               </button>
               <button onClick={() => navigate('/admin/editor')} className="flex-1 flex items-center justify-center gap-1 h-9 rounded-lg bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20">
                 <span className="material-symbols-outlined text-sm">restaurant_menu</span> Cardápio

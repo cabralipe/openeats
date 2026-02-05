@@ -256,6 +256,14 @@ export async function createStockMovement(payload: {
   });
 }
 
+export async function getStockMovements(params?: { date_from?: string; date_to?: string; type?: 'IN' | 'OUT'; supply?: string; school?: string }) {
+  const cleanParams = params
+    ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
+    : undefined;
+  const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
+  return apiFetch(`/api/stock/movements/${search ? `?${search}` : ''}`);
+}
+
 export async function getDeliveries(params?: { school?: string; status?: string; conference_enabled?: boolean }) {
   const cleanParams = params
     ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
@@ -353,10 +361,26 @@ export async function submitPublicDeliveryConference(
   slug: string,
   token: string,
   deliveryId: string,
-  payload: { items: Array<{ item_id: string; received_quantity: number; note?: string }> },
+  payload: { items: Array<{ item_id: string; received_quantity: number; note?: string }>; signature_data: string; signer_name: string },
 ) {
   const search = new URLSearchParams({ token, delivery_id: deliveryId }).toString();
   return apiFetch(`/public/schools/${slug}/delivery/current/?${search}`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    skipAuth: true,
+  });
+}
+
+export async function getPublicSupplies(slug: string, token: string) {
+  return apiFetch(`/public/schools/${slug}/consumption/?token=${token}`, { skipAuth: true });
+}
+
+export async function submitPublicConsumption(
+  slug: string,
+  token: string,
+  payload: { items: Array<{ supply: string; quantity: number; movement_date: string; note?: string }> },
+) {
+  return apiFetch(`/public/schools/${slug}/consumption/?token=${token}`, {
     method: 'POST',
     body: JSON.stringify(payload),
     skipAuth: true,
@@ -381,4 +405,36 @@ export function exportMenusCsv() {
 
 export function exportMenuPdf(schoolId: string, weekStart: string) {
   window.open(`/api/exports/menus/pdf/?school=${schoolId}&week_start=${weekStart}`, '_blank');
+}
+
+export function exportDeliveriesPdf(params?: { school?: string; status?: string; date_from?: string; date_to?: string }) {
+  const cleanParams = params
+    ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
+    : undefined;
+  const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
+  window.open(`/api/exports/deliveries/pdf/${search ? `?${search}` : ''}`, '_blank');
+}
+
+export function exportDeliveriesXlsx(params?: { school?: string; status?: string; date_from?: string; date_to?: string }) {
+  const cleanParams = params
+    ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
+    : undefined;
+  const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
+  window.open(`/api/exports/deliveries/xlsx/${search ? `?${search}` : ''}`, '_blank');
+}
+
+export function exportConsumptionPdf(params?: { supply?: string; date_from?: string; date_to?: string; school?: string }) {
+  const cleanParams = params
+    ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
+    : undefined;
+  const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
+  window.open(`/api/exports/consumption/pdf/${search ? `?${search}` : ''}`, '_blank');
+}
+
+export function exportConsumptionXlsx(params?: { supply?: string; date_from?: string; date_to?: string; school?: string }) {
+  const cleanParams = params
+    ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
+    : undefined;
+  const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
+  window.open(`/api/exports/consumption/xlsx/${search ? `?${search}` : ''}`, '_blank');
 }

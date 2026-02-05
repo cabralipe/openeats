@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { createDelivery, getDeliveries, getDeliveryConferenceLink, getSchools, getSupplies, sendDelivery } from '../api';
+import { createDelivery, getDeliveries, getDeliveryConferenceLink, getPublicLink, getSchools, getSupplies, sendDelivery } from '../api';
 
 const today = new Date().toISOString().slice(0, 10);
 const RESPONSIBLES_STORAGE_KEY = 'semed_delivery_responsibles';
@@ -20,6 +20,8 @@ const Deliveries: React.FC = () => {
   const [success, setSuccess] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [linkByDelivery, setLinkByDelivery] = useState<Record<string, string>>({});
+  const [consumptionLinkByDelivery, setConsumptionLinkByDelivery] = useState<Record<string, string>>({});
+  const [signaturePreview, setSignaturePreview] = useState<{ image: string; title: string; submittedAt?: string; signedBy?: string } | null>(null);
 
   const [responsibles, setResponsibles] = useState<Responsible[]>([]);
   const [selectedResponsibleId, setSelectedResponsibleId] = useState('');
@@ -199,6 +201,29 @@ const Deliveries: React.FC = () => {
     }
   };
 
+  const handleGenerateConsumptionLink = async (deliveryId: string, school: string) => {
+    setError('');
+    try {
+      const data = await getPublicLink(school);
+      const url = `/public/consumption?slug=${data.slug}&token=${data.token}`;
+      setConsumptionLinkByDelivery((prev) => ({ ...prev, [deliveryId]: url }));
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(`${window.location.origin}/#${url}`);
+      }
+    } catch {
+      setError('Nao foi possivel gerar o link de consumo.');
+    }
+  };
+
+  const formatDateTime = (value?: string) => {
+    if (!value) return '';
+    try {
+      return new Date(value).toLocaleString();
+    } catch {
+      return value;
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4 p-4 pb-24">
       <section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
@@ -293,14 +318,36 @@ const Deliveries: React.FC = () => {
                 </p>
               )}
               <p className="text-xs text-slate-500 mt-2">{delivery.items?.length || 0} item(ns)</p>
+              {delivery.conference_signature && (
+                <div className="mt-2">
+                  <p className="text-xs text-slate-500 mb-1">Assinatura registrada</p>
+                  {delivery.conference_submitted_at && (
+                    <p className="text-[11px] text-slate-400 mb-1">Conferida em: {formatDateTime(delivery.conference_submitted_at)}</p>
+                  )}
+                  {delivery.conference_signed_by && (
+                    <p className="text-[11px] text-slate-500 mb-1">Assinada por: {delivery.conference_signed_by}</p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setSignaturePreview({ image: delivery.conference_signature, title: delivery.school_name || 'Entrega', submittedAt: delivery.conference_submitted_at, signedBy: delivery.conference_signed_by })}
+                    className="text-xs text-primary underline"
+                  >
+                    Ver assinatura
+                  </button>
+                </div>
+              )}
               <div className="mt-3 flex flex-wrap gap-2">
                 {delivery.status === 'DRAFT' && (
                   <button onClick={() => handleSend(delivery.id)} className="h-9 px-3 rounded-lg bg-primary text-white text-sm font-semibold">Habilitar conferencia</button>
                 )}
                 <button onClick={() => handleGenerateLink(delivery.id)} className="h-9 px-3 rounded-lg bg-slate-100 dark:bg-slate-800 text-sm font-semibold">Gerar link da escola</button>
+                <button onClick={() => handleGenerateConsumptionLink(delivery.id, delivery.school)} className="h-9 px-3 rounded-lg bg-slate-100 dark:bg-slate-800 text-sm font-semibold">Link consumo</button>
               </div>
               {linkByDelivery[delivery.id] && (
                 <p className="text-xs text-primary mt-2 break-all">{window.location.origin}/#{linkByDelivery[delivery.id]}</p>
+              )}
+              {consumptionLinkByDelivery[delivery.id] && (
+                <p className="text-xs text-primary mt-1 break-all">{window.location.origin}/#{consumptionLinkByDelivery[delivery.id]}</p>
               )}
             </div>
           ))}
@@ -334,11 +381,36 @@ const Deliveries: React.FC = () => {
                         {delivery.responsible_phone ? ` • ${delivery.responsible_phone}` : ''}
                       </p>
                     )}
+                    {delivery.conference_signature && (
+                      <div className="mt-2">
+                        <p className="text-xs text-slate-500 mb-1">Assinatura registrada</p>
+                        {delivery.conference_submitted_at && (
+                          <p className="text-[11px] text-slate-400 mb-1">Conferida em: {formatDateTime(delivery.conference_submitted_at)}</p>
+                        )}
+                        {delivery.conference_signed_by && (
+                          <p className="text-[11px] text-slate-500 mb-1">Assinada por: {delivery.conference_signed_by}</p>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setSignaturePreview({ image: delivery.conference_signature, title: schoolName, submittedAt: delivery.conference_submitted_at, signedBy: delivery.conference_signed_by })}
+                          className="text-xs text-primary underline"
+                        >
+                          Ver assinatura
+                        </button>
+                      </div>
+                    )}
                     {linkByDelivery[delivery.id] ? (
                       <p className="text-xs text-primary mt-1 break-all">{window.location.origin}/#{linkByDelivery[delivery.id]}</p>
                     ) : (
                       <button onClick={() => handleGenerateLink(delivery.id)} className="mt-2 h-8 px-3 rounded-lg bg-slate-100 dark:bg-slate-700 text-xs font-semibold">
                         Gerar link desta conferencia
+                      </button>
+                    )}
+                    {consumptionLinkByDelivery[delivery.id] ? (
+                      <p className="text-xs text-primary mt-1 break-all">{window.location.origin}/#{consumptionLinkByDelivery[delivery.id]}</p>
+                    ) : (
+                      <button onClick={() => handleGenerateConsumptionLink(delivery.id, delivery.school)} className="mt-2 h-8 px-3 rounded-lg bg-slate-100 dark:bg-slate-700 text-xs font-semibold">
+                        Gerar link de consumo
                       </button>
                     )}
                   </div>
@@ -351,6 +423,29 @@ const Deliveries: React.FC = () => {
 
       {error && <p className="text-red-600 text-sm">{error}</p>}
       {success && <p className="text-green-600 text-sm">{success}</p>}
+
+      {signaturePreview && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => setSignaturePreview(null)}>
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 max-w-3xl w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4 mb-3">
+              <div>
+                <p className="text-lg font-bold">Assinatura</p>
+                <p className="text-xs text-slate-500">{signaturePreview.title}</p>
+                {signaturePreview.submittedAt && (
+                  <p className="text-[11px] text-slate-400">Conferida em: {formatDateTime(signaturePreview.submittedAt)}</p>
+                )}
+                {signaturePreview.signedBy && (
+                  <p className="text-[11px] text-slate-500">Assinada por: {signaturePreview.signedBy}</p>
+                )}
+              </div>
+              <button onClick={() => setSignaturePreview(null)} className="text-slate-400">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <img src={signaturePreview.image} alt="Assinatura ampliada" className="w-full border border-slate-200 rounded-lg" />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

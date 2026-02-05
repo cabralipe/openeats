@@ -15,6 +15,7 @@ const navItems: NavItem[] = [
   { icon: 'local_shipping', label: 'Entregas', path: '/admin/deliveries' },
   { icon: 'edit_calendar', label: 'Editor', path: '/admin/editor' },
   { icon: 'checklist', label: 'Consumo', path: '/admin/consumption' },
+  { icon: 'insert_chart', label: 'Relatorios', path: '/admin/reports' },
 ];
 
 export const BottomNav: React.FC = () => {

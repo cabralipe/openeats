@@ -25,8 +25,11 @@ class StockBalanceSerializer(serializers.ModelSerializer):
 class StockMovementSerializer(serializers.ModelSerializer):
     class Meta:
         model = StockMovement
-        fields = ['id', 'supply', 'type', 'quantity', 'movement_date', 'note', 'created_by', 'created_at']
+        fields = ['id', 'supply', 'school', 'type', 'quantity', 'movement_date', 'note', 'created_by', 'created_at']
         read_only_fields = ['id', 'created_by', 'created_at']
+        extra_kwargs = {
+            'school': {'required': False, 'allow_null': True},
+        }
 
     def validate(self, attrs):
         if attrs['quantity'] <= 0:
@@ -94,6 +97,8 @@ class DeliverySerializer(serializers.ModelSerializer):
             'conference_enabled',
             'sent_at',
             'conference_submitted_at',
+            'conference_signature',
+            'conference_signed_by',
             'created_by',
             'created_at',
             'updated_at',
@@ -106,6 +111,8 @@ class DeliverySerializer(serializers.ModelSerializer):
             'conference_enabled',
             'sent_at',
             'conference_submitted_at',
+            'conference_signature',
+            'conference_signed_by',
             'created_by',
             'created_at',
             'updated_at',
@@ -176,6 +183,8 @@ class PublicDeliverySerializer(serializers.ModelSerializer):
             'notes',
             'status',
             'conference_submitted_at',
+            'conference_signature',
+            'conference_signed_by',
             'items',
         ]
 
@@ -188,6 +197,18 @@ class DeliveryConferenceItemInputSerializer(serializers.Serializer):
 
 class DeliveryConferenceInputSerializer(serializers.Serializer):
     items = DeliveryConferenceItemInputSerializer(many=True)
+    signature_data = serializers.CharField()
+    signer_name = serializers.CharField()
+
+    def validate_signature_data(self, value):
+        if not value or not value.startswith('data:image/'):
+            raise serializers.ValidationError('Assinatura invalida.')
+        return value
+
+    def validate_signer_name(self, value):
+        if not value.strip():
+            raise serializers.ValidationError('Nome do assinante obrigatorio.')
+        return value.strip()
 
     def validate_items(self, items):
         if not items:
@@ -195,4 +216,23 @@ class DeliveryConferenceInputSerializer(serializers.Serializer):
         ids = [str(item['item_id']) for item in items]
         if len(ids) != len(set(ids)):
             raise serializers.ValidationError('Itens duplicados na conferencia.')
+        return items
+
+
+class PublicConsumptionItemInputSerializer(serializers.Serializer):
+    supply = serializers.UUIDField()
+    quantity = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0.01)
+    movement_date = serializers.DateField()
+    note = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+
+
+class PublicConsumptionInputSerializer(serializers.Serializer):
+    items = PublicConsumptionItemInputSerializer(many=True)
+
+    def validate_items(self, items):
+        if not items:
+            raise serializers.ValidationError('Informe pelo menos um item.')
+        ids = [str(item['supply']) for item in items]
+        if len(ids) != len(set(ids)):
+            raise serializers.ValidationError('Itens duplicados no consumo.')
         return items
