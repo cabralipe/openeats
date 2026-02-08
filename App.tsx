@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -12,10 +12,26 @@ import PublicMenu from './pages/PublicMenu';
 import PublicDeliveryConference from './pages/PublicDeliveryConference';
 import PublicConsumption from './pages/PublicConsumption';
 import { BottomNav, Sidebar } from './components/Navigation';
-import { AUTH_EXPIRED_EVENT, tokenStore } from './api';
+import { AUTH_EXPIRED_EVENT, getNotifications, getUnreadNotificationsCount, markAllNotificationsAsRead, markNotificationAsRead, tokenStore } from './api';
+
+interface NotificationItem {
+  id: string;
+  notification_type: string;
+  title: string;
+  message: string;
+  is_read: boolean;
+  is_alert: boolean;
+  created_at: string;
+  delivery?: string;
+  school?: string;
+  school_name?: string;
+}
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -28,6 +44,39 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const handleLogout = () => {
     tokenStore.clear();
     navigate('/', { replace: true });
+  };
+
+  // Fetch notifications
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const [notifs, countData] = await Promise.all([
+        getNotifications(),
+        getUnreadNotificationsCount()
+      ]);
+      setNotifications(notifs as NotificationItem[]);
+      setUnreadCount((countData as { count: number }).count || 0);
+    } catch {
+      // Silently fail for notifications
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchNotifications();
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(interval);
+  }, [fetchNotifications]);
+
+  const handleMarkAsRead = async (id: string) => {
+    await markNotificationAsRead(id);
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+    setUnreadCount(prev => Math.max(0, prev - 1));
+  };
+
+  const handleMarkAllAsRead = async () => {
+    await markAllNotificationsAsRead();
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    setUnreadCount(0);
   };
 
   // Page titles mapping
@@ -135,11 +184,84 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               </div>
 
               {/* Right side - Actions */}
-              <div className="flex items-center gap-2">
-                <button className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors relative">
+              <div className="flex items-center gap-2 relative">
+                <button
+                  onClick={() => setNotificationsOpen(!notificationsOpen)}
+                  className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors relative"
+                >
                   <span className="material-symbols-outlined text-slate-500 dark:text-slate-400">notifications</span>
-                  <span className="absolute top-2 right-2 w-2 h-2 bg-danger-500 rounded-full"></span>
+                  {unreadCount > 0 && (
+                    <span className="absolute top-1.5 right-1.5 min-w-[18px] h-[18px] flex items-center justify-center bg-danger-500 text-white text-[10px] font-bold rounded-full px-1">
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  )}
                 </button>
+
+                {/* Notifications Dropdown */}
+                {notificationsOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setNotificationsOpen(false)} />
+                    <div className="absolute top-12 right-0 w-80 max-h-[70vh] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden">
+                      {/* Header */}
+                      <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                        <h3 className="font-bold text-slate-900 dark:text-white">Notificações</h3>
+                        {unreadCount > 0 && (
+                          <button onClick={handleMarkAllAsRead} className="text-xs text-primary-500 hover:text-primary-600">
+                            Marcar todas como lidas
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Notifications List */}
+                      <div className="max-h-[50vh] overflow-y-auto">
+                        {notifications.length === 0 ? (
+                          <div className="p-8 text-center text-slate-500">
+                            <span className="material-symbols-outlined text-3xl mb-2">notifications_off</span>
+                            <p className="text-sm">Nenhuma notificação</p>
+                          </div>
+                        ) : (
+                          notifications.slice(0, 20).map(notif => (
+                            <div
+                              key={notif.id}
+                              onClick={() => {
+                                handleMarkAsRead(notif.id);
+                                if (notif.delivery) navigate('/admin/deliveries');
+                                setNotificationsOpen(false);
+                              }}
+                              className={`p-4 border-b border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${!notif.is_read ? 'bg-primary-50/50 dark:bg-primary-900/10' : ''
+                                }`}
+                            >
+                              <div className="flex items-start gap-3">
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${notif.is_alert
+                                  ? 'bg-warning-100 dark:bg-warning-900/30'
+                                  : 'bg-success-100 dark:bg-success-900/30'
+                                  }`}>
+                                  <span className={`material-symbols-outlined text-sm ${notif.is_alert ? 'text-warning-600' : 'text-success-600'
+                                    }`}>
+                                    {notif.is_alert ? 'warning' : 'check_circle'}
+                                  </span>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className={`text-sm truncate ${!notif.is_read ? 'font-semibold text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>
+                                    {notif.title}
+                                  </p>
+                                  <p className="text-xs text-slate-500 line-clamp-2 mt-0.5">{notif.message}</p>
+                                  <p className="text-[10px] text-slate-400 mt-1">
+                                    {new Date(notif.created_at).toLocaleString('pt-BR')}
+                                  </p>
+                                </div>
+                                {!notif.is_read && (
+                                  <div className="w-2 h-2 bg-primary-500 rounded-full shrink-0 mt-1.5"></div>
+                                )}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+
                 <button className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                   <span className="material-symbols-outlined text-slate-500 dark:text-slate-400">
                     {isEditor ? 'more_vert' : 'account_circle'}
@@ -178,8 +300,8 @@ const NavItem: React.FC<{
     <button
       onClick={onClick}
       className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all duration-200 ${isActive
-          ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 shadow-sm'
-          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+        ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 shadow-sm'
+        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50'
         }`}
     >
       <span className={`material-symbols-outlined text-xl ${isActive ? 'filled' : ''}`}>{icon}</span>

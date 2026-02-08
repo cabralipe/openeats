@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { bulkMenuItems, createMenu, exportMenuPdf, exportMenusCsv, getMenus, getSchools, getStock, publishMenu, updateMenu } from '../api';
 
 const days = [
@@ -58,9 +59,11 @@ const createEmptyWeek = (): WeekContent => ({
 });
 
 const MenuEditor: React.FC = () => {
+  const location = useLocation();
   const [stockItems, setStockItems] = useState<Array<{ id: string; name: string; unit: string; quantity: number }>>([]);
   const [schools, setSchools] = useState<any[]>([]);
   const [selectedSchool, setSelectedSchool] = useState('');
+  const [menuName, setMenuName] = useState('');
   const [weekStart, setWeekStart] = useState('');
   const [weekEnd, setWeekEnd] = useState('');
   const [notes, setNotes] = useState('');
@@ -75,11 +78,15 @@ const MenuEditor: React.FC = () => {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const deepLinkParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+
   useEffect(() => {
     getSchools()
       .then((data) => {
         setSchools(data);
-        if (data.length) setSelectedSchool(data[0].id);
+        if (data.length) {
+          setSelectedSchool((prev) => prev || data[0].id);
+        }
       })
       .catch(() => setError('Nao foi possivel carregar as escolas.'));
 
@@ -97,6 +104,24 @@ const MenuEditor: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (!schools.length) return;
+
+    const schoolFromUrl = deepLinkParams.get('school');
+    const weekStartFromUrl = deepLinkParams.get('week_start');
+    const weekEndFromUrl = deepLinkParams.get('week_end');
+
+    if (schoolFromUrl && schools.some((school) => school.id === schoolFromUrl)) {
+      setSelectedSchool(schoolFromUrl);
+    }
+    if (weekStartFromUrl) {
+      setWeekStart(weekStartFromUrl);
+    }
+    if (weekEndFromUrl) {
+      setWeekEnd(weekEndFromUrl);
+    }
+  }, [deepLinkParams, schools]);
+
+  useEffect(() => {
     if (!selectedSchool || !weekStart) return;
     setError('');
     getMenus({ school: selectedSchool, week_start: weekStart })
@@ -104,6 +129,7 @@ const MenuEditor: React.FC = () => {
         if (!data.length) {
           setMenuId(null);
           setStatus('DRAFT');
+          setMenuName('');
           setNotes('');
           setItems(createEmptyWeek());
           return;
@@ -116,6 +142,7 @@ const MenuEditor: React.FC = () => {
   const loadMenu = (menu: any) => {
     setMenuId(menu.id);
     setStatus(menu.status);
+    setMenuName(menu.name || '');
     setWeekStart(menu.week_start);
     setWeekEnd(menu.week_end);
     setNotes(menu.notes || '');
@@ -249,6 +276,7 @@ const MenuEditor: React.FC = () => {
   const ensureMenu = async () => {
     if (menuId) {
       await updateMenu(menuId, {
+        name: menuName,
         week_start: weekStart,
         week_end: weekEnd,
         status: 'DRAFT',
@@ -259,6 +287,7 @@ const MenuEditor: React.FC = () => {
 
     const menu = await createMenu({
       school: selectedSchool,
+      name: menuName,
       week_start: weekStart,
       week_end: weekEnd,
       status: 'DRAFT',
@@ -327,6 +356,19 @@ const MenuEditor: React.FC = () => {
 
         <div className="flex flex-col">
           <label className="flex flex-col flex-1">
+            <p className="text-[#0d141b] dark:text-slate-200 text-sm font-medium leading-normal pb-1.5 px-1">Nome do cardapio</p>
+            <input
+              type="text"
+              value={menuName}
+              onChange={(e) => setMenuName(e.target.value)}
+              className="form-input flex w-full appearance-none rounded-xl text-[#0d141b] dark:text-white focus:outline-0 focus:ring-2 focus:ring-primary/50 border border-[#cfdbe7] dark:border-slate-700 bg-white dark:bg-slate-900 h-12 px-4 text-base font-normal leading-normal"
+              placeholder="Ex: Cardapio Semana Pedagogica"
+            />
+          </label>
+        </div>
+
+        <div className="flex flex-col">
+          <label className="flex flex-col flex-1">
             <p className="text-[#0d141b] dark:text-slate-200 text-sm font-medium leading-normal pb-1.5 px-1">Semana</p>
             <div className="grid grid-cols-2 gap-3">
               <input type="date" value={weekStart} onChange={(e) => setWeekStart(e.target.value)} className="form-input flex w-full appearance-none rounded-xl text-[#0d141b] dark:text-white focus:outline-0 focus:ring-2 focus:ring-primary/50 border border-[#cfdbe7] dark:border-slate-700 bg-white dark:bg-slate-900 h-12 px-4 text-base font-normal leading-normal" />
@@ -360,7 +402,7 @@ const MenuEditor: React.FC = () => {
             <div className="mt-4 flex flex-col gap-2">
               {results.map((menu) => (
                 <button key={menu.id} onClick={() => loadMenu(menu)} className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2 text-sm">
-                  <span>{menu.school_name} • {menu.week_start} - {menu.week_end}</span>
+                  <span>{menu.name || menu.school_name} • {menu.week_start} - {menu.week_end}</span>
                   <span className="text-xs font-bold text-slate-500">{menu.status}</span>
                 </button>
               ))}

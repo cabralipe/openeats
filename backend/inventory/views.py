@@ -14,8 +14,21 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
-from .models import Delivery, DeliveryItem, Supply, StockBalance, StockMovement
-from .serializers import DeliverySerializer, SupplySerializer, StockBalanceSerializer, StockMovementSerializer
+from merenda_semed.authentication import QueryParamJWTAuthentication
+
+from .models import Delivery, DeliveryItem, Notification, Responsible, SchoolStockBalance, Supply, StockBalance, StockMovement
+from .serializers import (
+    DeliverySerializer,
+    NotificationSerializer,
+    ResponsibleSerializer,
+    SchoolStockBalanceSerializer,
+    SchoolStockBulkLimitItemSerializer,
+    SchoolStockLimitUpdateSerializer,
+    SupplySerializer,
+    StockBalanceSerializer,
+    StockMovementSerializer,
+)
+
 
 
 def _pdf_text(value):
@@ -93,7 +106,28 @@ class StockMovementViewSet(viewsets.ModelViewSet):
         return queryset
 
 
+class ResponsibleViewSet(viewsets.ModelViewSet):
+    queryset = Responsible.objects.all().order_by('name')
+    serializer_class = ResponsibleSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        query = self.request.query_params.get('q')
+        position = self.request.query_params.get('position')
+        is_active = self.request.query_params.get('is_active')
+        if query:
+            queryset = queryset.filter(name__icontains=query)
+        if position:
+            queryset = queryset.filter(position__icontains=position)
+        if is_active in ['true', 'false']:
+            queryset = queryset.filter(is_active=is_active == 'true')
+        return queryset
+
+
 class StockExportCsvView(viewsets.ViewSet):
+
+    authentication_classes = [QueryParamJWTAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
     def list(self, request):
@@ -123,6 +157,7 @@ class StockExportCsvView(viewsets.ViewSet):
 
 
 class StockExportPdfView(viewsets.ViewSet):
+    authentication_classes = [QueryParamJWTAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
     def list(self, request):
@@ -201,6 +236,7 @@ class StockExportPdfView(viewsets.ViewSet):
 
 
 class StockExportXlsxView(viewsets.ViewSet):
+    authentication_classes = [QueryParamJWTAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
     def list(self, request):
@@ -297,6 +333,7 @@ class StockExportXlsxView(viewsets.ViewSet):
 
 
 class DeliveryExportPdfView(viewsets.ViewSet):
+    authentication_classes = [QueryParamJWTAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
     def list(self, request):
@@ -328,7 +365,7 @@ class DeliveryExportPdfView(viewsets.ViewSet):
 
         pdf.setFont('Helvetica', 10)
         for delivery in queryset:
-            if y < 120:
+            if y < 180:  # Increased space needed for two signatures
                 pdf.showPage()
                 y = height - 40
                 pdf.setFont('Helvetica', 10)
@@ -340,20 +377,39 @@ class DeliveryExportPdfView(viewsets.ViewSet):
             if delivery.conference_submitted_at:
                 pdf.drawString(40, y, _pdf_text(f"Conferida em: {delivery.conference_submitted_at.strftime('%Y-%m-%d %H:%M')}"))
                 y -= 14
-            if delivery.conference_signed_by:
-                pdf.drawString(40, y, _pdf_text(f"Assinada por: {delivery.conference_signed_by}"))
+            
+            # Sender signature (who delivered)
+            if delivery.sender_signed_by:
+                pdf.drawString(40, y, _pdf_text(f"Entregue por: {delivery.sender_signed_by}"))
                 y -= 14
-            if delivery.conference_signature:
+            if delivery.sender_signature:
                 try:
-                    header, encoded = delivery.conference_signature.split(',', 1)
+                    header, encoded = delivery.sender_signature.split(',', 1)
                     image_bytes = base64.b64decode(encoded)
                     image = ImageReader(io.BytesIO(image_bytes))
-                    pdf.drawImage(image, 40, y - 50, width=200, height=50, preserveAspectRatio=True, mask='auto')
+                    pdf.drawImage(image, 40, y - 50, width=150, height=50, preserveAspectRatio=True, mask='auto')
                     y -= 60
                 except Exception:
-                    pdf.drawString(40, y, _pdf_text("Assinatura: [erro ao carregar imagem]"))
+                    pdf.drawString(40, y, _pdf_text("Assinatura entregador: [erro ao carregar imagem]"))
                     y -= 14
-            y -= 6
+            
+            # Receiver signature (who received at school)
+            if delivery.receiver_signed_by or delivery.conference_signed_by:
+                signer = delivery.receiver_signed_by or delivery.conference_signed_by
+                pdf.drawString(40, y, _pdf_text(f"Recebido por: {signer}"))
+                y -= 14
+            receiver_sig = delivery.receiver_signature or delivery.conference_signature
+            if receiver_sig:
+                try:
+                    header, encoded = receiver_sig.split(',', 1)
+                    image_bytes = base64.b64decode(encoded)
+                    image = ImageReader(io.BytesIO(image_bytes))
+                    pdf.drawImage(image, 40, y - 50, width=150, height=50, preserveAspectRatio=True, mask='auto')
+                    y -= 60
+                except Exception:
+                    pdf.drawString(40, y, _pdf_text("Assinatura recebedor: [erro ao carregar imagem]"))
+                    y -= 14
+            y -= 10
 
         pdf.showPage()
         pdf.save()
@@ -361,6 +417,7 @@ class DeliveryExportPdfView(viewsets.ViewSet):
 
 
 class DeliveryExportXlsxView(viewsets.ViewSet):
+    authentication_classes = [QueryParamJWTAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
     def list(self, request):
@@ -436,6 +493,7 @@ class DeliveryExportXlsxView(viewsets.ViewSet):
 
 
 class ConsumptionExportPdfView(viewsets.ViewSet):
+    authentication_classes = [QueryParamJWTAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
     def list(self, request):
@@ -481,6 +539,7 @@ class ConsumptionExportPdfView(viewsets.ViewSet):
 
 
 class ConsumptionExportXlsxView(viewsets.ViewSet):
+    authentication_classes = [QueryParamJWTAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
     def list(self, request):
@@ -609,3 +668,83 @@ class DeliveryViewSet(viewsets.ModelViewSet):
             'url': f"/public/delivery?slug={delivery.school.public_slug}&token={delivery.school.public_token}&delivery_id={delivery.id}",
             'api_url': f"/public/schools/{delivery.school.public_slug}/delivery/current/?token={delivery.school.public_token}&delivery_id={delivery.id}",
         })
+
+
+class NotificationViewSet(viewsets.ModelViewSet):
+    """ViewSet for listing and managing notifications."""
+    queryset = Notification.objects.all()
+    serializer_class = NotificationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Notification.objects.all().order_by('-created_at')
+
+    @action(detail=False, methods=['get'])
+    def unread_count(self, request):
+        count = self.get_queryset().filter(is_read=False).count()
+        return Response({'count': count})
+
+    @action(detail=True, methods=['post'])
+    def mark_read(self, request, pk=None):
+        notification = self.get_object()
+        notification.is_read = True
+        notification.save(update_fields=['is_read'])
+        return Response(NotificationSerializer(notification).data)
+
+    @action(detail=False, methods=['post'])
+    def mark_all_read(self, request):
+        self.get_queryset().filter(is_read=False).update(is_read=True)
+        return Response({'status': 'ok'})
+
+
+class SchoolStockConfigViewSet(viewsets.ModelViewSet):
+    """ViewSet for configuring stock limits per school."""
+    queryset = SchoolStockBalance.objects.select_related('school', 'supply').all()
+    serializer_class = SchoolStockBalanceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        school = self.request.query_params.get('school')
+        if school:
+            queryset = queryset.filter(school_id=school)
+        return queryset.order_by('supply__name')
+
+    @action(detail=False, methods=['post'])
+    def bulk_update_limits(self, request):
+        """Update min_stock limits for multiple items at once."""
+        items = request.data.get('items', [])
+        if not items:
+            return Response({'detail': 'Nenhum item informado.'}, status=400)
+
+        payload = SchoolStockBulkLimitItemSerializer(data=items, many=True)
+        payload.is_valid(raise_exception=True)
+
+        validated_items = payload.validated_data
+        balance_ids = [entry['id'] for entry in validated_items]
+        balances = {
+            balance.id: balance
+            for balance in SchoolStockBalance.objects.filter(id__in=balance_ids)
+        }
+        missing_ids = [balance_id for balance_id in balance_ids if balance_id not in balances]
+        if missing_ids:
+            raise ValidationError({'detail': f'Itens de estoque não encontrados: {missing_ids}'})
+
+        with transaction.atomic():
+            for entry in validated_items:
+                balance = balances[entry['id']]
+                balance.min_stock = entry['min_stock']
+                balance.save(update_fields=['min_stock'])
+
+        updated = len(validated_items)
+        return Response({'updated': updated})
+
+    @action(detail=True, methods=['patch'])
+    def update_limit(self, request, pk=None):
+        """Update min_stock limit for a single item."""
+        balance = self.get_object()
+        payload = SchoolStockLimitUpdateSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        balance.min_stock = payload.validated_data['min_stock']
+        balance.save(update_fields=['min_stock'])
+        return Response(SchoolStockBalanceSerializer(balance).data)

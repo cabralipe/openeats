@@ -12,6 +12,7 @@ class Menu(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='menus')
+    name = models.CharField(max_length=160, blank=True, default='')
     week_start = models.DateField()
     week_end = models.DateField()
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT)
@@ -27,7 +28,7 @@ class Menu(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.school.name} - {self.week_start}"
+        return self.name or f"{self.school.name} - {self.week_start}"
 
 
 class MenuItem(models.Model):

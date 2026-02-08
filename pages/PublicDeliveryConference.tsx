@@ -15,19 +15,27 @@ const PublicDeliveryConference: React.FC = () => {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [signatureData, setSignatureData] = useState('');
+  // Sender (who delivered) signature
+  const [senderSignatureData, setSenderSignatureData] = useState('');
+  const [senderHasSignature, setSenderHasSignature] = useState(false);
+  const [senderName, setSenderName] = useState('');
+  // Receiver (who received at school) signature
+  const [receiverSignatureData, setReceiverSignatureData] = useState('');
+  const [receiverHasSignature, setReceiverHasSignature] = useState(false);
+  const [receiverName, setReceiverName] = useState('');
   const [isDrawing, setIsDrawing] = useState(false);
-  const [hasSignature, setHasSignature] = useState(false);
-  const [signerName, setSignerName] = useState('');
   const [currentStep, setCurrentStep] = useState(0);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const senderCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const receiverCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const items = delivery?.items || [];
-  const totalSteps = items.length + 1; // items + signature step
-  const isSignatureStep = currentStep === items.length;
+  // Steps: items + receiver signature + sender signature (sender last)
+  const totalSteps = items.length + 2;
+  const isReceiverSignatureStep = currentStep === items.length;
+  const isSenderSignatureStep = currentStep === items.length + 1;
   const isComplete = delivery?.status === 'CONFERRED';
   const confirmedCount = Object.values(form).filter((f) => f.confirmed).length;
-  const progress = isComplete ? 100 : Math.round((confirmedCount / items.length) * 100);
+  const progress = isComplete ? 100 : Math.round((confirmedCount / Math.max(items.length, 1)) * 100);
 
   useEffect(() => {
     if (!slug || !token || !deliveryId) {
@@ -49,16 +57,33 @@ const PublicDeliveryConference: React.FC = () => {
           };
         });
         setForm(nextForm);
-        setSignatureData(data.conference_signature || '');
-        setHasSignature(!!data.conference_signature);
-        setSignerName(data.conference_signed_by || '');
+        // Load existing signatures
+        setSenderSignatureData(data.sender_signature || '');
+        setSenderHasSignature(!!data.sender_signature);
+        setSenderName(data.sender_signed_by || data.sender_name || '');
+        setReceiverSignatureData(data.receiver_signature || data.conference_signature || '');
+        setReceiverHasSignature(!!data.receiver_signature || !!data.conference_signature);
+        setReceiverName(data.receiver_signed_by || data.conference_signed_by || '');
         if (data.status === 'CONFERRED') {
-          setCurrentStep(data.items?.length || 0);
+          setCurrentStep((data.items?.length || 0) + 2);
         }
       })
       .catch(() => setError('Não foi possível carregar a entrega.'))
       .finally(() => setLoading(false));
   }, [slug, token, deliveryId]);
+
+  // Clear sender canvas when entering sender signature step (if coming from receiver step)
+  useEffect(() => {
+    if (isSenderSignatureStep && !senderHasSignature) {
+      const senderCanvas = senderCanvasRef.current;
+      if (senderCanvas) {
+        const ctx = senderCanvas.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, senderCanvas.width, senderCanvas.height);
+        }
+      }
+    }
+  }, [isSenderSignatureStep, senderHasSignature]);
 
   const updateItem = (itemId: string, field: 'received_quantity' | 'note', value: string) => {
     setForm((prev) => ({
@@ -94,15 +119,27 @@ const PublicDeliveryConference: React.FC = () => {
   const handleSubmit = async () => {
     if (!delivery) return;
 
-    const canvas = canvasRef.current;
-    const signature = delivery?.status === 'CONFERRED' ? signatureData : canvas?.toDataURL('image/png') || '';
+    const senderCanvas = senderCanvasRef.current;
+    const receiverCanvas = receiverCanvasRef.current;
+    // Use saved signature data if available (receiver signature is saved when advancing to sender step)
+    const senderSig = delivery?.status === 'CONFERRED' ? senderSignatureData : senderCanvas?.toDataURL('image/png') || '';
+    const receiverSig = receiverSignatureData || (delivery?.status === 'CONFERRED' ? receiverSignatureData : receiverCanvas?.toDataURL('image/png') || '');
 
-    if (!signature || !hasSignature) {
-      setError('Assinatura obrigatória.');
+
+    if (!senderSig || !senderHasSignature) {
+      setError('Assinatura do remetente obrigatória.');
       return;
     }
-    if (!signerName.trim()) {
-      setError('Informe seu nome.');
+    if (!senderName.trim()) {
+      setError('Informe o nome do remetente.');
+      return;
+    }
+    if (!receiverSig || !receiverHasSignature) {
+      setError('Assinatura do receptor obrigatória.');
+      return;
+    }
+    if (!receiverName.trim()) {
+      setError('Informe o nome do receptor.');
       return;
     }
 
@@ -116,13 +153,17 @@ const PublicDeliveryConference: React.FC = () => {
           received_quantity: Number(form[item.id]?.received_quantity || 0),
           note: form[item.id]?.note || '',
         })),
-        signature_data: signature,
-        signer_name: signerName.trim(),
+        sender_signature_data: senderSig,
+        sender_signer_name: senderName.trim(),
+        receiver_signature_data: receiverSig,
+        receiver_signer_name: receiverName.trim(),
       };
       const data = await submitPublicDeliveryConference(slug, token, deliveryId, payload);
       setDelivery(data);
-      setSignatureData(data.conference_signature || signature);
-      setHasSignature(true);
+      setSenderSignatureData(data.sender_signature || senderSig);
+      setSenderHasSignature(true);
+      setReceiverSignatureData(data.receiver_signature || receiverSig);
+      setReceiverHasSignature(true);
       setSuccess('Conferência concluída com sucesso!');
     } catch {
       setError('Não foi possível enviar a conferência.');
@@ -131,7 +172,10 @@ const PublicDeliveryConference: React.FC = () => {
     }
   };
 
-  const startDrawing = (event: React.MouseEvent | React.TouchEvent) => {
+  const startDrawing = (
+    event: React.MouseEvent | React.TouchEvent,
+    canvasRef: React.RefObject<HTMLCanvasElement | null>
+  ) => {
     if (isComplete) return;
     if ('touches' in event) event.preventDefault();
     const canvas = canvasRef.current;
@@ -146,7 +190,11 @@ const PublicDeliveryConference: React.FC = () => {
     ctx.moveTo(clientX - rect.left, clientY - rect.top);
   };
 
-  const draw = (event: React.MouseEvent | React.TouchEvent) => {
+  const draw = (
+    event: React.MouseEvent | React.TouchEvent,
+    canvasRef: React.RefObject<HTMLCanvasElement | null>,
+    setHasSignature: (val: boolean) => void
+  ) => {
     if (!isDrawing || isComplete) return;
     if ('touches' in event) event.preventDefault();
     const canvas = canvasRef.current;
@@ -166,7 +214,10 @@ const PublicDeliveryConference: React.FC = () => {
 
   const stopDrawing = () => setIsDrawing(false);
 
-  const clearSignature = () => {
+  const clearSignature = (
+    canvasRef: React.RefObject<HTMLCanvasElement | null>,
+    setHasSignature: (val: boolean) => void
+  ) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -174,6 +225,7 @@ const PublicDeliveryConference: React.FC = () => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     setHasSignature(false);
   };
+
 
   if (loading) {
     return (
@@ -241,61 +293,67 @@ const PublicDeliveryConference: React.FC = () => {
               <h2 className="text-2xl font-bold text-slate-900 mb-2">Conferência Concluída!</h2>
               <p className="text-slate-500 mb-6">Todos os itens foram conferidos e a entrega foi registrada.</p>
 
-              {signatureData && (
-                <div className="border border-slate-200 rounded-xl p-4 mb-4">
-                  <p className="text-xs text-slate-500 mb-2">Assinado por: {signerName}</p>
-                  <img src={signatureData} alt="Assinatura" className="max-w-full rounded-lg" />
-                </div>
-              )}
+              {/* Show both signatures on success */}
+              <div className="space-y-4 mb-4">
+                {senderSignatureData && (
+                  <div className="border border-slate-200 rounded-xl p-4">
+                    <p className="text-xs text-slate-500 mb-2">Remetente: {senderName}</p>
+                    <img src={senderSignatureData} alt="Assinatura do Remetente" className="max-w-full rounded-lg h-16 object-contain" />
+                  </div>
+                )}
+                {receiverSignatureData && (
+                  <div className="border border-slate-200 rounded-xl p-4">
+                    <p className="text-xs text-slate-500 mb-2">Receptor: {receiverName}</p>
+                    <img src={receiverSignatureData} alt="Assinatura do Receptor" className="max-w-full rounded-lg h-16 object-contain" />
+                  </div>
+                )}
+              </div>
 
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-success-100 text-success-700 font-medium">
                 <span className="material-symbols-outlined text-sm">verified</span>
                 Entrega Conferida
               </div>
             </div>
-          ) : isSignatureStep ? (
-            /* Signature Step */
+          ) : isReceiverSignatureStep ? (
+            /* Receiver Signature Step - First signature step */
             <div className="bg-white rounded-3xl shadow-2xl overflow-hidden animate-fade-in">
-              {/* Step Header */}
               <div className="bg-gradient-to-r from-secondary-500 to-primary-500 p-6 text-white text-center">
                 <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center mx-auto mb-4">
-                  <span className="material-symbols-outlined text-3xl">draw</span>
+                  <span className="material-symbols-outlined text-3xl">local_shipping</span>
                 </div>
-                <h2 className="text-xl font-bold">Última Etapa!</h2>
-                <p className="text-white/80 text-sm mt-1">Assine para confirmar o recebimento</p>
+                <h2 className="text-xl font-bold">Assinatura do Receptor</h2>
+                <p className="text-white/80 text-sm mt-1">Quem está recebendo na escola</p>
               </div>
 
               <div className="p-6 space-y-4">
-                {/* Signer Name */}
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-700">Seu nome completo</label>
+                  <label className="text-sm font-medium text-slate-700">Nome do receptor</label>
                   <input
-                    value={signerName}
-                    onChange={(e) => setSignerName(e.target.value)}
+                    value={receiverName}
+                    onChange={(e) => setReceiverName(e.target.value)}
                     className="input"
-                    placeholder="Digite seu nome"
+                    placeholder="Digite o nome de quem recebeu"
                   />
                 </div>
 
-                {/* Signature Canvas */}
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Assinatura</label>
                   <div className="border-2 border-dashed border-slate-300 rounded-xl overflow-hidden bg-slate-50">
                     <canvas
-                      ref={canvasRef}
+                      ref={receiverCanvasRef}
                       width={400}
                       height={150}
-                      onMouseDown={startDrawing}
-                      onMouseMove={draw}
+                      onMouseDown={(e) => startDrawing(e, receiverCanvasRef)}
+                      onMouseMove={(e) => draw(e, receiverCanvasRef, setReceiverHasSignature)}
                       onMouseUp={stopDrawing}
                       onMouseLeave={stopDrawing}
-                      onTouchStart={startDrawing}
-                      onTouchMove={draw}
+                      onTouchStart={(e) => startDrawing(e, receiverCanvasRef)}
+                      onTouchMove={(e) => draw(e, receiverCanvasRef, setReceiverHasSignature)}
                       onTouchEnd={stopDrawing}
                       className="w-full h-36 touch-none cursor-crosshair"
                     />
                   </div>
-                  <button type="button" onClick={clearSignature} className="text-sm text-slate-500 hover:text-slate-700">
+                  <button type="button" onClick={() => clearSignature(receiverCanvasRef, setReceiverHasSignature)} className="text-sm text-slate-500 hover:text-slate-700">
                     <span className="material-symbols-outlined text-sm align-middle mr-1">refresh</span>
                     Limpar assinatura
                   </button>
@@ -308,7 +366,90 @@ const PublicDeliveryConference: React.FC = () => {
                   </div>
                 )}
 
-                {/* Actions */}
+                <div className="flex gap-3 pt-2">
+                  <button onClick={goBack} className="btn-secondary flex-1">
+                    <span className="material-symbols-outlined">arrow_back</span>
+                    Voltar
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!receiverName.trim()) {
+                        setError('Informe o nome do receptor.');
+                        return;
+                      }
+                      if (!receiverHasSignature) {
+                        setError('Assinatura do receptor obrigatória.');
+                        return;
+                      }
+                      // Save the receiver signature data before advancing
+                      const receiverCanvas = receiverCanvasRef.current;
+                      if (receiverCanvas) {
+                        setReceiverSignatureData(receiverCanvas.toDataURL('image/png'));
+                      }
+                      setError('');
+                      setCurrentStep((prev) => prev + 1);
+                    }}
+                    className="btn-primary flex-1"
+                  >
+                    <span className="material-symbols-outlined">arrow_forward</span>
+                    Próximo
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : isSenderSignatureStep ? (
+            /* Sender Signature Step - Final step */
+            <div className="bg-white rounded-3xl shadow-2xl overflow-hidden animate-fade-in">
+              <div className="bg-gradient-to-r from-success-500 to-primary-500 p-6 text-white text-center">
+                <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center mx-auto mb-4">
+                  <span className="material-symbols-outlined text-3xl">local_shipping</span>
+                </div>
+                <h2 className="text-xl font-bold">Assinatura do Remetente</h2>
+                <p className="text-white/80 text-sm mt-1">Quem está entregando os itens (última etapa)</p>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Nome do entregador</label>
+                  <input
+                    value={senderName}
+                    onChange={(e) => setSenderName(e.target.value)}
+                    className="input"
+                    placeholder="Digite o nome de quem entregou"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Assinatura</label>
+                  <div className="border-2 border-dashed border-slate-300 rounded-xl overflow-hidden bg-slate-50">
+                    <canvas
+                      ref={senderCanvasRef}
+                      width={400}
+                      height={150}
+                      onMouseDown={(e) => startDrawing(e, senderCanvasRef)}
+                      onMouseMove={(e) => draw(e, senderCanvasRef, setSenderHasSignature)}
+                      onMouseUp={stopDrawing}
+                      onMouseLeave={stopDrawing}
+                      onTouchStart={(e) => startDrawing(e, senderCanvasRef)}
+                      onTouchMove={(e) => draw(e, senderCanvasRef, setSenderHasSignature)}
+                      onTouchEnd={stopDrawing}
+                      className="w-full h-36 touch-none cursor-crosshair"
+                    />
+                  </div>
+                  <button type="button" onClick={() => clearSignature(senderCanvasRef, setSenderHasSignature)} className="text-sm text-slate-500 hover:text-slate-700">
+                    <span className="material-symbols-outlined text-sm align-middle mr-1">refresh</span>
+                    Limpar assinatura
+                  </button>
+                </div>
+
+
+                {error && (
+                  <div className="p-3 rounded-xl bg-danger-50 text-danger-600 text-sm flex items-center gap-2">
+                    <span className="material-symbols-outlined text-lg">error</span>
+                    {error}
+                  </div>
+                )}
+
                 <div className="flex gap-3 pt-2">
                   <button onClick={goBack} className="btn-secondary flex-1">
                     <span className="material-symbols-outlined">arrow_back</span>
@@ -334,6 +475,7 @@ const PublicDeliveryConference: React.FC = () => {
                 </div>
               </div>
             </div>
+
           ) : currentItem ? (
             /* Item Card */
             <div className="bg-white rounded-3xl shadow-2xl overflow-hidden animate-fade-in" key={currentItem.id}>
@@ -429,20 +571,29 @@ const PublicDeliveryConference: React.FC = () => {
                   key={index}
                   onClick={() => form[items[index].id]?.confirmed || index <= currentStep ? setCurrentStep(index) : null}
                   className={`w-3 h-3 rounded-full transition-all ${index === currentStep
-                      ? 'w-8 bg-white'
-                      : form[items[index].id]?.confirmed
-                        ? 'bg-success-400'
-                        : 'bg-white/30'
+                    ? 'w-8 bg-white'
+                    : form[items[index].id]?.confirmed
+                      ? 'bg-success-400'
+                      : 'bg-white/30'
                     }`}
                 />
               ))}
+              {/* Receiver signature step indicator (first after items) */}
               <button
                 onClick={() => confirmedCount === items.length ? setCurrentStep(items.length) : null}
-                className={`w-3 h-3 rounded-full transition-all ${isSignatureStep ? 'w-8 bg-white' : confirmedCount === items.length ? 'bg-white/50' : 'bg-white/30'
+                className={`w-3 h-3 rounded-full transition-all ${isReceiverSignatureStep ? 'w-8 bg-white' : receiverHasSignature ? 'bg-success-400' : confirmedCount === items.length ? 'bg-white/50' : 'bg-white/30'
                   }`}
               />
+              {/* Sender signature step indicator (last step) */}
+              <button
+                onClick={() => receiverHasSignature ? setCurrentStep(items.length + 1) : null}
+                className={`w-3 h-3 rounded-full transition-all ${isSenderSignatureStep ? 'w-8 bg-white' : senderHasSignature ? 'bg-success-400' : receiverHasSignature ? 'bg-white/50' : 'bg-white/30'
+                  }`}
+              />
+
             </div>
           )}
+
         </div>
       </main>
 

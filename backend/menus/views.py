@@ -8,6 +8,8 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from merenda_semed.authentication import QueryParamJWTAuthentication
+
 from .models import Menu, MenuItem
 from .serializers import MenuItemBulkSerializer, MenuItemSerializer, MenuSerializer
 
@@ -69,8 +71,57 @@ class MenuViewSet(viewsets.ModelViewSet):
         menu.save(update_fields=['status', 'published_at'])
         return Response(MenuSerializer(menu).data)
 
+    @action(detail=True, methods=['post'])
+    def copy(self, request, pk=None):
+        """Copy a menu to another school."""
+        source_menu = self.get_object()
+        target_school_id = request.data.get('target_school')
+        week_start = request.data.get('week_start')
+        week_end = request.data.get('week_end')
+        
+        if not target_school_id:
+            return Response({'detail': 'Escola destino obrigatória.'}, status=400)
+        
+        from schools.models import School
+        try:
+            target_school = School.objects.get(id=target_school_id)
+        except School.DoesNotExist:
+            return Response({'detail': 'Escola destino não encontrada.'}, status=404)
+        
+        # Use source menu dates if not provided
+        if not week_start:
+            week_start = source_menu.week_start
+        if not week_end:
+            week_end = source_menu.week_end
+        
+        # Create new menu for target school
+        new_menu = Menu.objects.create(
+            school=target_school,
+            name=source_menu.name,
+            week_start=week_start,
+            week_end=week_end,
+            status=Menu.Status.DRAFT,
+            created_by=self.request.user,
+        )
+        
+        # Copy all items
+        for item in source_menu.items.all():
+            MenuItem.objects.create(
+                menu=new_menu,
+                day_of_week=item.day_of_week,
+                meal_type=item.meal_type,
+                meal_name=item.meal_name,
+                description=item.description,
+                portion_text=item.portion_text,
+                image_url=item.image_url,
+            )
+        
+        return Response(MenuSerializer(new_menu).data, status=status.HTTP_201_CREATED)
+
+
 
 class MenuExportCsvView(viewsets.ViewSet):
+    authentication_classes = [QueryParamJWTAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
     def list(self, request):
@@ -78,11 +129,12 @@ class MenuExportCsvView(viewsets.ViewSet):
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename=\"menus.csv\"'
         writer = csv.writer(response)
-        writer.writerow(['Escola', 'Semana Inicio', 'Semana Fim', 'Status', 'Dia', 'Refeicao', 'Nome Refeicao', 'Quantidade', 'Imagem', 'Descricao'])
+        writer.writerow(['Escola', 'Nome Cardapio', 'Semana Inicio', 'Semana Fim', 'Status', 'Dia', 'Refeicao', 'Nome Refeicao', 'Quantidade', 'Imagem', 'Descricao'])
         for menu in queryset:
             for item in menu.items.all():
                 writer.writerow([
                     menu.school.name,
+                    menu.name,
                     menu.week_start,
                     menu.week_end,
                     menu.status,
@@ -97,6 +149,7 @@ class MenuExportCsvView(viewsets.ViewSet):
 
 
 class MenuExportPdfView(viewsets.ViewSet):
+    authentication_classes = [QueryParamJWTAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
     def list(self, request):
@@ -116,6 +169,10 @@ class MenuExportPdfView(viewsets.ViewSet):
         y = height - 40
         pdf.setFont('Helvetica-Bold', 14)
         pdf.drawString(40, y, _pdf_text(f"Cardapio - {menu.school.name}"))
+        if menu.name:
+            y -= 18
+            pdf.setFont('Helvetica', 11)
+            pdf.drawString(40, y, _pdf_text(f"Nome: {menu.name}"))
         y -= 20
         pdf.setFont('Helvetica', 10)
         pdf.drawString(40, y, _pdf_text(f"Semana: {menu.week_start} a {menu.week_end}"))

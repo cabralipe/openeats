@@ -1,7 +1,8 @@
 from django.db import transaction
 from rest_framework import serializers
 
-from .models import Delivery, DeliveryItem, SchoolStockBalance, Supply, StockBalance, StockMovement
+from .models import Delivery, DeliveryItem, Notification, Responsible, SchoolStockBalance, Supply, StockBalance, StockMovement
+
 
 
 
@@ -31,18 +32,39 @@ class SchoolStockBalanceSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SchoolStockBalance
-        fields = ['id', 'school', 'school_name', 'supply', 'quantity', 'is_low_stock', 'status', 'last_updated']
+        fields = ['id', 'school', 'school_name', 'supply', 'quantity', 'min_stock', 'is_low_stock', 'status', 'last_updated']
         read_only_fields = ['id', 'school_name', 'is_low_stock', 'status', 'last_updated']
 
+    def _get_min_stock(self, obj):
+        # Use school-specific min_stock if set, otherwise fall back to supply's global min_stock
+        return obj.min_stock if obj.min_stock > 0 else obj.supply.min_stock
+
     def get_is_low_stock(self, obj):
-        return obj.quantity < obj.supply.min_stock
+        return obj.quantity < self._get_min_stock(obj)
 
     def get_status(self, obj):
-        if obj.quantity < obj.supply.min_stock:
+        min_stock = self._get_min_stock(obj)
+        if obj.quantity < min_stock:
             return 'BAIXO'
-        elif obj.quantity >= obj.supply.min_stock * 2:
+        elif obj.quantity >= min_stock * 2:
             return 'ALTO'
         return 'NORMAL'
+
+
+class SchoolStockLimitUpdateSerializer(serializers.Serializer):
+    min_stock = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0)
+
+
+class SchoolStockBulkLimitItemSerializer(serializers.Serializer):
+    id = serializers.IntegerField(min_value=1)
+    min_stock = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0)
+
+
+class ResponsibleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Responsible
+        fields = ['id', 'name', 'phone', 'position', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
 
 
 class StockMovementSerializer(serializers.ModelSerializer):
@@ -104,6 +126,8 @@ class DeliveryItemSerializer(serializers.ModelSerializer):
 
 class DeliverySerializer(serializers.ModelSerializer):
     school_name = serializers.CharField(source='school.name', read_only=True)
+    sender_name = serializers.CharField(source='sender.name', read_only=True, allow_null=True)
+    sender_position = serializers.CharField(source='sender.position', read_only=True, allow_null=True)
     items = DeliveryItemSerializer(many=True)
 
     class Meta:
@@ -113,6 +137,9 @@ class DeliverySerializer(serializers.ModelSerializer):
             'school',
             'school_name',
             'delivery_date',
+            'sender',
+            'sender_name',
+            'sender_position',
             'responsible_name',
             'responsible_phone',
             'notes',
@@ -120,6 +147,10 @@ class DeliverySerializer(serializers.ModelSerializer):
             'conference_enabled',
             'sent_at',
             'conference_submitted_at',
+            'sender_signature',
+            'sender_signed_by',
+            'receiver_signature',
+            'receiver_signed_by',
             'conference_signature',
             'conference_signed_by',
             'created_by',
@@ -130,16 +161,26 @@ class DeliverySerializer(serializers.ModelSerializer):
         read_only_fields = [
             'id',
             'school_name',
+            'sender_name',
+            'sender_position',
             'status',
             'conference_enabled',
             'sent_at',
             'conference_submitted_at',
+            'sender_signature',
+            'sender_signed_by',
+            'receiver_signature',
+            'receiver_signed_by',
             'conference_signature',
             'conference_signed_by',
             'created_by',
             'created_at',
             'updated_at',
         ]
+        extra_kwargs = {
+            'sender': {'required': False, 'allow_null': True},
+        }
+
 
     def validate_items(self, items):
         if not items:
@@ -195,6 +236,8 @@ class PublicDeliveryItemSerializer(serializers.ModelSerializer):
 
 class PublicDeliverySerializer(serializers.ModelSerializer):
     school_name = serializers.CharField(source='school.name', read_only=True)
+    sender_name = serializers.CharField(source='sender.name', read_only=True, allow_null=True)
+    sender_position = serializers.CharField(source='sender.position', read_only=True, allow_null=True)
     items = PublicDeliveryItemSerializer(many=True, read_only=True)
 
     class Meta:
@@ -203,13 +246,20 @@ class PublicDeliverySerializer(serializers.ModelSerializer):
             'id',
             'school_name',
             'delivery_date',
+            'sender_name',
+            'sender_position',
             'notes',
             'status',
             'conference_submitted_at',
+            'sender_signature',
+            'sender_signed_by',
+            'receiver_signature',
+            'receiver_signed_by',
             'conference_signature',
             'conference_signed_by',
             'items',
         ]
+
 
 
 class DeliveryConferenceItemInputSerializer(serializers.Serializer):
@@ -220,17 +270,31 @@ class DeliveryConferenceItemInputSerializer(serializers.Serializer):
 
 class DeliveryConferenceInputSerializer(serializers.Serializer):
     items = DeliveryConferenceItemInputSerializer(many=True)
-    signature_data = serializers.CharField()
-    signer_name = serializers.CharField()
+    # Sender (who delivered) signature
+    sender_signature_data = serializers.CharField()
+    sender_signer_name = serializers.CharField()
+    # Receiver (who received at school) signature
+    receiver_signature_data = serializers.CharField()
+    receiver_signer_name = serializers.CharField()
 
-    def validate_signature_data(self, value):
+    def validate_sender_signature_data(self, value):
         if not value or not value.startswith('data:image/'):
-            raise serializers.ValidationError('Assinatura invalida.')
+            raise serializers.ValidationError('Assinatura do remetente invalida.')
         return value
 
-    def validate_signer_name(self, value):
+    def validate_receiver_signature_data(self, value):
+        if not value or not value.startswith('data:image/'):
+            raise serializers.ValidationError('Assinatura do receptor invalida.')
+        return value
+
+    def validate_sender_signer_name(self, value):
         if not value.strip():
-            raise serializers.ValidationError('Nome do assinante obrigatorio.')
+            raise serializers.ValidationError('Nome do remetente obrigatorio.')
+        return value.strip()
+
+    def validate_receiver_signer_name(self, value):
+        if not value.strip():
+            raise serializers.ValidationError('Nome do receptor obrigatorio.')
         return value.strip()
 
     def validate_items(self, items):
@@ -259,3 +323,13 @@ class PublicConsumptionInputSerializer(serializers.Serializer):
         if len(ids) != len(set(ids)):
             raise serializers.ValidationError('Itens duplicados no consumo.')
         return items
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    school_name = serializers.CharField(source='school.name', read_only=True)
+    delivery_school = serializers.CharField(source='delivery.school.name', read_only=True)
+    
+    class Meta:
+        model = Notification
+        fields = ['id', 'notification_type', 'title', 'message', 'delivery', 'school', 'school_name', 'delivery_school', 'is_read', 'is_alert', 'created_at']
+        read_only_fields = ['id', 'notification_type', 'title', 'message', 'delivery', 'school', 'created_at']

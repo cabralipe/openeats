@@ -1,7 +1,25 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createSchool, deleteSchool, getPublicLink, getSchools, getSchoolStock, updateSchool } from '../api';
+import { createSchool, deleteSchool, getPublicLink, getSchools, getSchoolStock, updateSchool, getMenus, copyMenu, getSchoolStockConfig, updateSchoolStockLimit } from '../api';
 import { School } from '../types';
+
+interface StockConfigItem {
+  id: string;
+  supply: { id: string; name: string; category: string; unit: string; min_stock: number };
+  quantity: number;
+  min_stock: number;
+  status: string;
+}
+
+interface MenuData {
+  id: string;
+  name?: string;
+  week_start: string;
+  week_end: string;
+  status: string;
+  items_count?: number;
+  school_name?: string;
+}
 
 const Schools: React.FC = () => {
   const navigate = useNavigate();
@@ -22,6 +40,19 @@ const Schools: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [stockModal, setStockModal] = useState<{ school: School; data: any } | null>(null);
   const [stockLoading, setStockLoading] = useState(false);
+  // Menu modal state
+  const [menuModal, setMenuModal] = useState<{ school: School; menus: MenuData[] } | null>(null);
+  const [menuLoading, setMenuLoading] = useState(false);
+  const [copyModalOpen, setCopyModalOpen] = useState(false);
+  const [copyingMenuId, setCopyingMenuId] = useState<string | null>(null);
+  const [copyTargetSchool, setCopyTargetSchool] = useState('');
+  const [copyWeekStart, setCopyWeekStart] = useState('');
+  const [copyWeekEnd, setCopyWeekEnd] = useState('');
+  const [copySuccess, setCopySuccess] = useState('');
+  // Stock config modal state
+  const [configModal, setConfigModal] = useState<{ school: School; items: StockConfigItem[] } | null>(null);
+  const [configLoading, setConfigLoading] = useState(false);
+  const [editingLimits, setEditingLimits] = useState<Record<string, string>>({});
 
   const locationLabel = useMemo(() => {
     return (school: School) => school.location || 'Sem endereço';
@@ -30,7 +61,7 @@ const Schools: React.FC = () => {
   const loadSchools = (filters?: { q?: string; is_active?: boolean; city?: string; address?: string }) => {
     return getSchools(filters)
       .then((data) => {
-        const mapped = data.map((school: any) => ({
+        const mapped = (data as any[]).map((school: any) => ({
           id: school.id,
           name: school.name,
           location: [school.address, school.city].filter(Boolean).join(' • ') || 'Sem endereço',
@@ -58,8 +89,8 @@ const Schools: React.FC = () => {
 
   const openPublicMenu = async (school: School) => {
     try {
-      const link = await getPublicLink(school.id);
-      navigate(`/public/menu?slug=${link.slug}&token=${link.token}`);
+      const link = await getPublicLink(school.id) as { slug: string; token: string };
+      window.open(`#/public/menu?slug=${link.slug}&token=${link.token}`, '_blank');
     } catch {
       setError('Não foi possível gerar o link público.');
     }
@@ -67,8 +98,8 @@ const Schools: React.FC = () => {
 
   const openPublicConsumption = async (school: School) => {
     try {
-      const link = await getPublicLink(school.id);
-      navigate(`/public/consumption?slug=${link.slug}&token=${link.token}`);
+      const link = await getPublicLink(school.id) as { slug: string; token: string };
+      window.open(`#/public/consumption?slug=${link.slug}&token=${link.token}`, '_blank');
     } catch {
       setError('Não foi possível gerar o link público.');
     }
@@ -90,6 +121,92 @@ const Schools: React.FC = () => {
     setEditing(null);
     setForm({ name: '', address: '', city: '', is_active: true });
     setShowModal(true);
+  };
+
+  const openMenuModal = async (school: School) => {
+    setMenuLoading(true);
+    setMenuModal({ school, menus: [] });
+    try {
+      const menusData = await getMenus({ school: school.id });
+      setMenuModal({ school, menus: menusData });
+    } catch {
+      setError('Não foi possível carregar os cardápios.');
+    } finally {
+      setMenuLoading(false);
+    }
+  };
+
+  const openCopyModal = (menuId: string) => {
+    setCopyingMenuId(menuId);
+    setCopyTargetSchool('');
+    setCopyWeekStart('');
+    setCopyWeekEnd('');
+    setCopySuccess('');
+    setCopyModalOpen(true);
+  };
+
+  const handleCopyMenu = async () => {
+    if (!copyingMenuId || !copyTargetSchool) return;
+    try {
+      await copyMenu(copyingMenuId, copyTargetSchool, copyWeekStart || undefined, copyWeekEnd || undefined);
+      setCopySuccess('Cardápio copiado com sucesso!');
+      setTimeout(() => {
+        setCopyModalOpen(false);
+        setCopySuccess('');
+      }, 2000);
+    } catch {
+      setError('Não foi possível copiar o cardápio.');
+    }
+  };
+
+  const openConfigModal = async (school: School) => {
+    setConfigLoading(true);
+    setConfigModal({ school, items: [] });
+    setEditingLimits({});
+    try {
+      const items = await getSchoolStockConfig(school.id);
+      setConfigModal({ school, items: items as StockConfigItem[] });
+      // Initialize editing limits with current values
+      const limits: Record<string, string> = {};
+      (items as StockConfigItem[]).forEach((item: StockConfigItem) => {
+        limits[item.id] = item.min_stock.toString();
+      });
+      setEditingLimits(limits);
+    } catch {
+      setError('Não foi possível carregar configurações de estoque.');
+    } finally {
+      setConfigLoading(false);
+    }
+  };
+
+  const handleSaveLimit = async (itemId: string, newLimit: number) => {
+    try {
+      await updateSchoolStockLimit(itemId, newLimit);
+      setConfigModal(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          items: prev.items.map(item =>
+            item.id === itemId ? { ...item, min_stock: newLimit } : item
+          )
+        };
+      });
+    } catch (error) {
+      let message = 'Não foi possível atualizar limite.';
+      if (error instanceof Error && error.message) {
+        try {
+          const parsed = JSON.parse(error.message);
+          if (typeof parsed?.detail === 'string') {
+            message = parsed.detail;
+          } else if (Array.isArray(parsed?.min_stock) && parsed.min_stock[0]) {
+            message = parsed.min_stock[0];
+          }
+        } catch {
+          // Keep default message when response is not JSON.
+        }
+      }
+      setError(message);
+    }
   };
 
   const openEdit = (school: School) => {
@@ -265,7 +382,7 @@ const Schools: React.FC = () => {
                 </div>
 
                 {/* Actions */}
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-5 gap-2">
                   <button
                     onClick={() => openEdit(school)}
                     className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
@@ -288,6 +405,14 @@ const Schools: React.FC = () => {
                     <span className="text-[10px] font-medium text-slate-500">Consumo</span>
                   </button>
                   <button
+                    onClick={() => openConfigModal(school)}
+                    className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    title="Configurar limites de estoque"
+                  >
+                    <span className="material-symbols-outlined text-warning-500">settings</span>
+                    <span className="text-[10px] font-medium text-slate-500">Limites</span>
+                  </button>
+                  <button
                     onClick={() => handleDelete(school)}
                     className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-danger-50 dark:hover:bg-danger-900/20 transition-colors"
                   >
@@ -307,7 +432,8 @@ const Schools: React.FC = () => {
                     Estoque
                   </button>
                   <button
-                    onClick={() => navigate('/admin/editor')}
+                    onClick={() => openMenuModal(school)}
+                    disabled={menuLoading}
                     className="btn bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/30"
                   >
                     <span className="material-symbols-outlined">restaurant_menu</span>
@@ -448,10 +574,10 @@ const Schools: React.FC = () => {
                   <div
                     key={item.supply?.id}
                     className={`p-3 rounded-xl border ${item.status === 'BAIXO'
-                        ? 'border-danger-200 bg-danger-50 dark:border-danger-900/50 dark:bg-danger-900/10'
-                        : item.status === 'ALTO'
-                          ? 'border-success-200 bg-success-50 dark:border-success-900/50 dark:bg-success-900/10'
-                          : 'border-slate-200 dark:border-slate-700'
+                      ? 'border-danger-200 bg-danger-50 dark:border-danger-900/50 dark:bg-danger-900/10'
+                      : item.status === 'ALTO'
+                        ? 'border-success-200 bg-success-50 dark:border-success-900/50 dark:bg-success-900/10'
+                        : 'border-slate-200 dark:border-slate-700'
                       }`}
                   >
                     <div className="flex items-center justify-between">
@@ -464,10 +590,10 @@ const Schools: React.FC = () => {
                           {Number(item.quantity).toFixed(2)} <span className="text-sm font-normal text-slate-500">{item.supply?.unit}</span>
                         </p>
                         <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${item.status === 'BAIXO'
-                            ? 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-400'
-                            : item.status === 'ALTO'
-                              ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-400'
-                              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                          ? 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-400'
+                          : item.status === 'ALTO'
+                            ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-400'
+                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                           }`}>
                           {item.status}
                         </span>
@@ -483,6 +609,242 @@ const Schools: React.FC = () => {
               <button onClick={() => setStockModal(null)} className="btn-secondary w-full">
                 Fechar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Menu Modal */}
+      {menuModal && (
+        <div className="modal-overlay" onClick={() => setMenuModal(null)}>
+          <div className="modal-content max-w-xl" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-primary-500">restaurant_menu</span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Cardápios</h3>
+                  <p className="text-xs text-slate-500">{menuModal.school.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setMenuModal(null)}
+                className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-5 max-h-[60vh] overflow-y-auto space-y-3">
+              {menuLoading ? (
+                <div className="text-center py-8">
+                  <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                  <p className="text-slate-500">Carregando cardápios...</p>
+                </div>
+              ) : menuModal.menus.length === 0 ? (
+                <div className="text-center py-8 text-slate-500">
+                  <span className="material-symbols-outlined text-4xl mb-2">restaurant_menu</span>
+                  <p>Nenhum cardápio cadastrado</p>
+                  <button onClick={() => { setMenuModal(null); navigate('/admin/editor'); }} className="btn-primary mt-4">
+                    <span className="material-symbols-outlined">add</span>
+                    Criar Cardápio
+                  </button>
+                </div>
+              ) : (
+                menuModal.menus.map((menu) => (
+                  <div key={menu.id} className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`badge ${menu.status === 'PUBLISHED' ? 'badge-success' : 'badge-warning'}`}>
+                            {menu.status === 'PUBLISHED' ? 'Publicado' : 'Rascunho'}
+                          </span>
+                        </div>
+                        <p className="font-medium text-slate-900 dark:text-white">
+                          {menu.week_start} a {menu.week_end}
+                        </p>
+                        {menu.name && (
+                          <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">{menu.name}</p>
+                        )}
+                        <p className="text-xs text-slate-500">{(menu as any).items?.length || 0} itens</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => navigate(`/admin/editor?school=${menuModal.school.id}&week_start=${menu.week_start}&week_end=${menu.week_end}`)}
+                          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                          title="Visualizar/Editar"
+                        >
+                          <span className="material-symbols-outlined text-slate-500">visibility</span>
+                        </button>
+                        <button
+                          onClick={() => openCopyModal(menu.id)}
+                          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors"
+                          title="Copiar para outra escola"
+                        >
+                          <span className="material-symbols-outlined text-primary-500">content_copy</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-5 border-t border-slate-200 dark:border-slate-700 flex gap-2">
+              <button onClick={() => setMenuModal(null)} className="btn-secondary flex-1">Fechar</button>
+              <button onClick={() => { setMenuModal(null); navigate('/admin/editor'); }} className="btn-primary flex-1">
+                <span className="material-symbols-outlined">add</span>
+                Novo Cardápio
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Copy Menu Modal */}
+      {copyModalOpen && (
+        <div className="modal-overlay" onClick={() => setCopyModalOpen(false)}>
+          <div className="modal-content max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="p-5">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Copiar Cardápio</h3>
+
+              {copySuccess ? (
+                <div className="text-center py-8">
+                  <span className="material-symbols-outlined text-4xl text-success-500 mb-2">check_circle</span>
+                  <p className="text-success-600">{copySuccess}</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Escola destino *</label>
+                    <select
+                      value={copyTargetSchool}
+                      onChange={(e) => setCopyTargetSchool(e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="">Selecione...</option>
+                      {schools.filter(s => s.id !== menuModal?.school.id).map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Início da semana</label>
+                      <input
+                        type="date"
+                        value={copyWeekStart}
+                        onChange={(e) => setCopyWeekStart(e.target.value)}
+                        className="input w-full"
+                        placeholder="Manter original"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Fim da semana</label>
+                      <input
+                        type="date"
+                        value={copyWeekEnd}
+                        onChange={(e) => setCopyWeekEnd(e.target.value)}
+                        className="input w-full"
+                        placeholder="Manter original"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-500">Deixe as datas em branco para usar as mesmas do cardápio original.</p>
+                </div>
+              )}
+            </div>
+            {!copySuccess && (
+              <div className="p-5 border-t border-slate-200 dark:border-slate-700 flex gap-2">
+                <button onClick={() => setCopyModalOpen(false)} className="btn-secondary flex-1">Cancelar</button>
+                <button onClick={handleCopyMenu} disabled={!copyTargetSchool} className="btn-primary flex-1">
+                  <span className="material-symbols-outlined">content_copy</span>
+                  Copiar
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {/* Stock Config Modal */}
+      {configModal && (
+        <div className="modal-overlay" onClick={() => setConfigModal(null)}>
+          <div className="modal-content max-w-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-warning-100 dark:bg-warning-900/30 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-warning-500">settings</span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Configurar Limites de Estoque</h3>
+                  <p className="text-xs text-slate-500">{configModal.school.name}</p>
+                </div>
+              </div>
+              <button onClick={() => setConfigModal(null)} className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div className="p-5 max-h-[60vh] overflow-y-auto">
+              {configLoading ? (
+                <div className="text-center py-8">
+                  <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                  <p className="text-slate-500">Carregando itens...</p>
+                </div>
+              ) : configModal.items.length === 0 ? (
+                <div className="text-center py-8 text-slate-500">
+                  <span className="material-symbols-outlined text-4xl mb-2">inventory_2</span>
+                  <p>Nenhum item em estoque para configurar.</p>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <div className="grid grid-cols-12 gap-4 px-4 py-2 text-xs font-semibold text-slate-500 uppercase">
+                    <div className="col-span-6">Item</div>
+                    <div className="col-span-3 text-right">Estoque Atual</div>
+                    <div className="col-span-3 text-right">Mínimo</div>
+                  </div>
+                  {configModal.items.map((item) => (
+                    <div key={item.id} className="grid grid-cols-12 gap-4 items-center p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border border-transparent hover:border-slate-100 dark:hover:border-slate-700">
+                      <div className="col-span-6">
+                        <p className="font-medium text-slate-900 dark:text-white">{item.supply.name}</p>
+                        <p className="text-xs text-slate-500">{item.supply.category} • {item.supply.unit}</p>
+                      </div>
+                      <div className="col-span-3 text-right font-mono text-sm text-slate-600 dark:text-slate-400">
+                        {item.quantity}
+                      </div>
+                      <div className="col-span-3 flex justify-end">
+                        <div className="relative w-24">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={editingLimits[item.id] ?? item.min_stock}
+                            onChange={(e) => setEditingLimits(prev => ({ ...prev, [item.id]: e.target.value }))}
+                            onBlur={(e) => {
+                              const val = parseFloat(e.target.value);
+                              if (!isNaN(val) && val !== item.min_stock) {
+                                handleSaveLimit(item.id, val);
+                              }
+                            }}
+                            className="w-full px-3 py-1.5 text-right text-sm border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-slate-900"
+                          />
+                          {item.min_stock > 0 && item.quantity < item.min_stock && (
+                            <div className="absolute -right-2 -top-2 w-4 h-4 bg-red-500 rounded-full border-2 border-white dark:border-slate-900" title="Estoque abaixo do mínimo"></div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-700 text-xs text-slate-500 text-center">
+              Alterações são salvas automaticamente ao sair do campo.
             </div>
           </div>
         </div>

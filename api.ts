@@ -200,6 +200,46 @@ export async function getPublicLink(schoolId: string) {
   return apiFetch(`/api/schools/${schoolId}/public_link/`);
 }
 
+// Responsibles CRUD
+export async function getResponsibles(params?: { q?: string; position?: string; is_active?: boolean }) {
+  const cleanParams = params
+    ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
+    : undefined;
+  const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
+  return apiFetch(`/api/responsibles/${search ? `?${search}` : ''}`);
+}
+
+export async function createResponsible(payload: {
+  name: string;
+  phone?: string;
+  position?: string;
+  is_active?: boolean;
+}) {
+  return apiFetch('/api/responsibles/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateResponsible(id: string, payload: Partial<{
+  name: string;
+  phone: string;
+  position: string;
+  is_active: boolean;
+}>) {
+  return apiFetch(`/api/responsibles/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteResponsible(id: string) {
+  return apiFetch(`/api/responsibles/${id}/`, {
+    method: 'DELETE',
+  });
+}
+
+
 export async function getStock(params?: { q?: string; category?: string; low_stock?: boolean }) {
   const cleanParams = params
     ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
@@ -309,6 +349,7 @@ export async function getMenus(params: { school?: string; week_start?: string; w
 
 export async function createMenu(payload: {
   school: string;
+  name?: string;
   week_start: string;
   week_end: string;
   status?: string;
@@ -321,6 +362,7 @@ export async function createMenu(payload: {
 }
 
 export async function updateMenu(id: string, payload: Partial<{
+  name: string;
   week_start: string;
   week_end: string;
   status: string;
@@ -353,8 +395,24 @@ export async function publishMenu(menuId: string) {
   });
 }
 
-export async function getPublicMenuCurrent(slug: string, token: string) {
-  return apiFetch(`/public/schools/${slug}/menu/current/?token=${token}`, { skipAuth: true });
+export async function copyMenu(menuId: string, targetSchool: string, weekStart?: string, weekEnd?: string) {
+  return apiFetch(`/api/menus/${menuId}/copy/`, {
+    method: 'POST',
+    body: JSON.stringify({ target_school: targetSchool, week_start: weekStart, week_end: weekEnd }),
+  });
+}
+
+
+// List schools with published menus for current week
+export async function getPublicSchools() {
+  return apiFetch('/public/schools/', { skipAuth: true });
+}
+
+export async function getPublicMenuCurrent(slug: string, token?: string) {
+  const url = token
+    ? `/public/schools/${slug}/menu/current/?token=${token}`
+    : `/public/schools/${slug}/menu/current/`;
+  return apiFetch(url, { skipAuth: true });
 }
 
 export async function getPublicDeliveryCurrent(slug: string, token: string, deliveryId: string) {
@@ -366,7 +424,13 @@ export async function submitPublicDeliveryConference(
   slug: string,
   token: string,
   deliveryId: string,
-  payload: { items: Array<{ item_id: string; received_quantity: number; note?: string }>; signature_data: string; signer_name: string },
+  payload: {
+    items: Array<{ item_id: string; received_quantity: number; note?: string }>;
+    sender_signature_data: string;
+    sender_signer_name: string;
+    receiver_signature_data: string;
+    receiver_signer_name: string;
+  },
 ) {
   const search = new URLSearchParams({ token, delivery_id: deliveryId }).toString();
   return apiFetch(`/public/schools/${slug}/delivery/current/?${search}`, {
@@ -375,6 +439,7 @@ export async function submitPublicDeliveryConference(
     skipAuth: true,
   });
 }
+
 
 export async function getPublicSupplies(slug: string, token: string) {
   return apiFetch(`/public/schools/${slug}/consumption/?token=${token}`, { skipAuth: true });
@@ -401,24 +466,24 @@ export async function getDashboardSeries() {
 }
 
 export function exportStockCsv() {
-  window.open('/api/exports/stock/', '_blank');
+  openAuthenticatedUrl('/api/exports/stock/');
 }
 
 export function exportStockPdf() {
-  window.open('/api/exports/stock/pdf/', '_blank');
+  openAuthenticatedUrl('/api/exports/stock/pdf/');
 }
 
 export function exportStockXlsx() {
-  window.open('/api/exports/stock/xlsx/', '_blank');
+  openAuthenticatedUrl('/api/exports/stock/xlsx/');
 }
 
 export function exportMenusCsv() {
-  window.open('/api/exports/menus/', '_blank');
+  openAuthenticatedUrl('/api/exports/menus/');
 }
 
 
 export function exportMenuPdf(schoolId: string, weekStart: string) {
-  window.open(`/api/exports/menus/pdf/?school=${schoolId}&week_start=${weekStart}`, '_blank');
+  openAuthenticatedUrl(`/api/exports/menus/pdf/?school=${schoolId}&week_start=${weekStart}`);
 }
 
 export function exportDeliveriesPdf(params?: { school?: string; status?: string; date_from?: string; date_to?: string }) {
@@ -426,7 +491,7 @@ export function exportDeliveriesPdf(params?: { school?: string; status?: string;
     ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
     : undefined;
   const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
-  window.open(`/api/exports/deliveries/pdf/${search ? `?${search}` : ''}`, '_blank');
+  openAuthenticatedUrl(`/api/exports/deliveries/pdf/${search ? `?${search}` : ''}`);
 }
 
 export function exportDeliveriesXlsx(params?: { school?: string; status?: string; date_from?: string; date_to?: string }) {
@@ -434,7 +499,7 @@ export function exportDeliveriesXlsx(params?: { school?: string; status?: string
     ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
     : undefined;
   const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
-  window.open(`/api/exports/deliveries/xlsx/${search ? `?${search}` : ''}`, '_blank');
+  openAuthenticatedUrl(`/api/exports/deliveries/xlsx/${search ? `?${search}` : ''}`);
 }
 
 export function exportConsumptionPdf(params?: { supply?: string; date_from?: string; date_to?: string; school?: string }) {
@@ -442,7 +507,7 @@ export function exportConsumptionPdf(params?: { supply?: string; date_from?: str
     ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
     : undefined;
   const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
-  window.open(`/api/exports/consumption/pdf/${search ? `?${search}` : ''}`, '_blank');
+  openAuthenticatedUrl(`/api/exports/consumption/pdf/${search ? `?${search}` : ''}`);
 }
 
 export function exportConsumptionXlsx(params?: { supply?: string; date_from?: string; date_to?: string; school?: string }) {
@@ -450,5 +515,49 @@ export function exportConsumptionXlsx(params?: { supply?: string; date_from?: st
     ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
     : undefined;
   const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
-  window.open(`/api/exports/consumption/xlsx/${search ? `?${search}` : ''}`, '_blank');
+  openAuthenticatedUrl(`/api/exports/consumption/xlsx/${search ? `?${search}` : ''}`);
+}
+
+// Helper to open URLs with authentication token as query parameter
+function openAuthenticatedUrl(url: string) {
+  const token = tokenStore.getAccess();
+  const separator = url.includes('?') ? '&' : '?';
+  const authenticatedUrl = token ? `${url}${separator}token=${token}` : url;
+  window.open(authenticatedUrl, '_blank');
+}
+
+// ============ NOTIFICATIONS ============
+export async function getNotifications() {
+  return apiFetch('/api/notifications/');
+}
+
+export async function getUnreadNotificationsCount() {
+  return apiFetch('/api/notifications/unread_count/');
+}
+
+export async function markNotificationAsRead(id: string) {
+  return apiFetch(`/api/notifications/${id}/mark_read/`, { method: 'POST' });
+}
+
+export async function markAllNotificationsAsRead() {
+  return apiFetch('/api/notifications/mark_all_read/', { method: 'POST' });
+}
+
+// ============ SCHOOL STOCK CONFIG ============
+export async function getSchoolStockConfig(schoolId: string) {
+  return apiFetch(`/api/school-stock-config/?school=${schoolId}`);
+}
+
+export async function updateSchoolStockLimit(balanceId: string, minStock: number) {
+  return apiFetch(`/api/school-stock-config/${balanceId}/update_limit/`, {
+    method: 'PATCH',
+    body: JSON.stringify({ min_stock: minStock }),
+  });
+}
+
+export async function bulkUpdateSchoolStockLimits(items: Array<{ id: string; min_stock: number }>) {
+  return apiFetch('/api/school-stock-config/bulk_update_limits/', {
+    method: 'POST',
+    body: JSON.stringify({ items }),
+  });
 }
