@@ -16,7 +16,18 @@ from rest_framework.response import Response
 
 from merenda_semed.authentication import QueryParamJWTAuthentication
 
-from .models import Delivery, DeliveryItem, Notification, Responsible, SchoolStockBalance, Supply, StockBalance, StockMovement
+from .models import (
+    Delivery,
+    DeliveryItem,
+    Notification,
+    Responsible,
+    SchoolStockBalance,
+    Supplier,
+    SupplierReceipt,
+    Supply,
+    StockBalance,
+    StockMovement,
+)
 from .serializers import (
     DeliverySerializer,
     NotificationSerializer,
@@ -24,6 +35,9 @@ from .serializers import (
     SchoolStockBalanceSerializer,
     SchoolStockBulkLimitItemSerializer,
     SchoolStockLimitUpdateSerializer,
+    SupplierReceiptConferenceInputSerializer,
+    SupplierReceiptSerializer,
+    SupplierSerializer,
     SupplySerializer,
     StockBalanceSerializer,
     StockMovementSerializer,
@@ -123,6 +137,160 @@ class ResponsibleViewSet(viewsets.ModelViewSet):
         if is_active in ['true', 'false']:
             queryset = queryset.filter(is_active=is_active == 'true')
         return queryset
+
+
+class SupplierViewSet(viewsets.ModelViewSet):
+    queryset = Supplier.objects.all().order_by('name')
+    serializer_class = SupplierSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        query = self.request.query_params.get('q')
+        is_active = self.request.query_params.get('is_active')
+        if query:
+            queryset = queryset.filter(models.Q(name__icontains=query) | models.Q(document__icontains=query))
+        if is_active in ['true', 'false']:
+            queryset = queryset.filter(is_active=is_active == 'true')
+        return queryset
+
+
+class SupplierReceiptViewSet(viewsets.ModelViewSet):
+    queryset = SupplierReceipt.objects.select_related('supplier', 'school', 'created_by').prefetch_related('items__supply').all().order_by('-expected_date', '-created_at')
+    serializer_class = SupplierReceiptSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        supplier = self.request.query_params.get('supplier')
+        school = self.request.query_params.get('school')
+        status_value = self.request.query_params.get('status')
+        date_from = self.request.query_params.get('date_from')
+        date_to = self.request.query_params.get('date_to')
+        if supplier:
+            queryset = queryset.filter(supplier_id=supplier)
+        if school:
+            queryset = queryset.filter(school_id=school)
+        if status_value:
+            queryset = queryset.filter(status=status_value)
+        if date_from:
+            queryset = queryset.filter(expected_date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(expected_date__lte=date_to)
+        return queryset
+
+    @action(detail=True, methods=['post'])
+    def start_conference(self, request, pk=None):
+        receipt = self.get_object()
+        if receipt.status in [SupplierReceipt.Status.CONFERRED, SupplierReceipt.Status.CANCELLED]:
+            raise ValidationError('Nao e possivel iniciar conferencia para este recebimento.')
+        if receipt.status != SupplierReceipt.Status.IN_CONFERENCE:
+            receipt.status = SupplierReceipt.Status.IN_CONFERENCE
+            receipt.conference_started_at = timezone.now()
+            receipt.save(update_fields=['status', 'conference_started_at', 'updated_at'])
+        return Response(self.get_serializer(receipt).data)
+
+    @action(detail=True, methods=['post'])
+    def submit_conference(self, request, pk=None):
+        payload = SupplierReceiptConferenceInputSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+            receipt = SupplierReceipt.objects.select_for_update().get(id=pk)
+            if receipt.status in [SupplierReceipt.Status.CONFERRED, SupplierReceipt.Status.CANCELLED]:
+                raise ValidationError('Nao e possivel concluir conferencia para este recebimento.')
+
+            receipt_items = {
+                str(item.id): item
+                for item in receipt.items.select_for_update()
+            }
+
+            payload_items = payload.validated_data['items']
+            payload_ids = {str(entry['item_id']) for entry in payload_items}
+            missing_ids = set(receipt_items.keys()) - payload_ids
+            if missing_ids:
+                raise ValidationError('Envie a conferencia de todos os itens do recebimento.')
+
+            for entry in payload_items:
+                item = receipt_items.get(str(entry['item_id']))
+                if not item:
+                    raise ValidationError('Item de conferencia nao pertence ao recebimento.')
+                resolved_supply = item.supply
+                if not resolved_supply:
+                    raw_name = (item.raw_name or '').strip()
+                    category = (item.category or '').strip()
+                    if not raw_name:
+                        raise ValidationError('Item novo sem nome para criar insumo automaticamente.')
+                    if not category:
+                        raise ValidationError(f'Categoria obrigatoria para criar o item "{raw_name}".')
+
+                    resolved_supply = Supply.objects.filter(
+                        name__iexact=raw_name,
+                        category__iexact=category,
+                        unit=item.unit,
+                    ).first()
+                    if not resolved_supply:
+                        resolved_supply = Supply.objects.create(
+                            name=raw_name,
+                            category=category,
+                            unit=item.unit,
+                            min_stock=0,
+                            is_active=True,
+                        )
+                    item.supply_created = resolved_supply
+
+                quantity = entry['received_quantity']
+                item.received_quantity = quantity
+                item.divergence_note = entry.get('note', '')
+                item.save(update_fields=['received_quantity', 'divergence_note', 'supply_created'])
+
+                if receipt.school_id:
+                    school_balance, _ = SchoolStockBalance.objects.select_for_update().get_or_create(
+                        school=receipt.school,
+                        supply=resolved_supply,
+                        defaults={'quantity': 0, 'min_stock': 0},
+                    )
+                    school_balance.quantity += quantity
+                    school_balance.save()
+                else:
+                    balance, _ = StockBalance.objects.select_for_update().get_or_create(
+                        supply=resolved_supply,
+                        defaults={'quantity': 0},
+                    )
+                    balance.quantity += quantity
+                    balance.save(update_fields=['quantity'])
+
+                StockMovement.objects.create(
+                    supply=resolved_supply,
+                    school=receipt.school if receipt.school_id else None,
+                    type=StockMovement.Types.IN,
+                    quantity=quantity,
+                    movement_date=receipt.expected_date,
+                    note=f'Entrada por recebimento de fornecedor {receipt.id}.',
+                    created_by=request.user,
+                )
+
+            now = timezone.now()
+            receipt.status = SupplierReceipt.Status.CONFERRED
+            receipt.conference_started_at = receipt.conference_started_at or now
+            receipt.conference_finished_at = now
+            receipt.sender_signature = payload.validated_data['sender_signature_data']
+            receipt.sender_signed_by = payload.validated_data['sender_signer_name']
+            receipt.receiver_signature = payload.validated_data['receiver_signature_data']
+            receipt.receiver_signed_by = payload.validated_data['receiver_signer_name']
+            receipt.save(update_fields=[
+                'status',
+                'conference_started_at',
+                'conference_finished_at',
+                'sender_signature',
+                'sender_signed_by',
+                'receiver_signature',
+                'receiver_signed_by',
+                'updated_at',
+            ])
+
+        receipt = self.get_object()
+        return Response(self.get_serializer(receipt).data)
 
 
 class StockExportCsvView(viewsets.ViewSet):

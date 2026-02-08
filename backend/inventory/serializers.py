@@ -1,7 +1,19 @@
 from django.db import transaction
 from rest_framework import serializers
 
-from .models import Delivery, DeliveryItem, Notification, Responsible, SchoolStockBalance, Supply, StockBalance, StockMovement
+from .models import (
+    Delivery,
+    DeliveryItem,
+    Notification,
+    Responsible,
+    SchoolStockBalance,
+    Supplier,
+    SupplierReceipt,
+    SupplierReceiptItem,
+    Supply,
+    StockBalance,
+    StockMovement,
+)
 
 
 
@@ -65,6 +77,149 @@ class ResponsibleSerializer(serializers.ModelSerializer):
         model = Responsible
         fields = ['id', 'name', 'phone', 'position', 'is_active', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class SupplierSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Supplier
+        fields = ['id', 'name', 'document', 'contact_name', 'phone', 'email', 'address', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class SupplierReceiptItemSerializer(serializers.ModelSerializer):
+    supply_name = serializers.CharField(source='supply.name', read_only=True)
+    supply_created_name = serializers.CharField(source='supply_created.name', read_only=True)
+
+    class Meta:
+        model = SupplierReceiptItem
+        fields = [
+            'id',
+            'receipt',
+            'supply',
+            'supply_name',
+            'raw_name',
+            'category',
+            'unit',
+            'expected_quantity',
+            'received_quantity',
+            'divergence_note',
+            'supply_created',
+            'supply_created_name',
+            'created_at',
+        ]
+        read_only_fields = ['id', 'receipt', 'supply_name', 'supply_created_name', 'created_at']
+
+    def validate(self, attrs):
+        supply = attrs.get('supply')
+        raw_name = (attrs.get('raw_name') or '').strip()
+        if not supply and not raw_name:
+            raise serializers.ValidationError('Informe um insumo existente ou o nome do item recebido.')
+        if not supply and not (attrs.get('category') or '').strip():
+            raise serializers.ValidationError('Categoria obrigatoria para item novo sem insumo cadastrado.')
+        return attrs
+
+
+class SupplierReceiptSerializer(serializers.ModelSerializer):
+    supplier_name = serializers.CharField(source='supplier.name', read_only=True)
+    school_name = serializers.CharField(source='school.name', read_only=True)
+    items = SupplierReceiptItemSerializer(many=True)
+
+    class Meta:
+        model = SupplierReceipt
+        fields = [
+            'id',
+            'supplier',
+            'supplier_name',
+            'school',
+            'school_name',
+            'expected_date',
+            'status',
+            'notes',
+            'sender_signature',
+            'sender_signed_by',
+            'receiver_signature',
+            'receiver_signed_by',
+            'conference_started_at',
+            'conference_finished_at',
+            'created_by',
+            'created_at',
+            'updated_at',
+            'items',
+        ]
+        read_only_fields = ['id', 'created_by', 'created_at', 'updated_at']
+
+    def validate_items(self, items):
+        if not items:
+            raise serializers.ValidationError('Informe pelo menos um item para o recebimento.')
+        return items
+
+    def create(self, validated_data):
+        items_data = validated_data.pop('items', [])
+        user = self.context['request'].user
+        with transaction.atomic():
+            receipt = SupplierReceipt.objects.create(created_by=user, **validated_data)
+            SupplierReceiptItem.objects.bulk_create([
+                SupplierReceiptItem(receipt=receipt, **item_data) for item_data in items_data
+            ])
+        return receipt
+
+    def update(self, instance, validated_data):
+        items_data = validated_data.pop('items', None)
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+
+        with transaction.atomic():
+            instance.save()
+            if items_data is not None:
+                SupplierReceiptItem.objects.filter(receipt=instance).delete()
+                SupplierReceiptItem.objects.bulk_create([
+                    SupplierReceiptItem(receipt=instance, **item_data) for item_data in items_data
+                ])
+        return instance
+
+
+class SupplierReceiptConferenceItemInputSerializer(serializers.Serializer):
+    item_id = serializers.UUIDField()
+    received_quantity = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0)
+    note = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+
+
+class SupplierReceiptConferenceInputSerializer(serializers.Serializer):
+    items = SupplierReceiptConferenceItemInputSerializer(many=True)
+    sender_signature_data = serializers.CharField()
+    sender_signer_name = serializers.CharField()
+    receiver_signature_data = serializers.CharField()
+    receiver_signer_name = serializers.CharField()
+
+    def validate_items(self, items):
+        if not items:
+            raise serializers.ValidationError('Informe os itens conferidos.')
+        ids = [str(item['item_id']) for item in items]
+        if len(ids) != len(set(ids)):
+            raise serializers.ValidationError('Itens duplicados na conferencia.')
+        return items
+
+    def validate_sender_signature_data(self, value):
+        if not value or not value.startswith('data:image/'):
+            raise serializers.ValidationError('Assinatura do entregador invalida.')
+        return value
+
+    def validate_receiver_signature_data(self, value):
+        if not value or not value.startswith('data:image/'):
+            raise serializers.ValidationError('Assinatura do recebedor invalida.')
+        return value
+
+    def validate_sender_signer_name(self, value):
+        cleaned = value.strip()
+        if not cleaned:
+            raise serializers.ValidationError('Nome do entregador obrigatorio.')
+        return cleaned
+
+    def validate_receiver_signer_name(self, value):
+        cleaned = value.strip()
+        if not cleaned:
+            raise serializers.ValidationError('Nome do recebedor obrigatorio.')
+        return cleaned
 
 
 class StockMovementSerializer(serializers.ModelSerializer):

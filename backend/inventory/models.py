@@ -164,3 +164,76 @@ class Notification(models.Model):
 
     def __str__(self) -> str:
         return f"{self.title} - {self.created_at}"
+
+
+class Supplier(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=255)
+    document = models.CharField(max_length=32, blank=True)
+    contact_name = models.CharField(max_length=160, blank=True)
+    phone = models.CharField(max_length=40, blank=True)
+    email = models.EmailField(blank=True)
+    address = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class SupplierReceipt(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = 'DRAFT', 'Rascunho'
+        EXPECTED = 'EXPECTED', 'Aguardando Entrega'
+        IN_CONFERENCE = 'IN_CONFERENCE', 'Em Conferencia'
+        CONFERRED = 'CONFERRED', 'Conferida'
+        CANCELLED = 'CANCELLED', 'Cancelada'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name='receipts')
+    school = models.ForeignKey(School, on_delete=models.SET_NULL, related_name='supplier_receipts', null=True, blank=True)
+    expected_date = models.DateField()
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
+    notes = models.TextField(blank=True)
+    sender_signature = models.TextField(blank=True)
+    sender_signed_by = models.CharField(max_length=255, blank=True)
+    receiver_signature = models.TextField(blank=True)
+    receiver_signed_by = models.CharField(max_length=255, blank=True)
+    conference_started_at = models.DateTimeField(blank=True, null=True)
+    conference_finished_at = models.DateTimeField(blank=True, null=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='created_supplier_receipts')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-expected_date', '-created_at']
+
+    def __str__(self) -> str:
+        return f"Recebimento {self.supplier.name} - {self.expected_date}"
+
+
+class SupplierReceiptItem(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    receipt = models.ForeignKey(SupplierReceipt, on_delete=models.CASCADE, related_name='items')
+    supply = models.ForeignKey(Supply, on_delete=models.SET_NULL, related_name='supplier_receipt_items', null=True, blank=True)
+    raw_name = models.CharField(max_length=255, blank=True)
+    category = models.CharField(max_length=100, blank=True)
+    unit = models.CharField(max_length=10, choices=Supply.Units.choices)
+    expected_quantity = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
+    received_quantity = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True, validators=[MinValueValidator(0)])
+    divergence_note = models.TextField(blank=True)
+    supply_created = models.ForeignKey(Supply, on_delete=models.SET_NULL, related_name='created_from_supplier_receipt_items', null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['receipt', 'supply'], condition=models.Q(supply__isnull=False), name='unique_supply_per_supplier_receipt'),
+        ]
+
+    def __str__(self) -> str:
+        supply_name = self.supply.name if self.supply else self.raw_name
+        return f"{self.receipt_id} - {supply_name}"

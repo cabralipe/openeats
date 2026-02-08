@@ -11,6 +11,8 @@ from inventory.views import (
     NotificationViewSet,
     ResponsibleViewSet,
     SchoolStockConfigViewSet,
+    SupplierReceiptViewSet,
+    SupplierViewSet,
     SupplyViewSet,
     StockViewSet,
     StockMovementViewSet,
@@ -31,6 +33,8 @@ router.register(r'supplies', SupplyViewSet, basename='supply')
 router.register(r'stock/movements', StockMovementViewSet, basename='stock-movement')
 router.register(r'stock', StockViewSet, basename='stock')
 router.register(r'responsibles', ResponsibleViewSet, basename='responsible')
+router.register(r'suppliers', SupplierViewSet, basename='supplier')
+router.register(r'supplier-receipts', SupplierReceiptViewSet, basename='supplier-receipt')
 router.register(r'deliveries', DeliveryViewSet, basename='delivery')
 router.register(r'menus', MenuViewSet, basename='menu')
 router.register(r'exports/stock', StockExportCsvView, basename='export-stock')

@@ -1,4 +1,5 @@
 import os
+import importlib.util
 from pathlib import Path
 
 import environ
@@ -44,7 +45,6 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'drf_spectacular',
-    'corsheaders',
     'accounts',
     'schools',
     'inventory',
@@ -52,10 +52,11 @@ INSTALLED_APPS = [
     'public',
 ]
 
+if importlib.util.find_spec('corsheaders'):
+    INSTALLED_APPS.insert(INSTALLED_APPS.index('accounts'), 'corsheaders')
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -63,6 +64,13 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+HAS_WHITENOISE = importlib.util.find_spec('whitenoise') is not None
+if HAS_WHITENOISE:
+    MIDDLEWARE.insert(MIDDLEWARE.index('django.contrib.sessions.middleware.SessionMiddleware'), 'whitenoise.middleware.WhiteNoiseMiddleware')
+
+if importlib.util.find_spec('corsheaders'):
+    MIDDLEWARE.insert(MIDDLEWARE.index('django.contrib.sessions.middleware.SessionMiddleware'), 'corsheaders.middleware.CorsMiddleware')
 
 ROOT_URLCONF = 'merenda_semed.urls'
 
@@ -149,4 +157,5 @@ if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     CSRF_COOKIE_SAMESITE = 'Lax'
-    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+    if HAS_WHITENOISE:
+        STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
