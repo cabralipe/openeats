@@ -10,7 +10,7 @@ const PublicDeliveryConference: React.FC = () => {
   const deliveryId = params.get('delivery_id') || '';
 
   const [delivery, setDelivery] = useState<any | null>(null);
-  const [form, setForm] = useState<Record<string, { received_quantity: string; note: string }>>({});
+  const [form, setForm] = useState<Record<string, { received_quantity: string; note: string; confirmed: boolean }>>({});
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
@@ -19,11 +19,19 @@ const PublicDeliveryConference: React.FC = () => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
   const [signerName, setSignerName] = useState('');
+  const [currentStep, setCurrentStep] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const items = delivery?.items || [];
+  const totalSteps = items.length + 1; // items + signature step
+  const isSignatureStep = currentStep === items.length;
+  const isComplete = delivery?.status === 'CONFERRED';
+  const confirmedCount = Object.values(form).filter((f) => f.confirmed).length;
+  const progress = isComplete ? 100 : Math.round((confirmedCount / items.length) * 100);
 
   useEffect(() => {
     if (!slug || !token || !deliveryId) {
-      setError('Link de conferencia invalido.');
+      setError('Link de conferência inválido.');
       setLoading(false);
       return;
     }
@@ -32,51 +40,76 @@ const PublicDeliveryConference: React.FC = () => {
     getPublicDeliveryCurrent(slug, token, deliveryId)
       .then((data) => {
         setDelivery(data);
-        const nextForm: Record<string, { received_quantity: string; note: string }> = {};
+        const nextForm: Record<string, { received_quantity: string; note: string; confirmed: boolean }> = {};
         (data.items || []).forEach((item: any) => {
           nextForm[item.id] = {
             received_quantity: item.received_quantity ?? item.planned_quantity,
             note: item.divergence_note || '',
+            confirmed: data.status === 'CONFERRED',
           };
         });
         setForm(nextForm);
         setSignatureData(data.conference_signature || '');
         setHasSignature(!!data.conference_signature);
         setSignerName(data.conference_signed_by || '');
+        if (data.status === 'CONFERRED') {
+          setCurrentStep(data.items?.length || 0);
+        }
       })
-      .catch(() => setError('Nao foi possivel carregar a entrega.'))
+      .catch(() => setError('Não foi possível carregar a entrega.'))
       .finally(() => setLoading(false));
   }, [slug, token, deliveryId]);
 
   const updateItem = (itemId: string, field: 'received_quantity' | 'note', value: string) => {
     setForm((prev) => ({
       ...prev,
-      [itemId]: {
-        ...prev[itemId],
-        [field]: value,
-      },
+      [itemId]: { ...prev[itemId], [field]: value },
     }));
   };
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const confirmCurrentItem = () => {
+    const item = items[currentStep];
+    if (!item) return;
+
+    const qty = Number(form[item.id]?.received_quantity);
+    if (isNaN(qty) || qty < 0) {
+      setError('Informe uma quantidade válida.');
+      return;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      [item.id]: { ...prev[item.id], confirmed: true },
+    }));
+    setError('');
+    setCurrentStep((prev) => prev + 1);
+  };
+
+  const goBack = () => {
+    if (currentStep > 0) {
+      setCurrentStep((prev) => prev - 1);
+    }
+  };
+
+  const handleSubmit = async () => {
     if (!delivery) return;
+
+    const canvas = canvasRef.current;
+    const signature = delivery?.status === 'CONFERRED' ? signatureData : canvas?.toDataURL('image/png') || '';
+
+    if (!signature || !hasSignature) {
+      setError('Assinatura obrigatória.');
+      return;
+    }
+    if (!signerName.trim()) {
+      setError('Informe seu nome.');
+      return;
+    }
+
     setSending(true);
     setError('');
-    setSuccess('');
+
     try {
-      const canvas = canvasRef.current;
-      const signature = delivery?.status === 'CONFERRED' ? signatureData : canvas?.toDataURL('image/png') || '';
-      if (!signature || !hasSignature) {
-        setError('Assinatura obrigatoria.');
-        setSending(false);
-        return;
-      }
-      if (!signerName.trim()) {
-        setError('Informe o nome de quem assinou.');
-        setSending(false);
-        return;
-      }
       const payload = {
         items: delivery.items.map((item: any) => ({
           item_id: item.id,
@@ -90,23 +123,17 @@ const PublicDeliveryConference: React.FC = () => {
       setDelivery(data);
       setSignatureData(data.conference_signature || signature);
       setHasSignature(true);
-      setSuccess('Conferencia enviada com sucesso.');
+      setSuccess('Conferência concluída com sucesso!');
     } catch {
-      setError('Nao foi possivel enviar a conferencia.');
+      setError('Não foi possível enviar a conferência.');
     } finally {
       setSending(false);
     }
   };
 
-  if (loading) {
-    return <div className="p-6 text-sm text-slate-500">Carregando entrega...</div>;
-  }
-
   const startDrawing = (event: React.MouseEvent | React.TouchEvent) => {
-    if (delivery?.status === 'CONFERRED') return;
-    if ('touches' in event) {
-      event.preventDefault();
-    }
+    if (isComplete) return;
+    if ('touches' in event) event.preventDefault();
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -120,10 +147,8 @@ const PublicDeliveryConference: React.FC = () => {
   };
 
   const draw = (event: React.MouseEvent | React.TouchEvent) => {
-    if (!isDrawing || delivery?.status === 'CONFERRED') return;
-    if ('touches' in event) {
-      event.preventDefault();
-    }
+    if (!isDrawing || isComplete) return;
+    if ('touches' in event) event.preventDefault();
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -139,10 +164,7 @@ const PublicDeliveryConference: React.FC = () => {
     setHasSignature(true);
   };
 
-  const stopDrawing = () => {
-    if (!isDrawing) return;
-    setIsDrawing(false);
-  };
+  const stopDrawing = () => setIsDrawing(false);
 
   const clearSignature = () => {
     const canvas = canvasRef.current;
@@ -153,100 +175,281 @@ const PublicDeliveryConference: React.FC = () => {
     setHasSignature(false);
   };
 
-  return (
-    <div className="min-h-screen bg-slate-50 p-4 pb-12">
-      <div className="mx-auto max-w-3xl bg-white rounded-xl border border-slate-200 p-4">
-        <h1 className="text-xl font-bold">Conferencia de entrega</h1>
-        {delivery && (
-          <p className="text-sm text-slate-600 mt-1">
-            {delivery.school_name} • Data prevista: {delivery.delivery_date}
-          </p>
-        )}
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary-500 to-secondary-600 flex items-center justify-center p-4">
+        <div className="text-center text-white">
+          <div className="w-16 h-16 border-4 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-lg font-medium">Carregando entrega...</p>
+        </div>
+      </div>
+    );
+  }
 
-        <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-3">
-          {(delivery?.items || []).map((item: any) => (
-            <div key={item.id} className="rounded-lg border border-slate-200 p-3">
-              <p className="font-semibold">{item.supply_name}</p>
-              <p className="text-xs text-slate-500">Previsto: {item.planned_quantity} {item.supply_unit}</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={form[item.id]?.received_quantity || ''}
-                  onChange={(e) => updateItem(item.id, 'received_quantity', e.target.value)}
-                  className="h-10 rounded-lg border border-slate-200 px-3"
-                  placeholder="Quantidade recebida"
-                  disabled={delivery?.status === 'CONFERRED'}
-                />
-                <input
-                  value={form[item.id]?.note || ''}
-                  onChange={(e) => updateItem(item.id, 'note', e.target.value)}
-                  className="h-10 rounded-lg border border-slate-200 px-3"
-                  placeholder="Observacao (opcional)"
-                  disabled={delivery?.status === 'CONFERRED'}
-                />
+  if (error && !delivery) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-danger-500 to-danger-700 flex items-center justify-center p-4">
+        <div className="text-center text-white">
+          <span className="material-symbols-outlined text-6xl mb-4">error</span>
+          <p className="text-xl font-bold mb-2">Erro</p>
+          <p>{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const currentItem = items[currentStep];
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-primary-900 to-secondary-900 flex flex-col">
+      {/* Header */}
+      <header className="bg-white/10 backdrop-blur-xl border-b border-white/10 p-4 safe-top">
+        <div className="max-w-lg mx-auto">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+              <span className="material-symbols-outlined text-white">local_shipping</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-white font-bold truncate">{delivery?.school_name}</h1>
+              <p className="text-white/60 text-sm">{delivery?.delivery_date}</p>
+            </div>
+          </div>
+
+          {/* Progress bar */}
+          <div className="relative h-2 bg-white/20 rounded-full overflow-hidden">
+            <div
+              className="absolute inset-y-0 left-0 bg-gradient-to-r from-success-400 to-success-500 rounded-full transition-all duration-500"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <div className="flex justify-between mt-2 text-xs text-white/60">
+            <span>{confirmedCount} de {items.length} itens conferidos</span>
+            <span>{progress}%</span>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="flex-1 flex items-center justify-center p-4">
+        <div className="w-full max-w-lg">
+          {/* Success State */}
+          {isComplete && success ? (
+            <div className="bg-white rounded-3xl shadow-2xl p-8 text-center animate-scale-in">
+              <div className="w-20 h-20 rounded-full bg-success-100 flex items-center justify-center mx-auto mb-6">
+                <span className="material-symbols-outlined text-success-500 text-4xl">check_circle</span>
+              </div>
+              <h2 className="text-2xl font-bold text-slate-900 mb-2">Conferência Concluída!</h2>
+              <p className="text-slate-500 mb-6">Todos os itens foram conferidos e a entrega foi registrada.</p>
+
+              {signatureData && (
+                <div className="border border-slate-200 rounded-xl p-4 mb-4">
+                  <p className="text-xs text-slate-500 mb-2">Assinado por: {signerName}</p>
+                  <img src={signatureData} alt="Assinatura" className="max-w-full rounded-lg" />
+                </div>
+              )}
+
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-success-100 text-success-700 font-medium">
+                <span className="material-symbols-outlined text-sm">verified</span>
+                Entrega Conferida
               </div>
             </div>
-          ))}
+          ) : isSignatureStep ? (
+            /* Signature Step */
+            <div className="bg-white rounded-3xl shadow-2xl overflow-hidden animate-fade-in">
+              {/* Step Header */}
+              <div className="bg-gradient-to-r from-secondary-500 to-primary-500 p-6 text-white text-center">
+                <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center mx-auto mb-4">
+                  <span className="material-symbols-outlined text-3xl">draw</span>
+                </div>
+                <h2 className="text-xl font-bold">Última Etapa!</h2>
+                <p className="text-white/80 text-sm mt-1">Assine para confirmar o recebimento</p>
+              </div>
 
-          {delivery?.status !== 'CONFERRED' && (
-            <>
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Nome de quem recebeu</span>
-                <input
-                  value={signerName}
-                  onChange={(e) => setSignerName(e.target.value)}
-                  className="h-10 rounded-lg border border-slate-200 px-3"
-                  placeholder="Nome completo"
-                />
-              </label>
-              <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-sm font-semibold">Assinatura do responsavel</p>
-                <p className="text-xs text-slate-500 mb-2">Desenhe no campo abaixo para validar o recebimento.</p>
-                <div className="border border-slate-200 rounded-lg overflow-hidden bg-white">
-                  <canvas
-                    ref={canvasRef}
-                    width={600}
-                    height={200}
-                    onMouseDown={startDrawing}
-                    onMouseMove={draw}
-                    onMouseUp={stopDrawing}
-                    onMouseLeave={stopDrawing}
-                    onTouchStart={startDrawing}
-                    onTouchMove={draw}
-                    onTouchEnd={stopDrawing}
-                    className="w-full h-40 touch-none"
+              <div className="p-6 space-y-4">
+                {/* Signer Name */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Seu nome completo</label>
+                  <input
+                    value={signerName}
+                    onChange={(e) => setSignerName(e.target.value)}
+                    className="input"
+                    placeholder="Digite seu nome"
                   />
                 </div>
-                <button type="button" onClick={clearSignature} className="mt-2 text-xs text-slate-500 underline">
-                  Limpar assinatura
-                </button>
-              </div>
-              <button disabled={sending} type="submit" className="h-11 rounded-lg bg-primary text-white font-bold disabled:opacity-60">
-                {sending ? 'Enviando...' : 'Enviar conferencia'}
-              </button>
-            </>
-          )}
-        </form>
 
-        {delivery?.status === 'CONFERRED' && (
-          <div className="mt-3">
-            <p className="text-green-600 text-sm">Conferencia ja enviada para a SEMED.</p>
-            {signatureData && (
-              <div className="mt-2">
-                {signerName && (
-                  <p className="text-xs text-slate-500 mb-1">Assinada por: {signerName}</p>
+                {/* Signature Canvas */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Assinatura</label>
+                  <div className="border-2 border-dashed border-slate-300 rounded-xl overflow-hidden bg-slate-50">
+                    <canvas
+                      ref={canvasRef}
+                      width={400}
+                      height={150}
+                      onMouseDown={startDrawing}
+                      onMouseMove={draw}
+                      onMouseUp={stopDrawing}
+                      onMouseLeave={stopDrawing}
+                      onTouchStart={startDrawing}
+                      onTouchMove={draw}
+                      onTouchEnd={stopDrawing}
+                      className="w-full h-36 touch-none cursor-crosshair"
+                    />
+                  </div>
+                  <button type="button" onClick={clearSignature} className="text-sm text-slate-500 hover:text-slate-700">
+                    <span className="material-symbols-outlined text-sm align-middle mr-1">refresh</span>
+                    Limpar assinatura
+                  </button>
+                </div>
+
+                {error && (
+                  <div className="p-3 rounded-xl bg-danger-50 text-danger-600 text-sm flex items-center gap-2">
+                    <span className="material-symbols-outlined text-lg">error</span>
+                    {error}
+                  </div>
                 )}
-                <p className="text-xs text-slate-500 mb-1">Assinatura registrada</p>
-                <img src={signatureData} alt="Assinatura" className="max-w-full border border-slate-200 rounded-lg" />
+
+                {/* Actions */}
+                <div className="flex gap-3 pt-2">
+                  <button onClick={goBack} className="btn-secondary flex-1">
+                    <span className="material-symbols-outlined">arrow_back</span>
+                    Voltar
+                  </button>
+                  <button
+                    onClick={handleSubmit}
+                    disabled={sending}
+                    className="btn flex-1 bg-gradient-to-r from-success-500 to-success-600 text-white shadow-lg shadow-success-500/30"
+                  >
+                    {sending ? (
+                      <>
+                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                        Enviando...
+                      </>
+                    ) : (
+                      <>
+                        <span className="material-symbols-outlined">check</span>
+                        Confirmar Tudo
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
-            )}
-          </div>
-        )}
-        {error && <p className="text-red-600 text-sm mt-3">{error}</p>}
-        {success && <p className="text-green-600 text-sm mt-3">{success}</p>}
-      </div>
+            </div>
+          ) : currentItem ? (
+            /* Item Card */
+            <div className="bg-white rounded-3xl shadow-2xl overflow-hidden animate-fade-in" key={currentItem.id}>
+              {/* Step Header */}
+              <div className="bg-gradient-to-r from-primary-500 to-secondary-500 p-6 text-white">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="px-3 py-1 rounded-full bg-white/20 text-sm font-medium">
+                    Item {currentStep + 1} de {items.length}
+                  </span>
+                  {form[currentItem.id]?.confirmed && (
+                    <span className="material-symbols-outlined text-success-300">check_circle</span>
+                  )}
+                </div>
+                <h2 className="text-2xl font-bold">{currentItem.supply_name}</h2>
+              </div>
+
+              {/* Item Details */}
+              <div className="p-6 space-y-4">
+                {/* Expected Quantity */}
+                <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-100">
+                  <span className="text-slate-600">Quantidade prevista</span>
+                  <span className="text-2xl font-bold text-slate-900">
+                    {currentItem.planned_quantity} <span className="text-base font-normal text-slate-500">{currentItem.supply_unit}</span>
+                  </span>
+                </div>
+
+                {/* Received Quantity Input */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Quantidade recebida</label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={form[currentItem.id]?.received_quantity || ''}
+                      onChange={(e) => updateItem(currentItem.id, 'received_quantity', e.target.value)}
+                      className="input text-2xl font-bold text-center py-4"
+                      placeholder="0"
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400">{currentItem.supply_unit}</span>
+                  </div>
+                </div>
+
+                {/* Divergence Check */}
+                {Number(form[currentItem.id]?.received_quantity) !== currentItem.planned_quantity && (
+                  <div className="p-4 rounded-2xl bg-warning-50 border border-warning-200">
+                    <div className="flex items-start gap-3">
+                      <span className="material-symbols-outlined text-warning-500">warning</span>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-warning-700">Quantidade diferente da prevista</p>
+                        <input
+                          value={form[currentItem.id]?.note || ''}
+                          onChange={(e) => updateItem(currentItem.id, 'note', e.target.value)}
+                          className="input mt-2 text-sm"
+                          placeholder="Motivo da divergência (opcional)"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {error && (
+                  <div className="p-3 rounded-xl bg-danger-50 text-danger-600 text-sm flex items-center gap-2">
+                    <span className="material-symbols-outlined text-lg">error</span>
+                    {error}
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex gap-3 pt-2">
+                  {currentStep > 0 && (
+                    <button onClick={goBack} className="btn-secondary">
+                      <span className="material-symbols-outlined">arrow_back</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={confirmCurrentItem}
+                    className="btn-primary flex-1 h-14 text-base shadow-lg shadow-primary-500/30"
+                  >
+                    <span className="material-symbols-outlined">check</span>
+                    Confirmar e Avançar
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {/* Step Indicators */}
+          {!isComplete && (
+            <div className="flex justify-center gap-2 mt-6">
+              {items.map((_: any, index: number) => (
+                <button
+                  key={index}
+                  onClick={() => form[items[index].id]?.confirmed || index <= currentStep ? setCurrentStep(index) : null}
+                  className={`w-3 h-3 rounded-full transition-all ${index === currentStep
+                      ? 'w-8 bg-white'
+                      : form[items[index].id]?.confirmed
+                        ? 'bg-success-400'
+                        : 'bg-white/30'
+                    }`}
+                />
+              ))}
+              <button
+                onClick={() => confirmedCount === items.length ? setCurrentStep(items.length) : null}
+                className={`w-3 h-3 rounded-full transition-all ${isSignatureStep ? 'w-8 bg-white' : confirmedCount === items.length ? 'bg-white/50' : 'bg-white/30'
+                  }`}
+              />
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="bg-white/5 backdrop-blur-xl border-t border-white/10 p-4 text-center">
+        <p className="text-white/40 text-xs">Merenda SEMED • Conferência de Entrega</p>
+      </footer>
     </div>
   );
 };

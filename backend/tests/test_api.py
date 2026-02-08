@@ -145,3 +145,6 @@ def test_public_delivery_conference_submission(api_client, admin_user):
     item.refresh_from_db()
     assert float(item.received_quantity) == 8.0
     assert item.divergence_note == 'faltou 2kg'
+
+    balance = StockBalance.objects.get(supply=supply)
+    assert float(balance.quantity) == 32.0

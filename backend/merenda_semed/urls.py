@@ -12,6 +12,8 @@ from inventory.views import (
     StockViewSet,
     StockMovementViewSet,
     StockExportCsvView,
+    StockExportPdfView,
+    StockExportXlsxView,
     DeliveryExportPdfView,
     DeliveryExportXlsxView,
     ConsumptionExportPdfView,
@@ -28,12 +30,15 @@ router.register(r'stock', StockViewSet, basename='stock')
 router.register(r'deliveries', DeliveryViewSet, basename='delivery')
 router.register(r'menus', MenuViewSet, basename='menu')
 router.register(r'exports/stock', StockExportCsvView, basename='export-stock')
+router.register(r'exports/stock/pdf', StockExportPdfView, basename='export-stock-pdf')
+router.register(r'exports/stock/xlsx', StockExportXlsxView, basename='export-stock-xlsx')
 router.register(r'exports/menus', MenuExportCsvView, basename='export-menus')
 router.register(r'exports/menus/pdf', MenuExportPdfView, basename='export-menus-pdf')
 router.register(r'exports/deliveries/pdf', DeliveryExportPdfView, basename='export-deliveries-pdf')
 router.register(r'exports/deliveries/xlsx', DeliveryExportXlsxView, basename='export-deliveries-xlsx')
 router.register(r'exports/consumption/pdf', ConsumptionExportPdfView, basename='export-consumption-pdf')
 router.register(r'exports/consumption/xlsx', ConsumptionExportXlsxView, basename='export-consumption-xlsx')
+
 
 urlpatterns = [
     path('admin/', admin.site.urls),

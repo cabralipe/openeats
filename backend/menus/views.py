@@ -12,6 +12,11 @@ from .models import Menu, MenuItem
 from .serializers import MenuItemBulkSerializer, MenuItemSerializer, MenuSerializer
 
 
+def _pdf_text(value):
+    text = '' if value is None else str(value)
+    return text.encode('latin-1', 'replace').decode('latin-1')
+
+
 class MenuViewSet(viewsets.ModelViewSet):
     queryset = Menu.objects.select_related('school').prefetch_related('items').all().order_by('-week_start')
     serializer_class = MenuSerializer
@@ -110,10 +115,10 @@ class MenuExportPdfView(viewsets.ViewSet):
         width, height = A4
         y = height - 40
         pdf.setFont('Helvetica-Bold', 14)
-        pdf.drawString(40, y, f"Cardapio - {menu.school.name}")
+        pdf.drawString(40, y, _pdf_text(f"Cardapio - {menu.school.name}"))
         y -= 20
         pdf.setFont('Helvetica', 10)
-        pdf.drawString(40, y, f"Semana: {menu.week_start} a {menu.week_end}")
+        pdf.drawString(40, y, _pdf_text(f"Semana: {menu.week_start} a {menu.week_end}"))
         y -= 20
         items = menu.items.all().order_by('day_of_week', 'meal_type')
         for item in items:
@@ -122,7 +127,7 @@ class MenuExportPdfView(viewsets.ViewSet):
                 y = height - 40
             title = item.meal_name or item.meal_type
             portion = f" ({item.portion_text})" if item.portion_text else ""
-            pdf.drawString(40, y, f"{item.day_of_week} - {title}{portion}: {item.description}")
+            pdf.drawString(40, y, _pdf_text(f"{item.day_of_week} - {title}{portion}: {item.description}"))
             y -= 16
         pdf.showPage()
         pdf.save()

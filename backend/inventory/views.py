@@ -18,6 +18,11 @@ from .models import Delivery, DeliveryItem, Supply, StockBalance, StockMovement
 from .serializers import DeliverySerializer, SupplySerializer, StockBalanceSerializer, StockMovementSerializer
 
 
+def _pdf_text(value):
+    text = '' if value is None else str(value)
+    return text.encode('latin-1', 'replace').decode('latin-1')
+
+
 class SupplyViewSet(viewsets.ModelViewSet):
     queryset = Supply.objects.all().order_by('name')
     serializer_class = SupplySerializer
@@ -96,16 +101,198 @@ class StockExportCsvView(viewsets.ViewSet):
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename=\"stock.csv\"'
         writer = csv.writer(response)
-        writer.writerow(['Insumo', 'Categoria', 'Unidade', 'Quantidade', 'Minimo', 'Baixo'])
+        writer.writerow(['Insumo', 'Categoria', 'Unidade', 'Quantidade', 'Minimo', 'Status', 'Diferenca'])
         for balance in queryset:
+            diff = balance.quantity - balance.supply.min_stock
+            if balance.quantity < balance.supply.min_stock:
+                status = 'BAIXO'
+            elif balance.quantity >= balance.supply.min_stock * 2:
+                status = 'ALTO'
+            else:
+                status = 'NORMAL'
             writer.writerow([
                 balance.supply.name,
                 balance.supply.category,
                 balance.supply.unit,
                 balance.quantity,
                 balance.supply.min_stock,
-                'sim' if balance.quantity < balance.supply.min_stock else 'nao',
+                status,
+                diff,
             ])
+        return response
+
+
+class StockExportPdfView(viewsets.ViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def list(self, request):
+        queryset = StockBalance.objects.select_related('supply').all().order_by('supply__category', 'supply__name')
+        
+        # Group by category and status
+        low_stock = []
+        normal_stock = []
+        high_stock = []
+        
+        for balance in queryset:
+            item = {
+                'name': balance.supply.name,
+                'category': balance.supply.category,
+                'unit': balance.supply.unit,
+                'quantity': float(balance.quantity),
+                'min_stock': float(balance.supply.min_stock),
+            }
+            if balance.quantity < balance.supply.min_stock:
+                low_stock.append(item)
+            elif balance.quantity >= balance.supply.min_stock * 2:
+                high_stock.append(item)
+            else:
+                normal_stock.append(item)
+
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = 'attachment; filename=\"stock_report.pdf\"'
+        pdf = canvas.Canvas(response, pagesize=A4)
+        width, height = A4
+        
+        def draw_header(y_pos, title):
+            pdf.setFont('Helvetica-Bold', 14)
+            pdf.drawString(40, y_pos, _pdf_text(title))
+            return y_pos - 20
+        
+        def draw_section(y_pos, section_title, items, color):
+            if not items:
+                return y_pos
+            pdf.setFont('Helvetica-Bold', 12)
+            pdf.setFillColorRGB(*color)
+            pdf.drawString(40, y_pos, _pdf_text(f'{section_title} ({len(items)} itens)'))
+            pdf.setFillColorRGB(0, 0, 0)
+            y_pos -= 18
+            pdf.setFont('Helvetica', 9)
+            for item in items:
+                if y_pos < 60:
+                    pdf.showPage()
+                    y_pos = height - 40
+                    pdf.setFont('Helvetica', 9)
+                line = f"  {item['name']} ({item['category']}) - {item['quantity']:.2f} {item['unit']} (min: {item['min_stock']:.2f})"
+                pdf.drawString(40, y_pos, _pdf_text(line[:100]))
+                y_pos -= 14
+            return y_pos - 10
+
+        y = height - 40
+        y = draw_header(y, 'Relatorio de Estoque Detalhado')
+        pdf.setFont('Helvetica', 9)
+        pdf.drawString(40, y, _pdf_text(f"Gerado em: {timezone.now().strftime('%Y-%m-%d %H:%M')}"))
+        y -= 10
+        total_items = len(low_stock) + len(normal_stock) + len(high_stock)
+        pdf.drawString(40, y, _pdf_text(f"Total de insumos: {total_items}"))
+        y -= 30
+
+        # Low stock (red)
+        y = draw_section(y, 'ESTOQUE BAIXO - Requer Reposicao', low_stock, (0.8, 0.2, 0.2))
+        
+        # Normal stock (blue)
+        y = draw_section(y, 'ESTOQUE NORMAL', normal_stock, (0.2, 0.4, 0.8))
+        
+        # High stock (green)
+        y = draw_section(y, 'ESTOQUE ALTO', high_stock, (0.2, 0.6, 0.3))
+
+        pdf.showPage()
+        pdf.save()
+        return response
+
+
+class StockExportXlsxView(viewsets.ViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def list(self, request):
+        queryset = StockBalance.objects.select_related('supply').all().order_by('supply__category', 'supply__name')
+
+        workbook = Workbook()
+        
+        # Summary sheet
+        summary_sheet = workbook.active
+        summary_sheet.title = 'Resumo'
+        summary_sheet.append(['Categoria', 'Total Itens', 'Itens Baixos', 'Itens Normais', 'Itens Altos'])
+        
+        # All items sheet
+        items_sheet = workbook.create_sheet(title='Todos os Itens')
+        items_sheet.append(['Insumo', 'Categoria', 'Unidade', 'Quantidade', 'Estoque Minimo', 'Status', 'Diferenca'])
+        
+        # Low stock sheet
+        low_sheet = workbook.create_sheet(title='Estoque Baixo')
+        low_sheet.append(['Insumo', 'Categoria', 'Unidade', 'Quantidade', 'Estoque Minimo', 'Falta'])
+        
+        # Normal stock sheet
+        normal_sheet = workbook.create_sheet(title='Estoque Normal')
+        normal_sheet.append(['Insumo', 'Categoria', 'Unidade', 'Quantidade', 'Estoque Minimo'])
+        
+        # High stock sheet
+        high_sheet = workbook.create_sheet(title='Estoque Alto')
+        high_sheet.append(['Insumo', 'Categoria', 'Unidade', 'Quantidade', 'Estoque Minimo', 'Excesso'])
+
+        category_stats = {}
+        
+        for balance in queryset:
+            cat = balance.supply.category or 'Sem Categoria'
+            if cat not in category_stats:
+                category_stats[cat] = {'total': 0, 'low': 0, 'normal': 0, 'high': 0}
+            
+            category_stats[cat]['total'] += 1
+            diff = float(balance.quantity) - float(balance.supply.min_stock)
+            
+            if balance.quantity < balance.supply.min_stock:
+                status = 'BAIXO'
+                category_stats[cat]['low'] += 1
+                low_sheet.append([
+                    balance.supply.name,
+                    cat,
+                    balance.supply.unit,
+                    float(balance.quantity),
+                    float(balance.supply.min_stock),
+                    abs(diff),
+                ])
+            elif balance.quantity >= balance.supply.min_stock * 2:
+                status = 'ALTO'
+                category_stats[cat]['high'] += 1
+                high_sheet.append([
+                    balance.supply.name,
+                    cat,
+                    balance.supply.unit,
+                    float(balance.quantity),
+                    float(balance.supply.min_stock),
+                    diff,
+                ])
+            else:
+                status = 'NORMAL'
+                category_stats[cat]['normal'] += 1
+                normal_sheet.append([
+                    balance.supply.name,
+                    cat,
+                    balance.supply.unit,
+                    float(balance.quantity),
+                    float(balance.supply.min_stock),
+                ])
+            
+            items_sheet.append([
+                balance.supply.name,
+                cat,
+                balance.supply.unit,
+                float(balance.quantity),
+                float(balance.supply.min_stock),
+                status,
+                diff,
+            ])
+        
+        for cat, stats in category_stats.items():
+            summary_sheet.append([cat, stats['total'], stats['low'], stats['normal'], stats['high']])
+
+        buffer = io.BytesIO()
+        workbook.save(buffer)
+        buffer.seek(0)
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        response['Content-Disposition'] = 'attachment; filename=\"stock_report.xlsx\"'
         return response
 
 
@@ -133,10 +320,10 @@ class DeliveryExportPdfView(viewsets.ViewSet):
         width, height = A4
         y = height - 40
         pdf.setFont('Helvetica-Bold', 14)
-        pdf.drawString(40, y, 'Relatorio de Entregas')
+        pdf.drawString(40, y, _pdf_text('Relatorio de Entregas'))
         y -= 18
         pdf.setFont('Helvetica', 9)
-        pdf.drawString(40, y, f"Gerado em: {timezone.now().strftime('%Y-%m-%d %H:%M')}")
+        pdf.drawString(40, y, _pdf_text(f"Gerado em: {timezone.now().strftime('%Y-%m-%d %H:%M')}"))
         y -= 20
 
         pdf.setFont('Helvetica', 10)
@@ -148,13 +335,13 @@ class DeliveryExportPdfView(viewsets.ViewSet):
             items_count = len(delivery.items.all())
             status_label = delivery.get_status_display()
             line = f"{delivery.delivery_date} - {delivery.school.name} - {status_label} - Itens: {items_count}"
-            pdf.drawString(40, y, line[:120])
+            pdf.drawString(40, y, _pdf_text(line[:120]))
             y -= 14
             if delivery.conference_submitted_at:
-                pdf.drawString(40, y, f"Conferida em: {delivery.conference_submitted_at.strftime('%Y-%m-%d %H:%M')}")
+                pdf.drawString(40, y, _pdf_text(f"Conferida em: {delivery.conference_submitted_at.strftime('%Y-%m-%d %H:%M')}"))
                 y -= 14
             if delivery.conference_signed_by:
-                pdf.drawString(40, y, f"Assinada por: {delivery.conference_signed_by}")
+                pdf.drawString(40, y, _pdf_text(f"Assinada por: {delivery.conference_signed_by}"))
                 y -= 14
             if delivery.conference_signature:
                 try:
@@ -164,7 +351,7 @@ class DeliveryExportPdfView(viewsets.ViewSet):
                     pdf.drawImage(image, 40, y - 50, width=200, height=50, preserveAspectRatio=True, mask='auto')
                     y -= 60
                 except Exception:
-                    pdf.drawString(40, y, "Assinatura: [erro ao carregar imagem]")
+                    pdf.drawString(40, y, _pdf_text("Assinatura: [erro ao carregar imagem]"))
                     y -= 14
             y -= 6
 
@@ -272,10 +459,10 @@ class ConsumptionExportPdfView(viewsets.ViewSet):
         width, height = A4
         y = height - 40
         pdf.setFont('Helvetica-Bold', 14)
-        pdf.drawString(40, y, 'Relatorio de Consumo')
+        pdf.drawString(40, y, _pdf_text('Relatorio de Consumo'))
         y -= 18
         pdf.setFont('Helvetica', 9)
-        pdf.drawString(40, y, f"Gerado em: {timezone.now().strftime('%Y-%m-%d %H:%M')}")
+        pdf.drawString(40, y, _pdf_text(f"Gerado em: {timezone.now().strftime('%Y-%m-%d %H:%M')}"))
         y -= 20
 
         pdf.setFont('Helvetica', 10)
@@ -285,7 +472,7 @@ class ConsumptionExportPdfView(viewsets.ViewSet):
                 y = height - 40
                 pdf.setFont('Helvetica', 10)
             line = f"{movement.movement_date} - {movement.supply.name} - {movement.quantity}{movement.supply.unit}"
-            pdf.drawString(40, y, line[:120])
+            pdf.drawString(40, y, _pdf_text(line[:120]))
             y -= 16
 
         pdf.showPage()

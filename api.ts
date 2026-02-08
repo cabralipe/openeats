@@ -161,6 +161,11 @@ export async function getSchools(params?: { q?: string; city?: string; address?:
   return apiFetch(`/api/schools/${search ? `?${search}` : ''}`);
 }
 
+export async function getSchoolStock(schoolId: string) {
+  return apiFetch(`/api/schools/${schoolId}/stock/`);
+}
+
+
 export async function createSchool(payload: {
   name: string;
   address?: string;
@@ -399,9 +404,18 @@ export function exportStockCsv() {
   window.open('/api/exports/stock/', '_blank');
 }
 
+export function exportStockPdf() {
+  window.open('/api/exports/stock/pdf/', '_blank');
+}
+
+export function exportStockXlsx() {
+  window.open('/api/exports/stock/xlsx/', '_blank');
+}
+
 export function exportMenusCsv() {
   window.open('/api/exports/menus/', '_blank');
 }
+
 
 export function exportMenuPdf(schoolId: string, weekStart: string) {
   window.open(`/api/exports/menus/pdf/?school=${schoolId}&week_start=${weekStart}`, '_blank');

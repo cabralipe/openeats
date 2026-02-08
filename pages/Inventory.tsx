@@ -15,6 +15,9 @@ const Inventory: React.FC = () => {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('Todos');
   const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'ok'>('all');
+  const [isLoading, setIsLoading] = useState(true);
+
+  const categories = ['Todos', 'Grãos', 'Proteínas', 'Hortifruti', 'Mercearia'];
 
   const loadStock = (filters?: { q?: string; category?: string; low_stock?: boolean }) => {
     return getStock(filters)
@@ -35,23 +38,18 @@ const Inventory: React.FC = () => {
         });
         setItems(mapped);
       })
-      .catch(() => setError('Nao foi possivel carregar o estoque.'));
+      .catch(() => setError('Não foi possível carregar o estoque.'));
   };
 
   const loadSupplies = (filters?: { q?: string; category?: string }) => {
     return getSupplies(filters)
       .then((data) => setSupplies(data))
-      .catch(() => setError('Nao foi possivel carregar os insumos.'));
+      .catch(() => setError('Não foi possível carregar os insumos.'));
   };
 
   useEffect(() => {
-    let active = true;
-    Promise.all([loadStock(), loadSupplies()]).then(() => {
-      if (!active) return;
-    });
-    return () => {
-      active = false;
-    };
+    setIsLoading(true);
+    Promise.all([loadStock(), loadSupplies()]).finally(() => setIsLoading(false));
   }, []);
 
   useEffect(() => {
@@ -67,7 +65,8 @@ const Inventory: React.FC = () => {
   const stats = useMemo(() => {
     const total = items.length;
     const critical = items.filter((item) => item.status === 'critical').length;
-    return { total, critical };
+    const adequate = total - critical;
+    return { total, critical, adequate };
   }, [items]);
 
   const openModal = (nextMode: 'register' | 'in' | 'out' | 'edit', item?: InventoryItem) => {
@@ -114,7 +113,7 @@ const Inventory: React.FC = () => {
       await loadStock({ q: search, category, low_stock });
       setShowModal(false);
     } catch {
-      setError('Nao foi possivel salvar o insumo.');
+      setError('Não foi possível salvar o insumo.');
     }
   };
 
@@ -134,7 +133,7 @@ const Inventory: React.FC = () => {
       await loadStock({ q: search, category, low_stock });
       setShowModal(false);
     } catch {
-      setError('Nao foi possivel registrar a movimentacao.');
+      setError('Não foi possível registrar a movimentação.');
     }
   };
 
@@ -147,210 +146,310 @@ const Inventory: React.FC = () => {
       await loadSupplies({ q: search, category });
       await loadStock({ q: search, category, low_stock });
     } catch {
-      setError('Nao foi possivel excluir o insumo.');
+      setError('Não foi possível excluir o insumo.');
     }
   };
 
+  const getCategoryIcon = (category: string) => {
+    const icons: Record<string, string> = {
+      'Grãos': 'grain',
+      'Proteínas': 'egg',
+      'Hortifruti': 'nutrition',
+      'Mercearia': 'grocery',
+    };
+    return icons[category] || 'inventory_2';
+  };
+
+  const getCategoryColor = (category: string) => {
+    const colors: Record<string, string> = {
+      'Grãos': 'bg-amber-100 dark:bg-amber-900/30 text-amber-600',
+      'Proteínas': 'bg-rose-100 dark:bg-rose-900/30 text-rose-600',
+      'Hortifruti': 'bg-success-100 dark:bg-success-900/30 text-success-600',
+      'Mercearia': 'bg-secondary-100 dark:bg-secondary-900/30 text-secondary-600',
+    };
+    return colors[category] || 'bg-slate-100 dark:bg-slate-800 text-slate-600';
+  };
+
   return (
-    <div className="flex flex-col flex-1 pb-24">
-      {/* Hero / Stats */}
-      <div className="p-4 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
-        <h1 className="text-xl font-bold mb-4">Painel de Estoque</h1>
-        <div className="flex flex-wrap gap-4">
-          <div className="flex min-w-[150px] flex-1 flex-col gap-2 rounded-xl p-4 border border-[#cfdbe7] dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-primary text-sm">inventory_2</span>
-              <p className="text-slate-500 dark:text-slate-400 text-xs font-medium uppercase tracking-wider">Total Itens</p>
-            </div>
-            <p className="text-[#0d141b] dark:text-white tracking-light text-2xl font-bold leading-tight">{stats.total}</p>
+    <div className="flex flex-col flex-1 pb-24 lg:pb-8">
+      {/* Stats Header */}
+      <div className="p-4 lg:p-6 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800">
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="text-xl lg:text-2xl font-bold text-slate-900 dark:text-white">Estoque</h1>
+          <button onClick={() => exportStockCsv()} className="btn-secondary text-sm">
+            <span className="material-symbols-outlined text-lg">download</span>
+            Exportar
+          </button>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="card p-4 text-center">
+            <p className="text-2xl lg:text-3xl font-bold text-slate-900 dark:text-white">{stats.total}</p>
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total</p>
           </div>
-          <div className="flex min-w-[150px] flex-1 flex-col gap-2 rounded-xl p-4 border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-900/20 shadow-sm">
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-red-500 text-sm">warning</span>
-              <p className="text-red-600 dark:text-red-400 text-xs font-medium uppercase tracking-wider">Crítico</p>
-            </div>
-            <p className="text-red-700 dark:text-red-300 tracking-light text-2xl font-bold leading-tight">{stats.critical}</p>
+          <div className="card p-4 text-center border-success-200 dark:border-success-900/50">
+            <p className="text-2xl lg:text-3xl font-bold text-success-600">{stats.adequate}</p>
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Adequado</p>
+          </div>
+          <div className={`card p-4 text-center ${stats.critical > 0 ? 'border-danger-200 dark:border-danger-900/50 bg-danger-50/50 dark:bg-danger-900/10' : ''}`}>
+            <p className={`text-2xl lg:text-3xl font-bold ${stats.critical > 0 ? 'text-danger-600' : 'text-slate-900 dark:text-white'}`}>
+              {stats.critical}
+            </p>
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Crítico</p>
           </div>
         </div>
       </div>
 
-      {/* Quick Actions Bar */}
-      <div className="flex overflow-x-auto gap-3 p-4 bg-background-light dark:bg-background-dark scrollbar-hide">
-        <button onClick={() => openModal('register')} className="flex-none flex items-center gap-2 bg-primary text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-sm active:scale-95 transition-transform">
-          <span className="material-symbols-outlined text-lg">add</span> Cadastrar
+      {/* Quick Actions */}
+      <div className="flex gap-3 p-4 overflow-x-auto no-scrollbar">
+        <button onClick={() => openModal('register')} className="btn-primary shrink-0">
+          <span className="material-symbols-outlined">add</span>
+          Cadastrar
         </button>
-        <button onClick={() => openModal('in')} className="flex-none flex items-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-sm active:scale-95 transition-transform">
-          <span className="material-symbols-outlined text-lg">login</span> Entrada
+        <button onClick={() => openModal('in')} className="btn-success shrink-0">
+          <span className="material-symbols-outlined">login</span>
+          Entrada
         </button>
-        <button onClick={() => openModal('out')} className="flex-none flex items-center gap-2 bg-orange-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-sm active:scale-95 transition-transform">
-          <span className="material-symbols-outlined text-lg">logout</span> Saída
+        <button onClick={() => openModal('out')} className="btn shrink-0 bg-warning-500 text-white hover:bg-warning-600">
+          <span className="material-symbols-outlined">logout</span>
+          Saída
         </button>
       </div>
 
-      {/* Tabs */}
-      <div className="bg-white dark:bg-slate-900 px-4">
-        <div className="flex border-b border-[#cfdbe7] dark:border-slate-700 gap-8 overflow-x-auto no-scrollbar">
-          {['Todos', 'Graos', 'Proteinas', 'Hortifruti', 'Mercearia'].map((tab) => (
-             <button key={tab} onClick={() => setCategoryFilter(tab)} className={`flex flex-col items-center justify-center border-b-[3px] pb-3 pt-4 px-2 ${categoryFilter === tab ? 'border-b-primary text-primary' : 'border-b-transparent text-slate-500'}`}>
-                <p className="text-sm font-bold leading-normal whitespace-nowrap">{tab}</p>
-             </button>
+      {/* Category Tabs */}
+      <div className="px-4 lg:px-6">
+        <div className="flex gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl overflow-x-auto no-scrollbar">
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setCategoryFilter(cat)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${categoryFilter === cat
+                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+            >
+              {cat}
+            </button>
           ))}
         </div>
       </div>
 
-      <div className="px-4 py-2">
-        <label className="flex flex-col min-w-40 h-12 w-full">
-          <div className="flex w-full flex-1 items-stretch rounded-lg h-full">
-            <div className="text-[#4c739a] dark:text-slate-400 flex border-none bg-[#e7edf3] dark:bg-slate-800 items-center justify-center pl-4 rounded-l-lg">
-              <span className="material-symbols-outlined">search</span>
-            </div>
-            <input value={search} onChange={(e) => setSearch(e.target.value)} className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-[#0d141b] dark:text-white focus:outline-0 focus:ring-0 border-none bg-[#e7edf3] dark:bg-slate-800 placeholder:text-[#4c739a] px-4 rounded-l-none pl-2 text-base font-normal leading-normal" placeholder="Pesquisar insumo..." />
-          </div>
-        </label>
+      {/* Search & Filters */}
+      <div className="p-4 lg:px-6 space-y-3">
+        <div className="relative">
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400">
+            search
+          </span>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="input-with-icon"
+            placeholder="Pesquisar insumo..."
+          />
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            onClick={() => setStockFilter(stockFilter === 'all' ? 'low' : stockFilter === 'low' ? 'ok' : 'all')}
+            className={`chip ${stockFilter !== 'all' ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600' : ''}`}
+          >
+            <span className="material-symbols-outlined text-sm">filter_list</span>
+            {stockFilter === 'all' ? 'Todos' : stockFilter === 'low' ? 'Crítico' : 'Adequado'}
+          </button>
+        </div>
       </div>
 
-      <div className="flex gap-3 px-4 pb-2 overflow-x-auto no-scrollbar">
-        <button onClick={() => setStockFilter(stockFilter === 'all' ? 'low' : stockFilter === 'low' ? 'ok' : 'all')} className="flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-lg bg-[#e7edf3] dark:bg-slate-800 pl-4 pr-2">
-          <p className="text-[#0d141b] dark:text-slate-200 text-sm font-medium leading-normal">
-            Estoque: {stockFilter === 'all' ? 'Todos' : stockFilter === 'low' ? 'Critico' : 'Adequado'}
-          </p>
-          <span className="material-symbols-outlined text-[20px]">keyboard_arrow_down</span>
-        </button>
-        <button onClick={() => exportStockCsv()} className="flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-lg bg-primary/10 text-primary pl-3 pr-3 text-sm font-semibold">
-          <span className="material-symbols-outlined text-[18px]">download</span>
-          Exportar CSV
-        </button>
-      </div>
+      {/* Error */}
+      {error && (
+        <div className="mx-4 lg:mx-6 mb-4 p-4 rounded-xl bg-danger-50 dark:bg-danger-900/20 text-danger-600 dark:text-danger-400 text-sm flex items-center gap-2">
+          <span className="material-symbols-outlined">error</span>
+          {error}
+        </div>
+      )}
 
       {/* Inventory List */}
-      <div className="flex-1 flex flex-col gap-1 p-2 bg-slate-100 dark:bg-slate-950">
-        {error && (
-          <div className="text-red-600 text-sm px-2">{error}</div>
-        )}
-        {items.map((item) => (
-          <div key={item.id} className={`flex gap-4 bg-white dark:bg-slate-900 px-4 py-4 rounded-xl border justify-between items-center shadow-sm mb-1 ${item.status === 'critical' ? 'border-red-100 dark:border-red-900/30' : 'border-slate-100 dark:border-slate-800'}`}>
-            <div className="flex items-start gap-4">
-              <div className={`flex items-center justify-center rounded-lg shrink-0 size-12 ${
-                  item.status === 'critical' 
-                  ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30' 
-                  : item.category.toLowerCase().includes('prote') ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30' : 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30'
+      <div className="flex-1 px-4 lg:px-6 space-y-3">
+        {isLoading ? (
+          Array(3).fill(0).map((_, i) => (
+            <div key={i} className="card p-4 animate-pulse flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-slate-200 dark:bg-slate-700"></div>
+              <div className="flex-1 space-y-2">
+                <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-1/3"></div>
+                <div className="h-3 bg-slate-200 dark:bg-slate-700 rounded w-1/4"></div>
+              </div>
+            </div>
+          ))
+        ) : items.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <span className="material-symbols-outlined text-3xl">inventory_2</span>
+            </div>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-1">Nenhum insumo encontrado</h3>
+            <p className="text-slate-500 dark:text-slate-400 mb-4">Cadastre seu primeiro insumo para começar</p>
+            <button onClick={() => openModal('register')} className="btn-primary">
+              <span className="material-symbols-outlined">add</span>
+              Cadastrar Insumo
+            </button>
+          </div>
+        ) : (
+          items.map((item, index) => (
+            <div
+              key={item.id}
+              className={`card p-4 flex items-center gap-4 animate-fade-in ${item.status === 'critical' ? 'border-danger-200 dark:border-danger-900/50' : ''
+                }`}
+              style={{ animationDelay: `${index * 30}ms` }}
+            >
+              {/* Icon */}
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${item.status === 'critical'
+                  ? 'bg-danger-100 dark:bg-danger-900/30 text-danger-600'
+                  : getCategoryColor(item.category)
                 }`}>
                 <span className="material-symbols-outlined">
-                    {item.status === 'critical' ? 'warning' : item.category.toLowerCase().includes('prote') ? 'egg' : 'check_circle'}
+                  {item.status === 'critical' ? 'warning' : getCategoryIcon(item.category)}
                 </span>
               </div>
-              <div className="flex flex-1 flex-col justify-center">
-                <p className="text-[#0d141b] dark:text-white text-base font-bold leading-none mb-1">{item.name}</p>
-            <p className="text-slate-500 dark:text-slate-400 text-xs font-normal">{item.category} | Unidade: {item.unit}</p>
-                <div className="mt-2 flex items-center gap-2">
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                      item.status === 'critical' 
-                      ? 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-200'
-                      : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+
+              {/* Info */}
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-slate-900 dark:text-white truncate">{item.name}</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {item.category} • Min: {item.minQuantity}{item.unit}
+                </p>
+                <span className={`badge mt-1 ${item.status === 'critical' ? 'badge-danger' : 'badge-success'
                   }`}>
-                    {item.status === 'critical' ? 'Estoque Baixo' : 'Adequado'}
-                  </span>
-                  <p className="text-slate-500 dark:text-slate-400 text-xs">Mín: {item.minQuantity}{item.unit}</p>
+                  {item.status === 'critical' ? 'Estoque Baixo' : 'Adequado'}
+                </span>
+              </div>
+
+              {/* Quantity */}
+              <div className="text-right shrink-0">
+                <p className={`text-xl font-bold ${item.status === 'critical' ? 'text-danger-600' : 'text-slate-900 dark:text-white'
+                  }`}>
+                  {item.quantity}
+                  <span className="text-sm font-normal text-slate-500 ml-1">{item.unit}</span>
+                </p>
+                <div className="flex gap-1 mt-2">
+                  <button
+                    onClick={() => openModal('edit', item)}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
+                    <span className="material-symbols-outlined text-slate-400 text-lg">edit</span>
+                  </button>
+                  <button
+                    onClick={() => handleDelete(item)}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-danger-50 dark:hover:bg-danger-900/20"
+                  >
+                    <span className="material-symbols-outlined text-danger-500 text-lg">delete</span>
+                  </button>
                 </div>
               </div>
             </div>
-            <div className="shrink-0 text-right">
-              <p className={`text-lg font-bold ${item.status === 'critical' ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-white'}`}>
-                {item.quantity}{item.unit}
-              </p>
-              <div className="flex gap-2 mt-2 justify-end">
-                <button onClick={() => openModal('edit', item)} className="text-slate-400"><span className="material-symbols-outlined">edit</span></button>
-                <button onClick={() => handleDelete(item)} className="text-red-500"><span className="material-symbols-outlined">delete</span></button>
-              </div>
-            </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
-      {/* Quick Form Modal */}
+      {/* Modal */}
       {showModal && (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40">
-            <div className="w-full bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 p-4 pb-8 shadow-2xl rounded-t-3xl animate-[slideUp_0.3s_ease-out]">
-                <div className="flex justify-between items-center mb-4">
-                <div className="flex items-center gap-2">
-                    <div className="w-1 bg-primary h-6 rounded-full"></div>
-                    <h3 className="text-lg font-bold">
-                      {mode === 'register' && 'Cadastrar Insumo'}
-                      {mode === 'edit' && 'Editar Insumo'}
-                      {mode === 'in' && 'Entrada de Estoque'}
-                      {mode === 'out' && 'Saida de Estoque'}
-                    </h3>
+        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${mode === 'in' ? 'bg-success-100 dark:bg-success-900/30' :
+                    mode === 'out' ? 'bg-warning-100 dark:bg-warning-900/30' :
+                      'bg-primary-100 dark:bg-primary-900/30'
+                  }`}>
+                  <span className={`material-symbols-outlined ${mode === 'in' ? 'text-success-500' :
+                      mode === 'out' ? 'text-warning-500' :
+                        'text-primary-500'
+                    }`}>
+                    {mode === 'register' ? 'add_circle' : mode === 'edit' ? 'edit' : mode === 'in' ? 'login' : 'logout'}
+                  </span>
                 </div>
-                <button onClick={() => setShowModal(false)} className="text-slate-400"><span className="material-symbols-outlined">close</span></button>
-                </div>
-                {(mode === 'register' || mode === 'edit') && (
-                  <form onSubmit={handleSaveSupply} className="flex flex-col gap-4">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Nome</label>
-                      <input className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 text-sm" value={supplyForm.name} onChange={(e) => setSupplyForm({ ...supplyForm, name: e.target.value })} required />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="flex flex-col gap-1">
-                        <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Categoria</label>
-                        <input className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 text-sm" value={supplyForm.category} onChange={(e) => setSupplyForm({ ...supplyForm, category: e.target.value })} required />
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Unidade</label>
-                        <select className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 text-sm" value={supplyForm.unit} onChange={(e) => setSupplyForm({ ...supplyForm, unit: e.target.value })}>
-                          <option value="kg">kg</option>
-                          <option value="g">g</option>
-                          <option value="l">l</option>
-                          <option value="ml">ml</option>
-                          <option value="unit">unit</option>
-                        </select>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="flex flex-col gap-1">
-                        <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Estoque minimo</label>
-                        <input className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 text-sm" value={supplyForm.min_stock} onChange={(e) => setSupplyForm({ ...supplyForm, min_stock: e.target.value })} type="number" step="0.01" />
-                      </div>
-                      <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 mt-6">
-                        <input type="checkbox" checked={supplyForm.is_active} onChange={(e) => setSupplyForm({ ...supplyForm, is_active: e.target.checked })} />
-                        Ativo
-                      </label>
-                    </div>
-                    <div className="flex gap-3 pt-2">
-                      <button className="flex-1 bg-primary text-white font-bold py-3 rounded-xl shadow-md" type="submit">Salvar</button>
-                    </div>
-                  </form>
-                )}
-                {(mode === 'in' || mode === 'out') && (
-                  <form onSubmit={handleMovement} className="flex flex-col gap-4">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Insumo</label>
-                      <select className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 text-sm" value={selectedSupplyId} onChange={(e) => setSelectedSupplyId(e.target.value)} required>
-                        <option value="">Selecione um item...</option>
-                        {supplies.map((supply) => (
-                          <option key={supply.id} value={supply.id}>{supply.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="flex flex-col gap-1">
-                        <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Quantidade</label>
-                        <input className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 text-sm" placeholder="0.00" type="number" step="0.01" value={movement.quantity} onChange={(e) => setMovement({ ...movement, quantity: e.target.value })} required />
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Data</label>
-                        <input className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 text-sm" type="date" value={movement.movement_date} onChange={(e) => setMovement({ ...movement, movement_date: e.target.value })} required />
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Observacao</label>
-                      <textarea className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 text-sm h-20" placeholder="Motivo da movimentacao..." value={movement.note} onChange={(e) => setMovement({ ...movement, note: e.target.value })}></textarea>
-                    </div>
-                    <div className="flex gap-3 pt-2">
-                      <button className="flex-1 bg-primary text-white font-bold py-3 rounded-xl shadow-md" type="submit">Salvar Movimentacao</button>
-                    </div>
-                  </form>
-                )}
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                  {mode === 'register' && 'Cadastrar Insumo'}
+                  {mode === 'edit' && 'Editar Insumo'}
+                  {mode === 'in' && 'Entrada de Estoque'}
+                  {mode === 'out' && 'Saída de Estoque'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowModal(false)}
+                className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <span className="material-symbols-outlined text-slate-400">close</span>
+              </button>
             </div>
+
+            {/* Forms */}
+            {(mode === 'register' || mode === 'edit') && (
+              <form onSubmit={handleSaveSupply} className="space-y-4">
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Nome</label>
+                  <input className="input" value={supplyForm.name} onChange={(e) => setSupplyForm({ ...supplyForm, name: e.target.value })} required />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Categoria</label>
+                    <input className="input" value={supplyForm.category} onChange={(e) => setSupplyForm({ ...supplyForm, category: e.target.value })} required />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Unidade</label>
+                    <select className="input" value={supplyForm.unit} onChange={(e) => setSupplyForm({ ...supplyForm, unit: e.target.value })}>
+                      <option value="kg">kg</option>
+                      <option value="g">g</option>
+                      <option value="l">l</option>
+                      <option value="ml">ml</option>
+                      <option value="unid">unid</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Estoque mínimo</label>
+                    <input className="input" value={supplyForm.min_stock} onChange={(e) => setSupplyForm({ ...supplyForm, min_stock: e.target.value })} type="number" step="0.01" />
+                  </div>
+                  <label className="flex items-center gap-3 mt-7 cursor-pointer">
+                    <input type="checkbox" checked={supplyForm.is_active} onChange={(e) => setSupplyForm({ ...supplyForm, is_active: e.target.checked })} className="w-5 h-5 rounded" />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">Ativo</span>
+                  </label>
+                </div>
+                <button className="w-full btn-primary h-12" type="submit">Salvar</button>
+              </form>
+            )}
+
+            {(mode === 'in' || mode === 'out') && (
+              <form onSubmit={handleMovement} className="space-y-4">
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Insumo</label>
+                  <select className="input" value={selectedSupplyId} onChange={(e) => setSelectedSupplyId(e.target.value)} required>
+                    <option value="">Selecione...</option>
+                    {supplies.map((supply) => (
+                      <option key={supply.id} value={supply.id}>{supply.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Quantidade</label>
+                    <input className="input" placeholder="0.00" type="number" step="0.01" value={movement.quantity} onChange={(e) => setMovement({ ...movement, quantity: e.target.value })} required />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Data</label>
+                    <input className="input" type="date" value={movement.movement_date} onChange={(e) => setMovement({ ...movement, movement_date: e.target.value })} required />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Observação</label>
+                  <textarea className="input h-20 resize-none" placeholder="Motivo da movimentação..." value={movement.note} onChange={(e) => setMovement({ ...movement, note: e.target.value })}></textarea>
+                </div>
+                <button className={`w-full btn h-12 ${mode === 'in' ? 'btn-success' : 'bg-warning-500 text-white hover:bg-warning-600'}`} type="submit">
+                  Registrar {mode === 'in' ? 'Entrada' : 'Saída'}
+                </button>
+              </form>
+            )}
+          </div>
         </div>
       )}
     </div>

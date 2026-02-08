@@ -8,7 +8,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from inventory.models import Delivery, StockMovement, Supply
+from inventory.models import Delivery, SchoolStockBalance, StockBalance, StockMovement, Supply
 from inventory.serializers import (
     DeliveryConferenceInputSerializer,
     PublicConsumptionInputSerializer,
@@ -130,6 +130,14 @@ class PublicDeliveryCurrentView(PublicBaseView):
                 item = delivery_items.get(str(entry['item_id']))
                 if not item:
                     continue
+                # Update school stock balance
+                school_balance, _ = SchoolStockBalance.objects.select_for_update().get_or_create(
+                    school=school,
+                    supply=item.supply,
+                    defaults={'quantity': 0}
+                )
+                school_balance.quantity += entry['received_quantity']
+                school_balance.save()
                 StockMovement.objects.create(
                     supply=item.supply,
                     school=school,
@@ -137,6 +145,37 @@ class PublicDeliveryCurrentView(PublicBaseView):
                     quantity=entry['received_quantity'],
                     movement_date=delivery.delivery_date,
                     note=f"Entrada confirmada da entrega {delivery.id}.",
+                    created_by=delivery.created_by,
+                )
+
+            for entry in payload_items:
+                item = delivery_items.get(str(entry['item_id']))
+                if not item:
+                    continue
+                adjustment = item.planned_quantity - entry['received_quantity']
+                if adjustment == 0:
+                    continue
+                balance, _ = StockBalance.objects.select_for_update().get_or_create(supply=item.supply)
+                if adjustment > 0:
+                    balance.quantity += adjustment
+                    movement_type = StockMovement.Types.IN
+                    movement_note = f"Ajuste de conferencia (falta) da entrega {delivery.id}."
+                    movement_quantity = adjustment
+                else:
+                    movement_quantity = abs(adjustment)
+                    if balance.quantity - movement_quantity < 0:
+                        raise PermissionDenied('Saldo insuficiente para ajustar a conferencia.')
+                    balance.quantity -= movement_quantity
+                    movement_type = StockMovement.Types.OUT
+                    movement_note = f"Ajuste de conferencia (excesso) da entrega {delivery.id}."
+                balance.save()
+                StockMovement.objects.create(
+                    supply=item.supply,
+                    school=school,
+                    type=movement_type,
+                    quantity=movement_quantity,
+                    movement_date=delivery.delivery_date,
+                    note=movement_note,
                     created_by=delivery.created_by,
                 )
 
@@ -181,6 +220,16 @@ class PublicConsumptionView(PublicBaseView):
         with transaction.atomic():
             for entry in items:
                 supply = supplies.get(str(entry['supply']))
+                # Update school stock balance
+                school_balance, _ = SchoolStockBalance.objects.select_for_update().get_or_create(
+                    school=school,
+                    supply=supply,
+                    defaults={'quantity': 0}
+                )
+                if school_balance.quantity - entry['quantity'] < 0:
+                    raise PermissionDenied(f"Estoque insuficiente de {supply.name} na escola.")
+                school_balance.quantity -= entry['quantity']
+                school_balance.save()
                 StockMovement.objects.create(
                     supply=supply,
                     school=school,

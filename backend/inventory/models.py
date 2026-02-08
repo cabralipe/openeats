@@ -35,6 +35,22 @@ class StockBalance(models.Model):
         return f"{self.supply.name} - {self.quantity}"
 
 
+class SchoolStockBalance(models.Model):
+    """Tracks stock balance for each supply at each school."""
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='stock_balances')
+    supply = models.ForeignKey(Supply, on_delete=models.CASCADE, related_name='school_balances')
+    quantity = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    last_updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['school', 'supply'], name='unique_school_supply_balance'),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.school.name} - {self.supply.name}: {self.quantity}"
+
+
 class StockMovement(models.Model):
     class Types(models.TextChoices):
         IN = 'IN', 'Entrada'

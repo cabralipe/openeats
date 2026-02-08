@@ -1,7 +1,8 @@
 from django.db import transaction
 from rest_framework import serializers
 
-from .models import Delivery, DeliveryItem, Supply, StockBalance, StockMovement
+from .models import Delivery, DeliveryItem, SchoolStockBalance, Supply, StockBalance, StockMovement
+
 
 
 class SupplySerializer(serializers.ModelSerializer):
@@ -20,6 +21,28 @@ class StockBalanceSerializer(serializers.ModelSerializer):
 
     def get_is_low_stock(self, obj):
         return obj.quantity < obj.supply.min_stock
+
+
+class SchoolStockBalanceSerializer(serializers.ModelSerializer):
+    supply = SupplySerializer(read_only=True)
+    school_name = serializers.CharField(source='school.name', read_only=True)
+    is_low_stock = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SchoolStockBalance
+        fields = ['id', 'school', 'school_name', 'supply', 'quantity', 'is_low_stock', 'status', 'last_updated']
+        read_only_fields = ['id', 'school_name', 'is_low_stock', 'status', 'last_updated']
+
+    def get_is_low_stock(self, obj):
+        return obj.quantity < obj.supply.min_stock
+
+    def get_status(self, obj):
+        if obj.quantity < obj.supply.min_stock:
+            return 'BAIXO'
+        elif obj.quantity >= obj.supply.min_stock * 2:
+            return 'ALTO'
+        return 'NORMAL'
 
 
 class StockMovementSerializer(serializers.ModelSerializer):
