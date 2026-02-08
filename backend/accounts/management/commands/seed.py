@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+import os
 
 from django.utils import timezone
 
@@ -16,8 +17,8 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         User = get_user_model()
 
-        admin_email = 'admin@semed.local'
-        admin_password = 'Admin123!'
+        admin_email = os.getenv('SEED_ADMIN_EMAIL', 'admin@semed.local')
+        admin_password = os.getenv('SEED_ADMIN_PASSWORD', 'Admin123!')
         admin, created = User.objects.get_or_create(
             email=admin_email,
             defaults={
@@ -27,9 +28,13 @@ class Command(BaseCommand):
                 'is_superuser': True,
             },
         )
-        if created:
-            admin.set_password(admin_password)
-            admin.save()
+        # Keep admin credentials deterministic for development/deploy bootstrap.
+        admin.name = admin.name or 'Admin SEMED'
+        admin.role = User.Roles.SEMED_ADMIN
+        admin.is_staff = True
+        admin.is_superuser = True
+        admin.set_password(admin_password)
+        admin.save()
 
         schools_data = [
             {'name': 'Escola Municipal Joao Cordeiro', 'city': 'Maceio', 'address': 'Centro'},
