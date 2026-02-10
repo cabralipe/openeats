@@ -35,6 +35,14 @@ CSRF_TRUSTED_ORIGINS = env('CSRF_TRUSTED_ORIGINS')
 CORS_ALLOWED_ORIGINS = env('CORS_ALLOWED_ORIGINS')
 CORS_ALLOW_CREDENTIALS = env('CORS_ALLOW_CREDENTIALS')
 
+# Keep Render frontend domains allowed even when env vars are stale.
+RENDER_FRONTEND_ORIGINS = [
+    'https://openeats.onrender.com',
+    'https://openeats-web.onrender.com',
+]
+CSRF_TRUSTED_ORIGINS = list(dict.fromkeys(list(CSRF_TRUSTED_ORIGINS) + RENDER_FRONTEND_ORIGINS))
+CORS_ALLOWED_ORIGINS = list(dict.fromkeys(list(CORS_ALLOWED_ORIGINS) + RENDER_FRONTEND_ORIGINS))
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
