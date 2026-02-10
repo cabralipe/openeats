@@ -43,6 +43,22 @@ npm run dev
 
 Frontend em `http://localhost:3000`.
 
+### 4.1 Configuracao de ambiente do frontend
+
+Escolha um dos cenarios abaixo e copie o arquivo para `.env.local` na raiz:
+
+Backend local (recomendado para desenvolvimento):
+
+```bash
+cp .env.frontend.local.example .env.local
+```
+
+Backend no Render:
+
+```bash
+cp .env.frontend.render.example .env.local
+```
+
 ## 5. Login inicial (seed)
 
 - Email: `admin@semed.local`
