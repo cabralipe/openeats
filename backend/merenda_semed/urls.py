@@ -1,5 +1,6 @@
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.generic import TemplateView
 from rest_framework.routers import DefaultRouter
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
@@ -66,4 +67,7 @@ urlpatterns = [
     path('public/schools/<slug:slug>/menu/', PublicMenuByWeekView.as_view(), name='public-menu-by-week'),
     path('public/schools/<slug:slug>/delivery/current/', PublicDeliveryCurrentView.as_view(), name='public-delivery-current'),
     path('public/schools/<slug:slug>/consumption/', PublicConsumptionView.as_view(), name='public-consumption'),
+    re_path(r'^(?!api/|admin/|api-auth/|public/|static/).*$',
+            TemplateView.as_view(template_name='index.html'),
+            name='spa'),
 ]

@@ -4,15 +4,10 @@ databases:
 
 services:
   - type: web
-    name: openeats-api
-    env: python
-    rootDir: backend
-    buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
-    preDeployCommand: python manage.py migrate && python manage.py seed
-    startCommand: gunicorn merenda_semed.wsgi:application --bind 0.0.0.0:$PORT --workers 3 --timeout 120
+    name: openeats
+    env: docker
+    dockerfilePath: ./Dockerfile
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.12.7
       - key: SECRET_KEY
         generateValue: true
       - key: DEBUG
@@ -33,13 +28,3 @@ services:
         value: "admin@semed.local"
       - key: SEED_ADMIN_PASSWORD
         value: "Admin123!"
-
-  - type: web
-    name: openeats-web
-    env: static
-    buildCommand: npm ci && npm run build
-    staticPublishPath: dist
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html

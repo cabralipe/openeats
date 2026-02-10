@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     const proxyTarget = env.VITE_PROXY_TARGET?.trim();
+    const assetBase = env.VITE_ASSET_BASE || '/';
     const proxy = proxyTarget
       ? {
           '/api/': {
@@ -22,6 +23,7 @@ export default defineConfig(({ mode }) => {
       .map((value) => value.trim())
       .filter(Boolean);
     return {
+      base: assetBase,
       server: {
         port: 3000,
         host: '0.0.0.0',
