@@ -4,16 +4,9 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
-    const proxyTarget = env.VITE_PROXY_TARGET || 'http://localhost:8000';
-    const previewHosts = (env.VITE_ALLOWED_HOSTS || 'localhost,127.0.0.1,.onrender.com')
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean);
-    return {
-      server: {
-        port: 3000,
-        host: '0.0.0.0',
-        proxy: {
+    const proxyTarget = env.VITE_PROXY_TARGET?.trim();
+    const proxy = proxyTarget
+      ? {
           '/api/': {
             target: proxyTarget,
             changeOrigin: true,
@@ -22,11 +15,22 @@ export default defineConfig(({ mode }) => {
             target: proxyTarget,
             changeOrigin: true,
           },
-        },
+        }
+      : undefined;
+    const previewHosts = (env.VITE_ALLOWED_HOSTS || 'localhost,127.0.0.1,.onrender.com')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+    return {
+      server: {
+        port: 3000,
+        host: '0.0.0.0',
+        proxy,
       },
       preview: {
         host: '0.0.0.0',
         allowedHosts: previewHosts,
+        proxy,
       },
       plugins: [react()],
       define: {
