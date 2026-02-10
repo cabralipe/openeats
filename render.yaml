@@ -8,7 +8,8 @@ services:
     env: python
     rootDir: backend
     buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
-    startCommand: python manage.py migrate && python manage.py seed && gunicorn merenda_semed.wsgi:application --bind 0.0.0.0:$PORT --workers 3 --timeout 120
+    preDeployCommand: python manage.py migrate && python manage.py seed
+    startCommand: gunicorn merenda_semed.wsgi:application --bind 0.0.0.0:$PORT --workers 3 --timeout 120
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.7
