@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
-    const proxyTarget = env.VITE_PROXY_TARGET?.trim();
+    const proxyTarget = (env.VITE_PROXY_TARGET?.trim() || (mode === 'development' ? 'http://localhost:8000' : ''));
     const assetBase = env.VITE_ASSET_BASE || '/';
     const proxy = proxyTarget
       ? {

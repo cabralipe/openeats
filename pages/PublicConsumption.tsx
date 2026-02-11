@@ -47,7 +47,10 @@ const PublicConsumption: React.FC = () => {
         });
         setForm(nextForm);
       })
-      .catch(() => setError('Não foi possível carregar os insumos.'))
+      .catch((err) => {
+        const message = err instanceof Error && err.message ? err.message : 'Não foi possível carregar os insumos.';
+        setError(message);
+      })
       .finally(() => setLoading(false));
   }, [slug, token]);
 
@@ -129,8 +132,9 @@ const PublicConsumption: React.FC = () => {
     try {
       await submitPublicConsumption(slug, token, { items });
       setSuccess('Consumo registrado com sucesso!');
-    } catch {
-      setError('Não foi possível registrar o consumo.');
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : 'Não foi possível registrar o consumo.';
+      setError(message);
     } finally {
       setSending(false);
     }

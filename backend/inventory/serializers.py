@@ -1,4 +1,6 @@
 from django.db import transaction
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from .models import (
@@ -463,7 +465,7 @@ class DeliveryConferenceInputSerializer(serializers.Serializer):
 
 class PublicConsumptionItemInputSerializer(serializers.Serializer):
     supply = serializers.UUIDField()
-    quantity = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0.01)
+    quantity = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0.01'))
     movement_date = serializers.DateField()
     note = serializers.CharField(required=False, allow_blank=True, max_length=1000)
 

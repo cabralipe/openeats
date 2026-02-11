@@ -5,6 +5,7 @@ from pathlib import Path
 import environ
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+FRONTEND_DIST_DIR = BASE_DIR / 'frontend_dist'
 
 env = environ.Env(
     DEBUG=(bool, False),
@@ -85,7 +86,7 @@ ROOT_URLCONF = 'merenda_semed.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'frontend_dist'],
+        'DIRS': [FRONTEND_DIST_DIR] if FRONTEND_DIST_DIR.exists() else [],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -137,7 +138,7 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_DIRS = [BASE_DIR / 'frontend_dist']
+STATICFILES_DIRS = [FRONTEND_DIST_DIR] if FRONTEND_DIST_DIR.exists() else []
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'accounts.User'

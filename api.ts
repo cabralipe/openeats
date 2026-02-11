@@ -130,7 +130,19 @@ async function apiFetch<T>(path: string, options: RetryableFetchOptions = {}): P
       throw new Error('Sessao expirada. Faca login novamente.');
     }
 
-    throw new Error(message || 'Erro na requisicao');
+    let parsedMessage = message;
+    try {
+      const parsed = JSON.parse(message);
+      if (typeof parsed?.detail === 'string' && parsed.detail.trim()) {
+        parsedMessage = parsed.detail;
+      } else if (typeof parsed?.message === 'string' && parsed.message.trim()) {
+        parsedMessage = parsed.message;
+      }
+    } catch {
+      // Keep raw text when body is not JSON.
+    }
+
+    throw new Error(parsedMessage || 'Erro na requisicao');
   }
 
   if (response.status === 204) {
@@ -414,15 +426,17 @@ export async function getPublicSchools() {
 }
 
 export async function getPublicMenuCurrent(slug: string, token?: string) {
+  const encodedSlug = encodeURIComponent(slug);
   const url = token
-    ? `/public/schools/${slug}/menu/current/?token=${token}`
-    : `/public/schools/${slug}/menu/current/`;
+    ? `/public/schools/${encodedSlug}/menu/current/?${new URLSearchParams({ token }).toString()}`
+    : `/public/schools/${encodedSlug}/menu/current/`;
   return apiFetch(url, { skipAuth: true });
 }
 
 export async function getPublicDeliveryCurrent(slug: string, token: string, deliveryId: string) {
+  const encodedSlug = encodeURIComponent(slug);
   const search = new URLSearchParams({ token, delivery_id: deliveryId }).toString();
-  return apiFetch(`/public/schools/${slug}/delivery/current/?${search}`, { skipAuth: true });
+  return apiFetch(`/public/schools/${encodedSlug}/delivery/current/?${search}`, { skipAuth: true });
 }
 
 export async function submitPublicDeliveryConference(
@@ -437,8 +451,9 @@ export async function submitPublicDeliveryConference(
     receiver_signer_name: string;
   },
 ) {
+  const encodedSlug = encodeURIComponent(slug);
   const search = new URLSearchParams({ token, delivery_id: deliveryId }).toString();
-  return apiFetch(`/public/schools/${slug}/delivery/current/?${search}`, {
+  return apiFetch(`/public/schools/${encodedSlug}/delivery/current/?${search}`, {
     method: 'POST',
     body: JSON.stringify(payload),
     skipAuth: true,
@@ -447,7 +462,9 @@ export async function submitPublicDeliveryConference(
 
 
 export async function getPublicSupplies(slug: string, token: string) {
-  return apiFetch(`/public/schools/${slug}/consumption/?token=${token}`, { skipAuth: true });
+  const encodedSlug = encodeURIComponent(slug);
+  const search = new URLSearchParams({ token }).toString();
+  return apiFetch(`/public/schools/${encodedSlug}/consumption/?${search}`, { skipAuth: true });
 }
 
 export async function submitPublicConsumption(
@@ -455,7 +472,9 @@ export async function submitPublicConsumption(
   token: string,
   payload: { items: Array<{ supply: string; quantity: number; movement_date: string; note?: string }> },
 ) {
-  return apiFetch(`/public/schools/${slug}/consumption/?token=${token}`, {
+  const encodedSlug = encodeURIComponent(slug);
+  const search = new URLSearchParams({ token }).toString();
+  return apiFetch(`/public/schools/${encodedSlug}/consumption/?${search}`, {
     method: 'POST',
     body: JSON.stringify(payload),
     skipAuth: true,

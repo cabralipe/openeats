@@ -1,5 +1,6 @@
 from datetime import date
 
+from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from django.db import transaction
 from django.utils import timezone
@@ -225,7 +226,7 @@ class PublicDeliveryCurrentView(PublicBaseView):
             from inventory.models import Notification
             
             # Check if any item has a note
-            has_notes = any(item.get('note', '').strip() for item in items_data)
+            has_notes = any(item.get('note', '').strip() for item in payload_items)
             
             if has_notes:
                 # Create alert notification for divergence/observation
@@ -279,6 +280,11 @@ class PublicConsumptionView(PublicBaseView):
             raise PermissionDenied('Insumo invalido informado.')
 
         created_by = Delivery.objects.filter(school=school).order_by('-created_at').values_list('created_by', flat=True).first()
+        if not created_by:
+            created_by = StockMovement.objects.filter(school=school).order_by('-created_at').values_list('created_by', flat=True).first()
+        if not created_by:
+            User = get_user_model()
+            created_by = User.objects.filter(is_active=True).order_by('-is_superuser', '-is_staff', 'date_joined').values_list('id', flat=True).first()
         if not created_by:
             raise PermissionDenied('Nao foi possivel registrar consumo sem responsavel.')
 

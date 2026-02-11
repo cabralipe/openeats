@@ -90,7 +90,8 @@ const Schools: React.FC = () => {
   const openPublicMenu = async (school: School) => {
     try {
       const link = await getPublicLink(school.id) as { slug: string; token: string };
-      window.open(`#/public/menu?slug=${link.slug}&token=${link.token}`, '_blank');
+      const search = new URLSearchParams({ slug: link.slug, token: link.token }).toString();
+      window.open(`#/public/menu?${search}`, '_blank');
     } catch {
       setError('Não foi possível gerar o link público.');
     }
@@ -99,7 +100,8 @@ const Schools: React.FC = () => {
   const openPublicConsumption = async (school: School) => {
     try {
       const link = await getPublicLink(school.id) as { slug: string; token: string };
-      window.open(`#/public/consumption?slug=${link.slug}&token=${link.token}`, '_blank');
+      const search = new URLSearchParams({ slug: link.slug, token: link.token }).toString();
+      window.open(`#/public/consumption?${search}`, '_blank');
     } catch {
       setError('Não foi possível gerar o link público.');
     }

@@ -180,7 +180,8 @@ const Deliveries: React.FC = () => {
   const handleGenerateConsumptionLink = async (deliveryId: string, school: string) => {
     try {
       const data = await getPublicLink(school);
-      const url = `/public/consumption?slug=${data.slug}&token=${data.token}`;
+      const search = new URLSearchParams({ slug: data.slug, token: data.token }).toString();
+      const url = `/public/consumption?${search}`;
       setConsumptionLinkByDelivery((prev) => ({ ...prev, [deliveryId]: url }));
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(`${window.location.origin}/#${url}`);

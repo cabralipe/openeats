@@ -4,7 +4,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
-from inventory.models import Delivery, DeliveryItem, StockBalance, StockMovement, Supply
+from inventory.models import Delivery, DeliveryItem, Notification, SchoolStockBalance, StockBalance, StockMovement, Supply
 from menus.models import Menu, MenuItem
 from schools.models import School
 
@@ -145,6 +145,39 @@ def test_public_delivery_conference_submission(api_client, admin_user):
     item.refresh_from_db()
     assert float(item.received_quantity) == 8.0
     assert item.divergence_note == 'faltou 2kg'
+    assert Notification.objects.filter(
+        delivery=delivery,
+        notification_type=Notification.NotificationType.DELIVERY_WITH_NOTE,
+        is_alert=True,
+    ).exists()
 
     balance = StockBalance.objects.get(supply=supply)
     assert float(balance.quantity) == 32.0
+
+
+def test_public_consumption_works_without_previous_delivery(api_client, admin_user):
+    school = School.objects.create(name='Escola Consumo')
+    supply = Supply.objects.create(name='Leite', category='Mercearia', unit=Supply.Units.L, min_stock=10)
+    SchoolStockBalance.objects.create(school=school, supply=supply, quantity=20, min_stock=5)
+
+    api_client.force_authenticate(user=None)
+    response = api_client.post(
+        f'/public/schools/{school.public_slug}/consumption/?token={school.public_token}',
+        {
+            'items': [
+                {
+                    'supply': str(supply.id),
+                    'quantity': '3.00',
+                    'movement_date': date.today().isoformat(),
+                    'note': 'Consumo regular',
+                },
+            ],
+        },
+        format='json',
+    )
+
+    assert response.status_code == 200
+    assert response.data['detail'] == 'Consumo registrado com sucesso.'
+
+    school_balance = SchoolStockBalance.objects.get(school=school, supply=supply)
+    assert float(school_balance.quantity) == 17.0
