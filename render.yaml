@@ -1,12 +1,17 @@
 databases:
   - name: openeats-db
-    plan: free
+    plan: starter
+    databaseName: openeats
+    user: openeats
 
 services:
   - type: web
     name: openeats
+    plan: starter
     env: docker
     dockerfilePath: ./Dockerfile
+    autoDeploy: true
+    healthCheckPath: /api/docs/
     envVars:
       - key: SECRET_KEY
         generateValue: true
@@ -15,9 +20,9 @@ services:
       - key: ALLOWED_HOSTS
         value: ".onrender.com"
       - key: CSRF_TRUSTED_ORIGINS
-        value: "https://*.onrender.com"
+        value: "https://*.onrender.com,https://onrender.com"
       - key: CORS_ALLOWED_ORIGINS
-        value: "https://openeats.onrender.com,https://openeats-web.onrender.com"
+        value: "https://openeats.onrender.com,https://openeats-web.onrender.com,https://openeats-api.onrender.com"
       - key: DATABASE_URL
         fromDatabase:
           name: openeats-db

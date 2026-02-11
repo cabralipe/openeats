@@ -45,19 +45,16 @@ Backend:
 
 ## Deploy no Render
 
-Este repositório já está preparado com `render.yaml` para subir:
-- `openeats-api` (Django + Gunicorn)
-- `openeats-web` (SPA React/Vite)
+Este repositório já está preparado com `render.yaml` para subir automaticamente:
+- `openeats` (Web Service com Docker: build do frontend + backend Django/Gunicorn)
 - `openeats-db` (PostgreSQL)
 
 Passos:
 1. No Render, clique em **New +** > **Blueprint**.
 2. Conecte este repositório.
-3. Confirme a criação dos 3 serviços do `render.yaml`.
-4. Após o primeiro deploy, ajuste os valores se necessário:
-   - `openeats-api` > `CORS_ALLOWED_ORIGINS` com a URL real do frontend.
-   - `openeats-web` > `VITE_API_BASE` com a URL real do backend.
+3. Confirme a criação dos 2 serviços do `render.yaml`.
+4. Aguarde o deploy finalizar. Nao e necessario executar nenhum comando manual no shell.
 
 Observações:
-- O backend executa `migrate` no start e `collectstatic` no build.
+- O backend executa `collectstatic`, `migrate` e `seed` automaticamente no deploy/start.
 - `SECRET_KEY` é gerada automaticamente no Render.
