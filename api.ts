@@ -1,9 +1,6 @@
-const USE_SAME_ORIGIN_PROXY = Boolean(import.meta.env.VITE_PROXY_TARGET);
+const USE_SAME_ORIGIN_PROXY = import.meta.env.DEV && Boolean(import.meta.env.VITE_PROXY_TARGET);
 const rawApiBase = (import.meta.env.VITE_API_BASE || '').trim();
-const LEGACY_INVALID_API_BASES = new Set([
-  'https://openeats-api.onrender.com',
-]);
-const API_BASE = USE_SAME_ORIGIN_PROXY || LEGACY_INVALID_API_BASES.has(rawApiBase) ? '' : rawApiBase;
+const API_BASE = USE_SAME_ORIGIN_PROXY ? '' : rawApiBase;
 
 type FetchOptions = RequestInit & { skipAuth?: boolean };
 type RetryableFetchOptions = FetchOptions & { _retry?: boolean };
