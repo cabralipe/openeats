@@ -539,6 +539,20 @@ export function exportConsumptionXlsx(params?: { supply?: string; date_from?: st
   openAuthenticatedUrl(`/api/exports/consumption/xlsx/${search ? `?${search}` : ''}`);
 }
 
+export function exportSupplierReceiptsPdf(params?: {
+  supplier?: string;
+  school?: string;
+  status?: string;
+  date_from?: string;
+  date_to?: string;
+}) {
+  const cleanParams = params
+    ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
+    : undefined;
+  const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
+  openAuthenticatedUrl(`/api/exports/supplier-receipts/pdf/${search ? `?${search}` : ''}`);
+}
+
 // Helper to open URLs with authentication token as query parameter
 function openAuthenticatedUrl(url: string) {
   const token = tokenStore.getAccess();

@@ -6,9 +6,8 @@ import csv
 import io
 from openpyxl import Workbook
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.utils import ImageReader
+from reportlab.lib import colors
 from reportlab.pdfgen import canvas
-import base64
 from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -48,6 +47,48 @@ from .serializers import (
 def _pdf_text(value):
     text = '' if value is None else str(value)
     return text.encode('latin-1', 'replace').decode('latin-1')
+
+
+def _format_filter_value(value):
+    if value in (None, ''):
+        return 'Todos'
+    return str(value)
+
+
+def _start_pdf_page(pdf, title, generated_at, filters, page_number):
+    width, height = A4
+    left = 32
+    right = width - 32
+
+    pdf.setFillColor(colors.HexColor('#1f3a6d'))
+    pdf.rect(0, height - 84, width, 84, stroke=0, fill=1)
+    pdf.setFillColor(colors.white)
+    pdf.setFont('Helvetica-Bold', 16)
+    pdf.drawString(left, height - 32, _pdf_text('SEMED - Prestacao de Contas'))
+    pdf.setFont('Helvetica', 11)
+    pdf.drawString(left, height - 50, _pdf_text(title))
+    pdf.setFont('Helvetica', 9)
+    pdf.drawRightString(right, height - 32, _pdf_text(f"Pagina {page_number}"))
+    pdf.drawRightString(right, height - 50, _pdf_text(f"Gerado em: {generated_at.strftime('%Y-%m-%d %H:%M')}"))
+
+    y = height - 102
+    pdf.setFillColor(colors.HexColor('#f4f6fb'))
+    pdf.rect(left, y - 28, right - left, 28, stroke=0, fill=1)
+    pdf.setFillColor(colors.HexColor('#1b2a41'))
+    pdf.setFont('Helvetica', 8.5)
+    filters_text = ' | '.join([f"{label}: {_format_filter_value(value)}" for label, value in filters])
+    pdf.drawString(left + 8, y - 17, _pdf_text(filters_text))
+    return y - 40
+
+
+def _draw_pdf_footer(pdf, page_number):
+    width, _ = A4
+    pdf.setStrokeColor(colors.HexColor('#d2d8e6'))
+    pdf.line(32, 26, width - 32, 26)
+    pdf.setFont('Helvetica', 8)
+    pdf.setFillColor(colors.HexColor('#5b6578'))
+    pdf.drawString(32, 14, _pdf_text('Documento de prestacao de contas - uso interno SEMED'))
+    pdf.drawRightString(width - 32, 14, _pdf_text(f"Pagina {page_number}"))
 
 
 class SupplyViewSet(viewsets.ModelViewSet):
@@ -330,75 +371,106 @@ class StockExportPdfView(viewsets.ViewSet):
 
     def list(self, request):
         queryset = StockBalance.objects.select_related('supply').all().order_by('supply__category', 'supply__name')
-        
-        # Group by category and status
-        low_stock = []
-        normal_stock = []
-        high_stock = []
-        
+
+        items = []
         for balance in queryset:
-            item = {
+            diff = float(balance.quantity) - float(balance.supply.min_stock)
+            if balance.quantity < balance.supply.min_stock:
+                status = 'BAIXO'
+            elif balance.quantity >= balance.supply.min_stock * 2:
+                status = 'ALTO'
+            else:
+                status = 'NORMAL'
+            items.append({
                 'name': balance.supply.name,
-                'category': balance.supply.category,
+                'category': balance.supply.category or 'Sem Categoria',
                 'unit': balance.supply.unit,
                 'quantity': float(balance.quantity),
                 'min_stock': float(balance.supply.min_stock),
-            }
-            if balance.quantity < balance.supply.min_stock:
-                low_stock.append(item)
-            elif balance.quantity >= balance.supply.min_stock * 2:
-                high_stock.append(item)
-            else:
-                normal_stock.append(item)
+                'status': status,
+                'diff': diff,
+            })
+
+        low_total = sum(1 for entry in items if entry['status'] == 'BAIXO')
+        normal_total = sum(1 for entry in items if entry['status'] == 'NORMAL')
+        high_total = sum(1 for entry in items if entry['status'] == 'ALTO')
+        total_items = len(items)
 
         response = HttpResponse(content_type='application/pdf')
         response['Content-Disposition'] = 'attachment; filename=\"stock_report.pdf\"'
         pdf = canvas.Canvas(response, pagesize=A4)
-        width, height = A4
-        
-        def draw_header(y_pos, title):
-            pdf.setFont('Helvetica-Bold', 14)
-            pdf.drawString(40, y_pos, _pdf_text(title))
-            return y_pos - 20
-        
-        def draw_section(y_pos, section_title, items, color):
-            if not items:
-                return y_pos
-            pdf.setFont('Helvetica-Bold', 12)
-            pdf.setFillColorRGB(*color)
-            pdf.drawString(40, y_pos, _pdf_text(f'{section_title} ({len(items)} itens)'))
-            pdf.setFillColorRGB(0, 0, 0)
-            y_pos -= 18
-            pdf.setFont('Helvetica', 9)
-            for item in items:
-                if y_pos < 60:
-                    pdf.showPage()
-                    y_pos = height - 40
-                    pdf.setFont('Helvetica', 9)
-                line = f"  {item['name']} ({item['category']}) - {item['quantity']:.2f} {item['unit']} (min: {item['min_stock']:.2f})"
-                pdf.drawString(40, y_pos, _pdf_text(line[:100]))
-                y_pos -= 14
-            return y_pos - 10
+        _, height = A4
+        generated_at = timezone.now()
+        page_number = 1
+        filters = [('Tipo', 'Relatorio geral de estoque')]
+        y = _start_pdf_page(pdf, 'Relatorio de Estoque', generated_at, filters, page_number)
 
-        y = height - 40
-        y = draw_header(y, 'Relatorio de Estoque Detalhado')
+        pdf.setFont('Helvetica-Bold', 10)
+        pdf.setFillColor(colors.HexColor('#1b2a41'))
+        pdf.drawString(32, y, _pdf_text('Resumo Executivo'))
+        y -= 14
+        pdf.setFillColor(colors.HexColor('#f7f9fc'))
+        pdf.rect(32, y - 42, 270, 42, stroke=1, fill=1)
+        pdf.setFillColor(colors.HexColor('#1b2a41'))
         pdf.setFont('Helvetica', 9)
-        pdf.drawString(40, y, _pdf_text(f"Gerado em: {timezone.now().strftime('%Y-%m-%d %H:%M')}"))
-        y -= 10
-        total_items = len(low_stock) + len(normal_stock) + len(high_stock)
-        pdf.drawString(40, y, _pdf_text(f"Total de insumos: {total_items}"))
-        y -= 30
+        pdf.drawString(40, y - 14, _pdf_text(f"Total de insumos analisados: {total_items}"))
+        pdf.drawString(40, y - 28, _pdf_text(f"Baixo: {low_total} | Normal: {normal_total} | Alto: {high_total}"))
+        y -= 56
 
-        # Low stock (red)
-        y = draw_section(y, 'ESTOQUE BAIXO - Requer Reposicao', low_stock, (0.8, 0.2, 0.2))
-        
-        # Normal stock (blue)
-        y = draw_section(y, 'ESTOQUE NORMAL', normal_stock, (0.2, 0.4, 0.8))
-        
-        # High stock (green)
-        y = draw_section(y, 'ESTOQUE ALTO', high_stock, (0.2, 0.6, 0.3))
+        def draw_table_header(y_pos):
+            pdf.setFillColor(colors.HexColor('#e3e9f5'))
+            pdf.rect(32, y_pos - 14, 530, 16, stroke=0, fill=1)
+            pdf.setFillColor(colors.HexColor('#1b2a41'))
+            pdf.setFont('Helvetica-Bold', 8.5)
+            pdf.drawString(36, y_pos - 10, _pdf_text('INSUMO'))
+            pdf.drawString(205, y_pos - 10, _pdf_text('CATEGORIA'))
+            pdf.drawString(315, y_pos - 10, _pdf_text('UNID'))
+            pdf.drawRightString(392, y_pos - 10, _pdf_text('QTD'))
+            pdf.drawRightString(452, y_pos - 10, _pdf_text('MIN'))
+            pdf.drawRightString(512, y_pos - 10, _pdf_text('DIF'))
+            pdf.drawRightString(556, y_pos - 10, _pdf_text('STATUS'))
+            return y_pos - 20
 
-        pdf.showPage()
+        y = draw_table_header(y)
+        current_category = None
+        for entry in items:
+            if y < 64:
+                _draw_pdf_footer(pdf, page_number)
+                pdf.showPage()
+                page_number += 1
+                y = _start_pdf_page(pdf, 'Relatorio de Estoque', generated_at, filters, page_number)
+                y = draw_table_header(y)
+                current_category = None
+
+            if entry['category'] != current_category:
+                current_category = entry['category']
+                pdf.setFillColor(colors.HexColor('#f0f3fa'))
+                pdf.rect(32, y - 12, 530, 14, stroke=0, fill=1)
+                pdf.setFillColor(colors.HexColor('#344563'))
+                pdf.setFont('Helvetica-Bold', 8)
+                pdf.drawString(36, y - 9, _pdf_text(current_category[:50]))
+                y -= 15
+                if y < 64:
+                    _draw_pdf_footer(pdf, page_number)
+                    pdf.showPage()
+                    page_number += 1
+                    y = _start_pdf_page(pdf, 'Relatorio de Estoque', generated_at, filters, page_number)
+                    y = draw_table_header(y)
+
+            pdf.setFont('Helvetica', 8)
+            pdf.setFillColor(colors.black)
+            pdf.drawString(36, y - 8, _pdf_text(entry['name'][:36]))
+            pdf.drawString(205, y - 8, _pdf_text(entry['category'][:20]))
+            pdf.drawString(315, y - 8, _pdf_text(entry['unit']))
+            pdf.drawRightString(392, y - 8, _pdf_text(f"{entry['quantity']:.2f}"))
+            pdf.drawRightString(452, y - 8, _pdf_text(f"{entry['min_stock']:.2f}"))
+            pdf.drawRightString(512, y - 8, _pdf_text(f"{entry['diff']:.2f}"))
+            pdf.drawRightString(556, y - 8, _pdf_text(entry['status']))
+            pdf.setStrokeColor(colors.HexColor('#e8edf6'))
+            pdf.line(32, y - 11, 562, y - 11)
+            y -= 14
+
+        _draw_pdf_footer(pdf, page_number)
         pdf.save()
         return response
 
@@ -505,7 +577,7 @@ class DeliveryExportPdfView(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def list(self, request):
-        queryset = Delivery.objects.select_related('school').prefetch_related('items').all().order_by('-delivery_date')
+        queryset = Delivery.objects.select_related('school').prefetch_related('items__supply').all().order_by('-delivery_date')
         school = request.query_params.get('school')
         status_value = request.query_params.get('status')
         date_from = request.query_params.get('date_from')
@@ -519,67 +591,85 @@ class DeliveryExportPdfView(viewsets.ViewSet):
         if date_to:
             queryset = queryset.filter(delivery_date__lte=date_to)
 
+        deliveries = list(queryset)
+        total_deliveries = len(deliveries)
+        total_items = sum(delivery.items.count() for delivery in deliveries)
+        draft_total = sum(1 for delivery in deliveries if delivery.status == Delivery.Status.DRAFT)
+        sent_total = sum(1 for delivery in deliveries if delivery.status == Delivery.Status.SENT)
+        conferred_total = sum(1 for delivery in deliveries if delivery.status == Delivery.Status.CONFERRED)
+
         response = HttpResponse(content_type='application/pdf')
         response['Content-Disposition'] = 'attachment; filename=\"deliveries.pdf\"'
         pdf = canvas.Canvas(response, pagesize=A4)
-        width, height = A4
-        y = height - 40
-        pdf.setFont('Helvetica-Bold', 14)
-        pdf.drawString(40, y, _pdf_text('Relatorio de Entregas'))
-        y -= 18
+        _, height = A4
+        generated_at = timezone.now()
+        page_number = 1
+        filters = [
+            ('Escola', school),
+            ('Status', status_value),
+            ('Data inicial', date_from),
+            ('Data final', date_to),
+        ]
+        y = _start_pdf_page(pdf, 'Relatorio de Entregas', generated_at, filters, page_number)
+
         pdf.setFont('Helvetica', 9)
-        pdf.drawString(40, y, _pdf_text(f"Gerado em: {timezone.now().strftime('%Y-%m-%d %H:%M')}"))
-        y -= 20
+        pdf.setFillColor(colors.HexColor('#1b2a41'))
+        pdf.drawString(32, y, _pdf_text(
+            f"Total de entregas: {total_deliveries} | Itens planejados: {total_items} | "
+            f"Rascunho: {draft_total} | Enviada: {sent_total} | Conferida: {conferred_total}"
+        ))
+        y -= 18
 
-        pdf.setFont('Helvetica', 10)
-        for delivery in queryset:
-            if y < 180:  # Increased space needed for two signatures
+        for delivery in deliveries:
+            delivery_items = list(delivery.items.all())
+            required_height = 78 + (len(delivery_items) * 12)
+            if y < required_height + 40:
+                _draw_pdf_footer(pdf, page_number)
                 pdf.showPage()
-                y = height - 40
-                pdf.setFont('Helvetica', 10)
-            items_count = len(delivery.items.all())
-            status_label = delivery.get_status_display()
-            line = f"{delivery.delivery_date} - {delivery.school.name} - {status_label} - Itens: {items_count}"
-            pdf.drawString(40, y, _pdf_text(line[:120]))
-            y -= 14
-            if delivery.conference_submitted_at:
-                pdf.drawString(40, y, _pdf_text(f"Conferida em: {delivery.conference_submitted_at.strftime('%Y-%m-%d %H:%M')}"))
-                y -= 14
-            
-            # Sender signature (who delivered)
-            if delivery.sender_signed_by:
-                pdf.drawString(40, y, _pdf_text(f"Entregue por: {delivery.sender_signed_by}"))
-                y -= 14
-            if delivery.sender_signature:
-                try:
-                    header, encoded = delivery.sender_signature.split(',', 1)
-                    image_bytes = base64.b64decode(encoded)
-                    image = ImageReader(io.BytesIO(image_bytes))
-                    pdf.drawImage(image, 40, y - 50, width=150, height=50, preserveAspectRatio=True, mask='auto')
-                    y -= 60
-                except Exception:
-                    pdf.drawString(40, y, _pdf_text("Assinatura entregador: [erro ao carregar imagem]"))
-                    y -= 14
-            
-            # Receiver signature (who received at school)
-            if delivery.receiver_signed_by or delivery.conference_signed_by:
-                signer = delivery.receiver_signed_by or delivery.conference_signed_by
-                pdf.drawString(40, y, _pdf_text(f"Recebido por: {signer}"))
-                y -= 14
-            receiver_sig = delivery.receiver_signature or delivery.conference_signature
-            if receiver_sig:
-                try:
-                    header, encoded = receiver_sig.split(',', 1)
-                    image_bytes = base64.b64decode(encoded)
-                    image = ImageReader(io.BytesIO(image_bytes))
-                    pdf.drawImage(image, 40, y - 50, width=150, height=50, preserveAspectRatio=True, mask='auto')
-                    y -= 60
-                except Exception:
-                    pdf.drawString(40, y, _pdf_text("Assinatura recebedor: [erro ao carregar imagem]"))
-                    y -= 14
-            y -= 10
+                page_number += 1
+                y = _start_pdf_page(pdf, 'Relatorio de Entregas', generated_at, filters, page_number)
 
-        pdf.showPage()
+            pdf.setFillColor(colors.HexColor('#f7f9fc'))
+            pdf.rect(32, y - required_height + 8, 530, required_height, stroke=1, fill=1)
+            pdf.setFillColor(colors.HexColor('#1b2a41'))
+            pdf.setFont('Helvetica-Bold', 10)
+            pdf.drawString(
+                40,
+                y - 8,
+                _pdf_text(f"{delivery.delivery_date} | {delivery.school.name} | {delivery.get_status_display()} | Entrega: {delivery.id}"),
+            )
+            pdf.setFont('Helvetica', 8.5)
+            conference_at = delivery.conference_submitted_at.strftime('%Y-%m-%d %H:%M') if delivery.conference_submitted_at else '-'
+            sender_name = delivery.sender_signed_by or delivery.responsible_name or '-'
+            receiver_name = delivery.receiver_signed_by or delivery.conference_signed_by or '-'
+            pdf.drawString(40, y - 22, _pdf_text(f"Conferida em: {conference_at}"))
+            pdf.drawString(200, y - 22, _pdf_text(f"Entregador: {sender_name[:35]}"))
+            pdf.drawString(390, y - 22, _pdf_text(f"Recebedor: {receiver_name[:28]}"))
+
+            pdf.setFont('Helvetica-Bold', 8)
+            pdf.drawString(40, y - 36, _pdf_text('Item'))
+            pdf.drawRightString(372, y - 36, _pdf_text('Prev.'))
+            pdf.drawRightString(442, y - 36, _pdf_text('Receb.'))
+            pdf.drawRightString(502, y - 36, _pdf_text('Falta'))
+            pdf.drawString(510, y - 36, _pdf_text('Obs.'))
+            pdf.setFont('Helvetica', 8)
+
+            line_y = y - 48
+            for item in delivery_items:
+                shortage = 0.0
+                if item.received_quantity is not None:
+                    shortage = max(float(item.planned_quantity - item.received_quantity), 0.0)
+                received = '-' if item.received_quantity is None else f"{float(item.received_quantity):.2f}"
+                pdf.drawString(40, line_y, _pdf_text(item.supply.name[:42]))
+                pdf.drawRightString(372, line_y, _pdf_text(f"{float(item.planned_quantity):.2f}"))
+                pdf.drawRightString(442, line_y, _pdf_text(received))
+                pdf.drawRightString(502, line_y, _pdf_text(f"{shortage:.2f}" if item.received_quantity is not None else '-'))
+                pdf.drawString(510, line_y, _pdf_text((item.divergence_note or '-')[:10]))
+                line_y -= 12
+
+            y -= required_height + 8
+
+        _draw_pdf_footer(pdf, page_number)
         pdf.save()
         return response
 
@@ -665,7 +755,7 @@ class ConsumptionExportPdfView(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def list(self, request):
-        queryset = StockMovement.objects.select_related('supply').filter(type=StockMovement.Types.OUT).order_by('-movement_date')
+        queryset = StockMovement.objects.select_related('supply', 'school').filter(type=StockMovement.Types.OUT).order_by('-movement_date')
         supply = request.query_params.get('supply')
         school = request.query_params.get('school')
         date_from = request.query_params.get('date_from')
@@ -679,29 +769,69 @@ class ConsumptionExportPdfView(viewsets.ViewSet):
         if date_to:
             queryset = queryset.filter(movement_date__lte=date_to)
 
+        movements = list(queryset)
+        total_records = len(movements)
+        total_quantity = sum(float(movement.quantity) for movement in movements)
+
         response = HttpResponse(content_type='application/pdf')
         response['Content-Disposition'] = 'attachment; filename=\"consumption.pdf\"'
         pdf = canvas.Canvas(response, pagesize=A4)
-        width, height = A4
-        y = height - 40
-        pdf.setFont('Helvetica-Bold', 14)
-        pdf.drawString(40, y, _pdf_text('Relatorio de Consumo'))
-        y -= 18
+        _, height = A4
+        generated_at = timezone.now()
+        page_number = 1
+        filters = [
+            ('Insumo', supply),
+            ('Escola', school),
+            ('Data inicial', date_from),
+            ('Data final', date_to),
+        ]
+        y = _start_pdf_page(pdf, 'Relatorio de Consumo', generated_at, filters, page_number)
+
         pdf.setFont('Helvetica', 9)
-        pdf.drawString(40, y, _pdf_text(f"Gerado em: {timezone.now().strftime('%Y-%m-%d %H:%M')}"))
-        y -= 20
+        pdf.setFillColor(colors.HexColor('#1b2a41'))
+        pdf.drawString(
+            32,
+            y,
+            _pdf_text(f"Total de registros: {total_records} | Quantidade total de consumo: {total_quantity:.2f}"),
+        )
+        y -= 18
 
-        pdf.setFont('Helvetica', 10)
-        for movement in queryset:
-            if y < 60:
+        def draw_table_header(y_pos):
+            pdf.setFillColor(colors.HexColor('#e3e9f5'))
+            pdf.rect(32, y_pos - 14, 530, 16, stroke=0, fill=1)
+            pdf.setFillColor(colors.HexColor('#1b2a41'))
+            pdf.setFont('Helvetica-Bold', 8.5)
+            pdf.drawString(36, y_pos - 10, _pdf_text('DATA'))
+            pdf.drawString(90, y_pos - 10, _pdf_text('ESCOLA'))
+            pdf.drawString(230, y_pos - 10, _pdf_text('INSUMO'))
+            pdf.drawRightString(455, y_pos - 10, _pdf_text('QTD'))
+            pdf.drawString(462, y_pos - 10, _pdf_text('UN'))
+            pdf.drawString(494, y_pos - 10, _pdf_text('OBS.'))
+            return y_pos - 20
+
+        y = draw_table_header(y)
+        for movement in movements:
+            if y < 64:
+                _draw_pdf_footer(pdf, page_number)
                 pdf.showPage()
-                y = height - 40
-                pdf.setFont('Helvetica', 10)
-            line = f"{movement.movement_date} - {movement.supply.name} - {movement.quantity}{movement.supply.unit}"
-            pdf.drawString(40, y, _pdf_text(line[:120]))
-            y -= 16
+                page_number += 1
+                y = _start_pdf_page(pdf, 'Relatorio de Consumo', generated_at, filters, page_number)
+                y = draw_table_header(y)
 
-        pdf.showPage()
+            school_name = movement.school.name if movement.school else 'Central'
+            pdf.setFont('Helvetica', 8)
+            pdf.setFillColor(colors.black)
+            pdf.drawString(36, y - 8, _pdf_text(str(movement.movement_date)))
+            pdf.drawString(90, y - 8, _pdf_text(school_name[:24]))
+            pdf.drawString(230, y - 8, _pdf_text(movement.supply.name[:34]))
+            pdf.drawRightString(455, y - 8, _pdf_text(f"{float(movement.quantity):.2f}"))
+            pdf.drawString(462, y - 8, _pdf_text(movement.supply.unit))
+            pdf.drawString(494, y - 8, _pdf_text((movement.note or '-')[:12]))
+            pdf.setStrokeColor(colors.HexColor('#e8edf6'))
+            pdf.line(32, y - 11, 562, y - 11)
+            y -= 14
+
+        _draw_pdf_footer(pdf, page_number)
         pdf.save()
         return response
 
@@ -762,6 +892,114 @@ class ConsumptionExportXlsxView(viewsets.ViewSet):
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
         response['Content-Disposition'] = 'attachment; filename=\"consumption.xlsx\"'
+        return response
+
+
+class SupplierReceiptExportPdfView(viewsets.ViewSet):
+    authentication_classes = [QueryParamJWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def list(self, request):
+        queryset = SupplierReceipt.objects.select_related('supplier', 'school').prefetch_related('items__supply', 'items__supply_created').all().order_by('-expected_date', '-created_at')
+        supplier = request.query_params.get('supplier')
+        school = request.query_params.get('school')
+        status_value = request.query_params.get('status')
+        date_from = request.query_params.get('date_from')
+        date_to = request.query_params.get('date_to')
+        if supplier:
+            queryset = queryset.filter(supplier_id=supplier)
+        if school:
+            queryset = queryset.filter(school_id=school)
+        if status_value:
+            queryset = queryset.filter(status=status_value)
+        if date_from:
+            queryset = queryset.filter(expected_date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(expected_date__lte=date_to)
+
+        receipts = list(queryset)
+        total_receipts = len(receipts)
+        total_items = sum(receipt.items.count() for receipt in receipts)
+        conferred_total = sum(1 for receipt in receipts if receipt.status == SupplierReceipt.Status.CONFERRED)
+
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = 'attachment; filename=\"supplier_receipts.pdf\"'
+        pdf = canvas.Canvas(response, pagesize=A4)
+        _, height = A4
+        generated_at = timezone.now()
+        page_number = 1
+        filters = [
+            ('Fornecedor', supplier),
+            ('Escola', school),
+            ('Status', status_value),
+            ('Data inicial', date_from),
+            ('Data final', date_to),
+        ]
+        y = _start_pdf_page(pdf, 'Relatorio de Recebimentos de Fornecedores', generated_at, filters, page_number)
+
+        pdf.setFont('Helvetica', 9)
+        pdf.setFillColor(colors.HexColor('#1b2a41'))
+        pdf.drawString(
+            32,
+            y,
+            _pdf_text(
+                f"Total de recebimentos: {total_receipts} | Itens previstos: {total_items} | "
+                f"Recebimentos conferidos: {conferred_total}"
+            ),
+        )
+        y -= 18
+
+        for receipt in receipts:
+            items = list(receipt.items.all())
+            required_height = 76 + (len(items) * 12)
+            if y < required_height + 42:
+                _draw_pdf_footer(pdf, page_number)
+                pdf.showPage()
+                page_number += 1
+                y = _start_pdf_page(pdf, 'Relatorio de Recebimentos de Fornecedores', generated_at, filters, page_number)
+
+            school_label = receipt.school.name if receipt.school else 'Estoque Central'
+            pdf.setFillColor(colors.HexColor('#f7f9fc'))
+            pdf.rect(32, y - required_height + 8, 530, required_height, stroke=1, fill=1)
+            pdf.setFillColor(colors.HexColor('#1b2a41'))
+            pdf.setFont('Helvetica-Bold', 10)
+            pdf.drawString(
+                40,
+                y - 8,
+                _pdf_text(f"{receipt.expected_date} | {receipt.supplier.name} | {school_label} | {receipt.get_status_display()}"),
+            )
+
+            pdf.setFont('Helvetica', 8.5)
+            sender = receipt.sender_signed_by or '-'
+            receiver = receipt.receiver_signed_by or '-'
+            pdf.drawString(40, y - 22, _pdf_text(f"Entregador: {sender[:40]}"))
+            pdf.drawString(300, y - 22, _pdf_text(f"Recebedor: {receiver[:35]}"))
+
+            pdf.setFont('Helvetica-Bold', 8)
+            pdf.drawString(40, y - 36, _pdf_text('Item'))
+            pdf.drawRightString(392, y - 36, _pdf_text('Prev.'))
+            pdf.drawRightString(462, y - 36, _pdf_text('Receb.'))
+            pdf.drawString(470, y - 36, _pdf_text('Obs.'))
+            pdf.setFont('Helvetica', 8)
+            line_y = y - 48
+
+            for item in items:
+                supply_name = (
+                    item.supply.name
+                    if item.supply
+                    else (item.supply_created.name if item.supply_created else item.raw_name)
+                ) or 'Item sem nome'
+                received = '-' if item.received_quantity is None else f"{float(item.received_quantity):.2f} {item.unit}"
+                pdf.drawString(40, line_y, _pdf_text(supply_name[:50]))
+                pdf.drawRightString(392, line_y, _pdf_text(f"{float(item.expected_quantity):.2f} {item.unit}"))
+                pdf.drawRightString(462, line_y, _pdf_text(received))
+                pdf.drawString(470, line_y, _pdf_text((item.divergence_note or '-')[:14]))
+                line_y -= 12
+
+            y -= required_height + 8
+
+        _draw_pdf_footer(pdf, page_number)
+        pdf.save()
         return response
 
 

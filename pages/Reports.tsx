@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { exportConsumptionPdf, exportConsumptionXlsx, exportDeliveriesPdf, exportDeliveriesXlsx, exportMenuPdf, exportMenusCsv, exportStockCsv, exportStockPdf, exportStockXlsx, getDashboard, getDeliveries, getSchools, getStockMovements, getSupplies } from '../api';
+import { exportConsumptionPdf, exportConsumptionXlsx, exportDeliveriesPdf, exportDeliveriesXlsx, exportMenuPdf, exportMenusCsv, exportStockCsv, exportStockPdf, exportStockXlsx, exportSupplierReceiptsPdf, getDashboard, getDeliveries, getSchools, getStockMovements, getSupplies } from '../api';
 
 
 const Reports: React.FC = () => {
@@ -227,6 +227,21 @@ const Reports: React.FC = () => {
               <button onClick={() => exportMenusCsv()} className="btn-primary">
                 <span className="material-symbols-outlined">download</span>
                 CSV
+              </button>
+            </div>
+
+            {/* Supplier Receipts PDF */}
+            <div className="card p-5 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span className="material-symbols-outlined text-accent-500">receipt_long</span>
+                  Recebimentos de Fornecedores
+                </h3>
+                <p className="text-sm text-slate-500">Exportação em PDF dos recebimentos e itens conferidos</p>
+              </div>
+              <button onClick={() => exportSupplierReceiptsPdf()} className="btn bg-danger-500 text-white hover:bg-danger-600">
+                <span className="material-symbols-outlined">picture_as_pdf</span>
+                PDF
               </button>
             </div>
           </div>

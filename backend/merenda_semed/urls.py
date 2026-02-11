@@ -13,6 +13,7 @@ from inventory.views import (
     ResponsibleViewSet,
     SchoolStockConfigViewSet,
     SupplierReceiptViewSet,
+    SupplierReceiptExportPdfView,
     SupplierViewSet,
     SupplyViewSet,
     StockViewSet,
@@ -47,6 +48,7 @@ router.register(r'exports/deliveries/pdf', DeliveryExportPdfView, basename='expo
 router.register(r'exports/deliveries/xlsx', DeliveryExportXlsxView, basename='export-deliveries-xlsx')
 router.register(r'exports/consumption/pdf', ConsumptionExportPdfView, basename='export-consumption-pdf')
 router.register(r'exports/consumption/xlsx', ConsumptionExportXlsxView, basename='export-consumption-xlsx')
+router.register(r'exports/supplier-receipts/pdf', SupplierReceiptExportPdfView, basename='export-supplier-receipts-pdf')
 router.register(r'notifications', NotificationViewSet, basename='notification')
 router.register(r'school-stock-config', SchoolStockConfigViewSet, basename='school-stock-config')
 
