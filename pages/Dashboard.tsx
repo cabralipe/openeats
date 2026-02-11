@@ -191,8 +191,8 @@ const Dashboard: React.FC = () => {
                 <span>Saídas de estoque</span>
               </div>
             </div>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-64 min-h-[16rem] min-w-0">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
                 <AreaChart data={series}>
                   <defs>
                     <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
