@@ -62,3 +62,38 @@ class MenuItem(models.Model):
 
     def __str__(self) -> str:
         return f"{self.menu} - {self.day_of_week} {self.meal_type}"
+
+
+class MealServiceReport(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='meal_service_reports')
+    menu = models.ForeignKey(Menu, on_delete=models.SET_NULL, related_name='meal_service_reports', null=True, blank=True)
+    service_date = models.DateField()
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['school', 'service_date'], name='unique_meal_service_report_per_school_day')
+        ]
+        ordering = ['-service_date', '-submitted_at']
+
+    def __str__(self) -> str:
+        return f"{self.school.name} - {self.service_date}"
+
+
+class MealServiceEntry(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    report = models.ForeignKey(MealServiceReport, on_delete=models.CASCADE, related_name='entries')
+    meal_type = models.CharField(max_length=16, choices=MenuItem.MealType.choices)
+    meal_label = models.CharField(max_length=120, blank=True)
+    served_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['report', 'meal_type'], name='unique_meal_service_entry_per_category')
+        ]
+        ordering = ['meal_type']
+
+    def __str__(self) -> str:
+        return f"{self.report_id} - {self.meal_type}: {self.served_count}"

@@ -5,8 +5,10 @@ from rest_framework.views import APIView
 
 from django.db.models import Sum
 from django.db.models.functions import TruncMonth
-from inventory.models import StockBalance, StockMovement, Supply
-from menus.models import Menu
+from django.utils import timezone
+from django.utils.timesince import timesince
+from inventory.models import Delivery, SchoolStockBalance, StockBalance, StockMovement, Supplier, Supply
+from menus.models import MealServiceEntry, Menu, MenuItem
 from schools.models import School
 
 
@@ -14,17 +16,108 @@ class DashboardView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        # 1. Basic Counts
         schools_total = School.objects.count()
         schools_active = School.objects.filter(is_active=True).count()
         supplies_total = Supply.objects.count()
         menus_published = Menu.objects.filter(status=Menu.Status.PUBLISHED).count()
-        low_stock = StockBalance.objects.filter(quantity__lt=models.F('supply__min_stock')).count()
+        
+        # Low stock based on School Stock Balances
+        low_stock_school = SchoolStockBalance.objects.filter(
+            quantity__lt=models.F('min_stock'),
+            min_stock__gt=0
+        ).count()
+        # Fallback to general One-to-One StockBalance if no school specific entries are used widely yet,
+        # but the requirement was "Estoque de Feijão Baixo - Escola Municipal...".
+        # So we surely want SchoolStockBalance for the "Recent Activity". 
+        # For the COUNTER, let's keep it consistent:
+        low_stock = low_stock_school
+
+        # 2. Month Summary
+        today = timezone.localdate()
+        current_month_start = today.replace(day=1)
+        
+        # Meals served approx. = Stock Outflows
+        meals_served = StockMovement.objects.filter(
+            type=StockMovement.Types.OUT,
+            movement_date__gte=current_month_start
+        ).aggregate(total=Sum('quantity'))['total'] or 0
+
+        # Deliveries realized
+        deliveries_count = Delivery.objects.filter(
+            status__in=[Delivery.Status.SENT, Delivery.Status.CONFERRED],
+            delivery_date__gte=current_month_start
+        ).count()
+
+        # 3. Recent Activity (Mix of: Published Menus, Low Stock Alerts, New Suppliers)
+        # We'll fetch top 5 of each and merge/sort in python for simplicity, then take top 5 overall.
+        
+        # A) Recent Menus
+        recent_menus = Menu.objects.filter(status=Menu.Status.PUBLISHED).select_related('school').order_by('-published_at')[:5]
+        
+        # B) Low Stock (School Balances)
+        # We want "Last Updated" low stocks? Or just current low stocks? 
+        # The prompt shows "Estoque de Feijão Baixo ... 4h atrás". 
+        # SchoolStockBalance has 'last_updated'.
+        recent_low_stock = SchoolStockBalance.objects.filter(
+            quantity__lt=models.F('min_stock'),
+            min_stock__gt=0
+        ).select_related('school', 'supply').order_by('-last_updated')[:5]
+
+        # C) New Suppliers (or maybe Deliveries?)
+        # Prompt says "Novo Fornecedor Cadastrado".
+        recent_suppliers = Supplier.objects.order_by('-created_at')[:5]
+
+        activities = []
+        
+        for menu in recent_menus:
+            activities.append({
+                'type': 'MENU_PUBLISHED',
+                'title': menu.name or 'Cardápio Publicado',
+                'subtitle': f"Publicado {timesince(menu.published_at)} atrás",
+                'timestamp': menu.published_at,
+                'icon': 'upload_file',
+                'iconBg': 'bg-primary-100 dark:bg-primary-900/30',
+                'iconColor': 'text-primary-500',
+            })
+
+        for balance in recent_low_stock:
+            activities.append({
+                'type': 'LOW_STOCK',
+                'title': f"Estoque Baixo: {balance.supply.name}",
+                'subtitle': f"{balance.school.name} • {timesince(balance.last_updated)} atrás",
+                'timestamp': balance.last_updated,
+                'icon': 'low_priority',
+                'iconBg': 'bg-warning-100 dark:bg-warning-900/30',
+                'iconColor': 'text-warning-500',
+            })
+
+        for supplier in recent_suppliers:
+            activities.append({
+                'type': 'new_supplier',
+                'title': 'Novo Fornecedor Cadastrado',
+                'subtitle': f"{supplier.name} • {timesince(supplier.created_at)} atrás",
+                'timestamp': supplier.created_at,
+                'icon': 'person_add',
+                'iconBg': 'bg-success-100 dark:bg-success-900/30',
+                'iconColor': 'text-success-500',
+            })
+
+        # Sort combined list by timestamp desc
+        activities.sort(key=lambda x: x['timestamp'], reverse=True)
+        recent_activities = activities[:5]
+
         return Response({
             'schools_total': schools_total,
             'schools_active': schools_active,
             'supplies_total': supplies_total,
             'low_stock': low_stock,
             'menus_published': menus_published,
+            'month_summary': {
+                'meals_served': meals_served,
+                'deliveries_realized': deliveries_count,
+            },
+            'recent_activities': recent_activities,
         })
 
 
@@ -46,4 +139,26 @@ class DashboardSeriesView(APIView):
             }
             for entry in movements
         ]
-        return Response({'consumption_by_month': series})
+
+        served = (
+            MealServiceEntry.objects.select_related('report__school')
+            .values('report__school__id', 'report__school__name', 'meal_type')
+            .annotate(total=Sum('served_count'))
+            .order_by('report__school__name', 'meal_type')
+        )
+        labels = dict(MenuItem.MealType.choices)
+        served_by_school_category = [
+            {
+                'school_id': str(item['report__school__id']),
+                'school_name': item['report__school__name'],
+                'meal_type': item['meal_type'],
+                'meal_label': labels.get(item['meal_type'], item['meal_type']),
+                'value': int(item['total'] or 0),
+            }
+            for item in served
+        ]
+
+        return Response({
+            'consumption_by_month': series,
+            'served_by_school_category': served_by_school_category,
+        })

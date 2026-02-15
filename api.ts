@@ -457,6 +457,30 @@ export async function submitPublicDeliveryConference(
   });
 }
 
+export async function getPublicMealService(slug: string, token: string, serviceDate?: string) {
+  const encodedSlug = encodeURIComponent(slug);
+  const params = new URLSearchParams({ token });
+  if (serviceDate) params.set('date', serviceDate);
+  return apiFetch(`/public/schools/${encodedSlug}/meal-service/?${params.toString()}`, { skipAuth: true });
+}
+
+export async function submitPublicMealService(
+  slug: string,
+  token: string,
+  payload: {
+    service_date: string;
+    items: Array<{ meal_type: string; served_count: number }>;
+  },
+) {
+  const encodedSlug = encodeURIComponent(slug);
+  const params = new URLSearchParams({ token });
+  return apiFetch(`/public/schools/${encodedSlug}/meal-service/?${params.toString()}`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    skipAuth: true,
+  });
+}
+
 
 export async function getPublicSupplies(slug: string, token: string) {
   const encodedSlug = encodeURIComponent(slug);

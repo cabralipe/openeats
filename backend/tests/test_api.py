@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
 from inventory.models import Delivery, DeliveryItem, Notification, SchoolStockBalance, StockBalance, StockMovement, Supply
-from menus.models import Menu, MenuItem
+from menus.models import MealServiceEntry, MealServiceReport, Menu, MenuItem
 from schools.models import School
 
 
@@ -77,10 +77,57 @@ def test_menu_publish_and_public_access(api_client, admin_user):
     assert public_response.data['school'] == str(school.id)
 
 
+def test_public_menu_current_falls_back_to_latest_published(api_client, admin_user):
+    api_client.force_authenticate(user=admin_user)
+    school = School.objects.create(name='Escola Fallback')
+
+    old_week_start = date.today() - timedelta(days=14)
+    old_week_end = old_week_start + timedelta(days=4)
+    old_menu = Menu.objects.create(
+        school=school,
+        week_start=old_week_start,
+        week_end=old_week_end,
+        status=Menu.Status.PUBLISHED,
+        created_by=admin_user,
+    )
+    MenuItem.objects.create(
+        menu=old_menu,
+        day_of_week=MenuItem.DayOfWeek.MON,
+        meal_type=MenuItem.MealType.LUNCH,
+        description='Arroz',
+    )
+
+    api_client.force_authenticate(user=None)
+    response = api_client.get(f'/public/schools/{school.public_slug}/menu/current/')
+    assert response.status_code == 200
+    assert response.data['id'] == str(old_menu.id)
+
+
+def test_public_schools_lists_any_school_with_published_menu(api_client, admin_user):
+    api_client.force_authenticate(user=admin_user)
+    school = School.objects.create(name='Escola Lista Publica')
+
+    old_week_start = date.today() - timedelta(days=21)
+    Menu.objects.create(
+        school=school,
+        week_start=old_week_start,
+        week_end=old_week_start + timedelta(days=4),
+        status=Menu.Status.PUBLISHED,
+        created_by=admin_user,
+    )
+
+    api_client.force_authenticate(user=None)
+    response = api_client.get('/public/schools/')
+    assert response.status_code == 200
+    assert any(entry['slug'] == school.public_slug for entry in response.data)
+
+
 def test_dashboard_series(api_client, admin_user):
     api_client.force_authenticate(user=admin_user)
     response = api_client.get('/api/dashboard/series/')
     assert response.status_code == 200
+    assert 'consumption_by_month' in response.data
+    assert 'served_by_school_category' in response.data
 
 
 def test_delivery_send_deducts_stock_and_enables_conference(api_client, admin_user):
@@ -181,3 +228,101 @@ def test_public_consumption_works_without_previous_delivery(api_client, admin_us
 
     school_balance = SchoolStockBalance.objects.get(school=school, supply=supply)
     assert float(school_balance.quantity) == 17.0
+
+
+def test_public_consumption_lists_only_school_stock_items(api_client, admin_user):
+    school = School.objects.create(name='Escola Consumo Lista')
+    other_school = School.objects.create(name='Outra Escola')
+
+    supply_with_stock = Supply.objects.create(name='Arroz', category='Graos', unit=Supply.Units.KG, min_stock=10)
+    supply_zero_stock = Supply.objects.create(name='Feijao', category='Graos', unit=Supply.Units.KG, min_stock=10)
+    supply_other_school = Supply.objects.create(name='Leite', category='Mercearia', unit=Supply.Units.L, min_stock=10)
+    supply_inactive = Supply.objects.create(name='Macarrao', category='Graos', unit=Supply.Units.KG, min_stock=10, is_active=False)
+
+    SchoolStockBalance.objects.create(school=school, supply=supply_with_stock, quantity=5, min_stock=1)
+    SchoolStockBalance.objects.create(school=school, supply=supply_zero_stock, quantity=0, min_stock=1)
+    SchoolStockBalance.objects.create(school=other_school, supply=supply_other_school, quantity=8, min_stock=1)
+    SchoolStockBalance.objects.create(school=school, supply=supply_inactive, quantity=3, min_stock=1)
+
+    api_client.force_authenticate(user=None)
+    response = api_client.get(f'/public/schools/{school.public_slug}/consumption/?token={school.public_token}')
+    assert response.status_code == 200
+
+    ids = {entry['id'] for entry in response.data}
+    assert str(supply_with_stock.id) in ids
+    assert str(supply_zero_stock.id) not in ids
+    assert str(supply_other_school.id) not in ids
+    assert str(supply_inactive.id) not in ids
+
+
+def test_public_consumption_rejects_item_without_school_stock(api_client, admin_user):
+    school = School.objects.create(name='Escola Consumo Restrito')
+    supply = Supply.objects.create(name='Farinha', category='Graos', unit=Supply.Units.KG, min_stock=5)
+    SchoolStockBalance.objects.create(school=school, supply=supply, quantity=0, min_stock=1)
+
+    api_client.force_authenticate(user=None)
+    response = api_client.post(
+        f'/public/schools/{school.public_slug}/consumption/?token={school.public_token}',
+        {
+            'items': [
+                {
+                    'supply': str(supply.id),
+                    'quantity': '1.00',
+                    'movement_date': date.today().isoformat(),
+                    'note': 'Teste',
+                },
+            ],
+        },
+        format='json',
+    )
+    assert response.status_code == 403
+
+
+def test_public_meal_service_get_and_submit(api_client, admin_user):
+    school = School.objects.create(name='Escola Refeicoes')
+    week_start = date.today() - timedelta(days=date.today().weekday())
+    week_end = week_start + timedelta(days=4)
+    menu = Menu.objects.create(
+        school=school,
+        week_start=week_start,
+        week_end=week_end,
+        status=Menu.Status.PUBLISHED,
+        created_by=admin_user,
+    )
+    MenuItem.objects.create(
+        menu=menu,
+        day_of_week=MenuItem.DayOfWeek.MON,
+        meal_type=MenuItem.MealType.BREAKFAST_1,
+        description='Leite e pao',
+    )
+    MenuItem.objects.create(
+        menu=menu,
+        day_of_week=MenuItem.DayOfWeek.MON,
+        meal_type=MenuItem.MealType.LUNCH,
+        description='Arroz e frango',
+    )
+
+    service_date = week_start
+    api_client.force_authenticate(user=None)
+    response = api_client.get(
+        f'/public/schools/{school.public_slug}/meal-service/?token={school.public_token}&date={service_date.isoformat()}'
+    )
+    assert response.status_code == 200
+    assert len(response.data['categories']) == 2
+
+    post_response = api_client.post(
+        f'/public/schools/{school.public_slug}/meal-service/?token={school.public_token}',
+        {
+            'service_date': service_date.isoformat(),
+            'items': [
+                {'meal_type': MenuItem.MealType.BREAKFAST_1, 'served_count': 55},
+                {'meal_type': MenuItem.MealType.LUNCH, 'served_count': 73},
+            ],
+        },
+        format='json',
+    )
+    assert post_response.status_code == 200
+    assert post_response.data['total_served'] == 128
+
+    report = MealServiceReport.objects.get(school=school, service_date=service_date)
+    assert MealServiceEntry.objects.filter(report=report).count() == 2

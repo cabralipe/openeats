@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from django.db import transaction
 from django.utils import timezone
-from rest_framework import permissions
+from rest_framework import permissions, serializers
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -16,7 +16,7 @@ from inventory.serializers import (
     PublicDeliverySerializer,
     SupplySerializer,
 )
-from menus.models import Menu
+from menus.models import MealServiceEntry, MealServiceReport, Menu, MenuItem
 from menus.serializers import MenuSerializer
 from schools.models import School
 from schools.serializers import SchoolPublicSerializer
@@ -35,13 +35,12 @@ class PublicSchoolListView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        today = date.today()
-        # Get schools that have at least one published menu for the current week
+        # List schools that have at least one published menu.
+        # The public page may be accessed on weekends/holidays, when no menu
+        # matches "current week" strictly.
         schools_with_menu = School.objects.filter(
             is_active=True,
             menus__status=Menu.Status.PUBLISHED,
-            menus__week_start__lte=today,
-            menus__week_end__gte=today,
         ).distinct().order_by('name')
         
         # Return minimal public info (name and slug only)
@@ -64,15 +63,24 @@ class PublicMenuCurrentView(APIView):
     def get(self, request, slug):
         school = get_object_or_404(School, public_slug=slug, is_active=True)
         today = date.today()
-        menu = Menu.objects.prefetch_related('items').filter(
+        queryset = Menu.objects.prefetch_related('items').filter(
             school=school,
             status=Menu.Status.PUBLISHED,
+        )
+
+        # Prefer the menu that matches today's date.
+        menu = queryset.filter(
             week_start__lte=today,
             week_end__gte=today,
-        ).first()
-        
+        ).order_by('-week_start').first()
+
+        # Fallback to latest published menu when no current-week menu exists
+        # (e.g., weekends or gaps in publication calendar).
         if not menu:
-            return Response({'detail': 'Nenhum cardápio publicado para esta semana.'}, status=404)
+            menu = queryset.order_by('-week_start').first()
+
+        if not menu:
+            return Response({'detail': 'Nenhum cardápio publicado para esta escola.'}, status=404)
         
         return Response(MenuSerializer(menu).data)
 
@@ -260,7 +268,11 @@ class PublicConsumptionView(PublicBaseView):
         school = get_object_or_404(School, public_slug=slug)
         token = request.query_params.get('token')
         self._validate_token(school, token)
-        supplies = Supply.objects.filter(is_active=True).order_by('name')
+        supplies = Supply.objects.filter(
+            is_active=True,
+            school_balances__school=school,
+            school_balances__quantity__gt=0,
+        ).distinct().order_by('name')
         return Response(SupplySerializer(supplies, many=True).data)
 
     def post(self, request, slug):
@@ -272,12 +284,18 @@ class PublicConsumptionView(PublicBaseView):
         serializer.is_valid(raise_exception=True)
         items = serializer.validated_data['items']
 
+        supply_ids = [item['supply'] for item in items]
         supplies = {
-            str(supply.id): supply
-            for supply in Supply.objects.filter(id__in=[item['supply'] for item in items])
+            str(balance.supply_id): balance.supply
+            for balance in SchoolStockBalance.objects.select_related('supply').filter(
+                school=school,
+                supply_id__in=supply_ids,
+                quantity__gt=0,
+                supply__is_active=True,
+            )
         }
         if len(supplies) != len(items):
-            raise PermissionDenied('Insumo invalido informado.')
+            raise PermissionDenied('Insumo invalido ou sem estoque na escola.')
 
         created_by = Delivery.objects.filter(school=school).order_by('-created_at').values_list('created_by', flat=True).first()
         if not created_by:
@@ -335,3 +353,172 @@ class PublicConsumptionView(PublicBaseView):
                 )
 
         return Response({'detail': 'Consumo registrado com sucesso.'})
+
+
+class PublicMealServiceItemInputSerializer(serializers.Serializer):
+    meal_type = serializers.CharField(max_length=16)
+    served_count = serializers.IntegerField(min_value=0)
+
+
+class PublicMealServiceInputSerializer(serializers.Serializer):
+    service_date = serializers.DateField()
+    items = PublicMealServiceItemInputSerializer(many=True)
+
+    def validate_items(self, items):
+        if not items:
+            raise serializers.ValidationError('Informe pelo menos uma refeicao.')
+        meal_types = [item['meal_type'] for item in items]
+        if len(meal_types) != len(set(meal_types)):
+            raise serializers.ValidationError('Categorias de refeicao duplicadas.')
+        return items
+
+
+class PublicMealServiceView(PublicBaseView):
+    _weekday_map = {
+        0: MenuItem.DayOfWeek.MON,
+        1: MenuItem.DayOfWeek.TUE,
+        2: MenuItem.DayOfWeek.WED,
+        3: MenuItem.DayOfWeek.THU,
+        4: MenuItem.DayOfWeek.FRI,
+    }
+
+    _weekday_labels = {
+        0: 'Segunda-feira',
+        1: 'Terca-feira',
+        2: 'Quarta-feira',
+        3: 'Quinta-feira',
+        4: 'Sexta-feira',
+        5: 'Sabado',
+        6: 'Domingo',
+    }
+
+    def _resolve_menu(self, school, service_date):
+        queryset = Menu.objects.prefetch_related('items').filter(
+            school=school,
+            status=Menu.Status.PUBLISHED,
+        )
+        menu = queryset.filter(
+            week_start__lte=service_date,
+            week_end__gte=service_date,
+        ).order_by('-week_start').first()
+        if not menu:
+            menu = queryset.filter(week_start__lte=service_date).order_by('-week_start').first()
+        if not menu:
+            menu = queryset.order_by('-week_start').first()
+        return menu
+
+    def _build_categories(self, menu, service_date):
+        if not menu:
+            return []
+        day_of_week = self._weekday_map.get(service_date.weekday())
+        if not day_of_week:
+            return []
+        meal_label_map = dict(MenuItem.MealType.choices)
+        grouped = {}
+        for item in menu.items.filter(day_of_week=day_of_week).order_by('meal_type', 'created_at'):
+            payload = grouped.setdefault(
+                item.meal_type,
+                {
+                    'meal_type': item.meal_type,
+                    'meal_label': meal_label_map.get(item.meal_type, item.meal_type),
+                    'items': [],
+                },
+            )
+            payload['items'].append(item.description)
+        return list(grouped.values())
+
+    def get(self, request, slug):
+        school = get_object_or_404(School, public_slug=slug, is_active=True)
+        token = request.query_params.get('token')
+        self._validate_token(school, token)
+
+        raw_date = request.query_params.get('date')
+        try:
+            service_date = date.fromisoformat(raw_date) if raw_date else date.today()
+        except ValueError:
+            raise PermissionDenied('Data invalida. Use o formato YYYY-MM-DD.')
+
+        menu = self._resolve_menu(school, service_date)
+        categories = self._build_categories(menu, service_date)
+
+        existing = {}
+        report = MealServiceReport.objects.prefetch_related('entries').filter(
+            school=school,
+            service_date=service_date,
+        ).first()
+        if report:
+            existing = {entry.meal_type: entry.served_count for entry in report.entries.all()}
+
+        return Response(
+            {
+                'school': str(school.id),
+                'school_name': school.name,
+                'service_date': service_date.isoformat(),
+                'weekday': self._weekday_labels.get(service_date.weekday(), ''),
+                'menu': (
+                    {
+                        'id': str(menu.id),
+                        'week_start': menu.week_start.isoformat(),
+                        'week_end': menu.week_end.isoformat(),
+                    }
+                    if menu
+                    else None
+                ),
+                'categories': categories,
+                'existing_entries': existing,
+            }
+        )
+
+    def post(self, request, slug):
+        school = get_object_or_404(School, public_slug=slug, is_active=True)
+        token = request.query_params.get('token')
+        self._validate_token(school, token)
+
+        serializer = PublicMealServiceInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        service_date = serializer.validated_data['service_date']
+        menu = self._resolve_menu(school, service_date)
+        categories = self._build_categories(menu, service_date)
+        if not categories:
+            raise PermissionDenied('Nao ha refeicoes cadastradas para esta data.')
+
+        label_by_type = {item['meal_type']: item['meal_label'] for item in categories}
+        allowed_types = set(label_by_type.keys())
+        provided_items = serializer.validated_data['items']
+        provided_types = {item['meal_type'] for item in provided_items}
+
+        invalid_types = provided_types - allowed_types
+        if invalid_types:
+            raise PermissionDenied('Categoria de refeicao invalida para o cardapio desta data.')
+        missing_types = allowed_types - provided_types
+        if missing_types:
+            raise PermissionDenied('Informe todas as categorias de refeicao exibidas.')
+
+        with transaction.atomic():
+            report, _ = MealServiceReport.objects.update_or_create(
+                school=school,
+                service_date=service_date,
+                defaults={'menu': menu},
+            )
+            MealServiceEntry.objects.filter(report=report).delete()
+            MealServiceEntry.objects.bulk_create(
+                [
+                    MealServiceEntry(
+                        report=report,
+                        meal_type=item['meal_type'],
+                        meal_label=label_by_type.get(item['meal_type'], item['meal_type']),
+                        served_count=item['served_count'],
+                    )
+                    for item in provided_items
+                ]
+            )
+
+        total_served = sum(item['served_count'] for item in provided_items)
+        return Response(
+            {
+                'detail': 'Refeicoes servidas registradas com sucesso.',
+                'report_id': str(report.id),
+                'total_served': total_served,
+            }
+        )

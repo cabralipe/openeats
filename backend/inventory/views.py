@@ -8,6 +8,7 @@ from openpyxl import Workbook
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.pdfgen import canvas
+from reportlab.lib.utils import simpleSplit
 from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -55,6 +56,12 @@ def _format_filter_value(value):
     return str(value)
 
 
+def get_wrapped_text_lines(text, font_name, font_size, max_width):
+    if not text:
+        return []
+    return simpleSplit(text, font_name, font_size, max_width)
+
+
 def _start_pdf_page(pdf, title, generated_at, filters, page_number):
     width, height = A4
     left = 32
@@ -64,7 +71,7 @@ def _start_pdf_page(pdf, title, generated_at, filters, page_number):
     pdf.rect(0, height - 84, width, 84, stroke=0, fill=1)
     pdf.setFillColor(colors.white)
     pdf.setFont('Helvetica-Bold', 16)
-    pdf.drawString(left, height - 32, _pdf_text('SEMED - Prestacao de Contas'))
+    # pdf.drawString(left, height - 32, _pdf_text('SEMED - Prestacao de Contas'))
     pdf.setFont('Helvetica', 11)
     pdf.drawString(left, height - 50, _pdf_text(title))
     pdf.setFont('Helvetica', 9)
@@ -87,7 +94,7 @@ def _draw_pdf_footer(pdf, page_number):
     pdf.line(32, 26, width - 32, 26)
     pdf.setFont('Helvetica', 8)
     pdf.setFillColor(colors.HexColor('#5b6578'))
-    pdf.drawString(32, 14, _pdf_text('Documento de prestacao de contas - uso interno SEMED'))
+    # pdf.drawString(32, 14, _pdf_text('Documento de prestacao de contas - uso interno SEMED'))
     pdf.drawRightString(width - 32, 14, _pdf_text(f"Pagina {page_number}"))
 
 
@@ -434,7 +441,15 @@ class StockExportPdfView(viewsets.ViewSet):
         y = draw_table_header(y)
         current_category = None
         for entry in items:
-            if y < 64:
+            # Prepare wrapped text
+            name_lines = get_wrapped_text_lines(_pdf_text(entry['name']), 'Helvetica', 8, 160)
+            category_lines = get_wrapped_text_lines(_pdf_text(entry['category']), 'Helvetica', 8, 100)
+            
+            # Calculate row height
+            max_lines = max(len(name_lines), len(category_lines), 1)
+            row_height = 8 + (max_lines * 9) # 8 padding + 9 per line
+
+            if y < row_height + 20:
                 _draw_pdf_footer(pdf, page_number)
                 pdf.showPage()
                 page_number += 1
@@ -448,9 +463,9 @@ class StockExportPdfView(viewsets.ViewSet):
                 pdf.rect(32, y - 12, 530, 14, stroke=0, fill=1)
                 pdf.setFillColor(colors.HexColor('#344563'))
                 pdf.setFont('Helvetica-Bold', 8)
-                pdf.drawString(36, y - 9, _pdf_text(current_category[:50]))
+                pdf.drawString(36, y - 9, _pdf_text(current_category))
                 y -= 15
-                if y < 64:
+                if y < row_height + 20:
                     _draw_pdf_footer(pdf, page_number)
                     pdf.showPage()
                     page_number += 1
@@ -459,16 +474,27 @@ class StockExportPdfView(viewsets.ViewSet):
 
             pdf.setFont('Helvetica', 8)
             pdf.setFillColor(colors.black)
-            pdf.drawString(36, y - 8, _pdf_text(entry['name'][:36]))
-            pdf.drawString(205, y - 8, _pdf_text(entry['category'][:20]))
+            
+            # Draw fields with wrapping
+            text_y = y - 8
+            for line in name_lines:
+                pdf.drawString(36, text_y, line)
+                text_y -= 9
+                
+            text_y = y - 8
+            for line in category_lines:
+                pdf.drawString(205, text_y, line)
+                text_y -= 9
+
             pdf.drawString(315, y - 8, _pdf_text(entry['unit']))
             pdf.drawRightString(392, y - 8, _pdf_text(f"{entry['quantity']:.2f}"))
             pdf.drawRightString(452, y - 8, _pdf_text(f"{entry['min_stock']:.2f}"))
             pdf.drawRightString(512, y - 8, _pdf_text(f"{entry['diff']:.2f}"))
             pdf.drawRightString(556, y - 8, _pdf_text(entry['status']))
+            
             pdf.setStrokeColor(colors.HexColor('#e8edf6'))
-            pdf.line(32, y - 11, 562, y - 11)
-            y -= 14
+            pdf.line(32, y - row_height + 4, 562, y - row_height + 4)
+            y -= row_height
 
         _draw_pdf_footer(pdf, page_number)
         pdf.save()
@@ -621,8 +647,33 @@ class DeliveryExportPdfView(viewsets.ViewSet):
         y -= 18
 
         for delivery in deliveries:
-            delivery_items = list(delivery.items.all())
-            required_height = 78 + (len(delivery_items) * 12)
+            delivery_items = list(delivery.items.select_related('supply').all())
+            
+            # Calculate required height based on wrapped text
+            header_height = 78
+            items_height = 0
+            processed_items = []
+            
+            for item in delivery_items:
+                supply_name = item.supply.name
+                note = item.divergence_note or ''
+                
+                name_lines = get_wrapped_text_lines(_pdf_text(supply_name), 'Helvetica', 8, 300)
+                note_lines = get_wrapped_text_lines(_pdf_text(note), 'Helvetica', 8, 50)
+                
+                max_lines = max(len(name_lines), len(note_lines), 1)
+                item_row_height = max_lines * 9 + 4 # 9 per line + 4 padding
+                
+                processed_items.append({
+                    'item': item,
+                    'name_lines': name_lines,
+                    'note_lines': note_lines,
+                    'row_height': item_row_height
+                })
+                items_height += item_row_height
+
+            required_height = header_height + items_height
+            
             if y < required_height + 40:
                 _draw_pdf_footer(pdf, page_number)
                 pdf.showPage()
@@ -655,17 +706,33 @@ class DeliveryExportPdfView(viewsets.ViewSet):
             pdf.setFont('Helvetica', 8)
 
             line_y = y - 48
-            for item in delivery_items:
+            for p_item in processed_items:
+                item = p_item['item']
+                row_h = p_item['row_height']
+                
                 shortage = 0.0
                 if item.received_quantity is not None:
                     shortage = max(float(item.planned_quantity - item.received_quantity), 0.0)
                 received = '-' if item.received_quantity is None else f"{float(item.received_quantity):.2f}"
-                pdf.drawString(40, line_y, _pdf_text(item.supply.name[:42]))
+                
+                # Draw name wrapped
+                text_y = line_y
+                for line in p_item['name_lines']:
+                    pdf.drawString(40, text_y, line)
+                    text_y -= 9
+                
+                # Draw numeric fields aligned to top line
                 pdf.drawRightString(372, line_y, _pdf_text(f"{float(item.planned_quantity):.2f}"))
                 pdf.drawRightString(442, line_y, _pdf_text(received))
                 pdf.drawRightString(502, line_y, _pdf_text(f"{shortage:.2f}" if item.received_quantity is not None else '-'))
-                pdf.drawString(510, line_y, _pdf_text((item.divergence_note or '-')[:10]))
-                line_y -= 12
+                
+                # Draw note wrapped
+                text_y = line_y
+                for line in p_item['note_lines']:
+                    pdf.drawString(510, text_y, line)
+                    text_y -= 9
+                    
+                line_y -= row_h
 
             y -= required_height + 8
 
@@ -811,25 +878,45 @@ class ConsumptionExportPdfView(viewsets.ViewSet):
 
         y = draw_table_header(y)
         for movement in movements:
-            if y < 64:
+            school_name = movement.school.name if movement.school else 'Central'
+            supply_name = movement.supply.name
+            note = movement.note or ''
+            
+            supply_lines = get_wrapped_text_lines(_pdf_text(supply_name), 'Helvetica', 8, 220)
+            note_lines = get_wrapped_text_lines(_pdf_text(note), 'Helvetica', 8, 65)
+            
+            max_lines = max(len(supply_lines), len(note_lines), 1)
+            row_height = max_lines * 9 + 4
+            
+            if y < row_height + 20:
                 _draw_pdf_footer(pdf, page_number)
                 pdf.showPage()
                 page_number += 1
                 y = _start_pdf_page(pdf, 'Relatorio de Consumo', generated_at, filters, page_number)
                 y = draw_table_header(y)
 
-            school_name = movement.school.name if movement.school else 'Central'
             pdf.setFont('Helvetica', 8)
             pdf.setFillColor(colors.black)
+            
             pdf.drawString(36, y - 8, _pdf_text(str(movement.movement_date)))
             pdf.drawString(90, y - 8, _pdf_text(school_name[:24]))
-            pdf.drawString(230, y - 8, _pdf_text(movement.supply.name[:34]))
+            
+            text_y = y - 8
+            for line in supply_lines:
+                pdf.drawString(230, text_y, line)
+                text_y -= 9
+                
             pdf.drawRightString(455, y - 8, _pdf_text(f"{float(movement.quantity):.2f}"))
             pdf.drawString(462, y - 8, _pdf_text(movement.supply.unit))
-            pdf.drawString(494, y - 8, _pdf_text((movement.note or '-')[:12]))
+            
+            text_y = y - 8
+            for line in note_lines:
+                pdf.drawString(494, text_y, line)
+                text_y -= 9
+                
             pdf.setStrokeColor(colors.HexColor('#e8edf6'))
-            pdf.line(32, y - 11, 562, y - 11)
-            y -= 14
+            pdf.line(32, y - row_height + 4, 562, y - row_height + 4)
+            y -= row_height
 
         _draw_pdf_footer(pdf, page_number)
         pdf.save()
@@ -951,7 +1038,36 @@ class SupplierReceiptExportPdfView(viewsets.ViewSet):
 
         for receipt in receipts:
             items = list(receipt.items.all())
-            required_height = 76 + (len(items) * 12)
+            
+            # Calculate required height based on wrapped text
+            header_height = 76
+            items_height = 0
+            processed_items = []
+            
+            for item in items:
+                supply_name = (
+                    item.supply.name
+                    if item.supply
+                    else (item.supply_created.name if item.supply_created else item.raw_name)
+                ) or 'Item sem nome'
+                note = item.divergence_note or ''
+                
+                name_lines = get_wrapped_text_lines(_pdf_text(supply_name), 'Helvetica', 8, 350)
+                note_lines = get_wrapped_text_lines(_pdf_text(note), 'Helvetica', 8, 90)
+                
+                max_lines = max(len(name_lines), len(note_lines), 1)
+                item_row_height = max_lines * 9 + 4
+                
+                processed_items.append({
+                    'item': item,
+                    'name_lines': name_lines,
+                    'note_lines': note_lines,
+                    'row_height': item_row_height
+                })
+                items_height += item_row_height
+
+            required_height = header_height + items_height
+            
             if y < required_height + 42:
                 _draw_pdf_footer(pdf, page_number)
                 pdf.showPage()
@@ -983,18 +1099,26 @@ class SupplierReceiptExportPdfView(viewsets.ViewSet):
             pdf.setFont('Helvetica', 8)
             line_y = y - 48
 
-            for item in items:
-                supply_name = (
-                    item.supply.name
-                    if item.supply
-                    else (item.supply_created.name if item.supply_created else item.raw_name)
-                ) or 'Item sem nome'
+            for p_item in processed_items:
+                item = p_item['item']
+                row_h = p_item['row_height']
+                
                 received = '-' if item.received_quantity is None else f"{float(item.received_quantity):.2f} {item.unit}"
-                pdf.drawString(40, line_y, _pdf_text(supply_name[:50]))
+                
+                text_y = line_y
+                for line in p_item['name_lines']:
+                    pdf.drawString(40, text_y, line)
+                    text_y -= 9
+                    
                 pdf.drawRightString(392, line_y, _pdf_text(f"{float(item.expected_quantity):.2f} {item.unit}"))
                 pdf.drawRightString(462, line_y, _pdf_text(received))
-                pdf.drawString(470, line_y, _pdf_text((item.divergence_note or '-')[:14]))
-                line_y -= 12
+                
+                text_y = line_y
+                for line in p_item['note_lines']:
+                    pdf.drawString(470, text_y, line)
+                    text_y -= 9
+                    
+                line_y -= row_h
 
             y -= required_height + 8
 

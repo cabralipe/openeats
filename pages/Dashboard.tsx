@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell, AreaChart, Area } from 'recharts';
+import React, { useEffect, useMemo, useState } from 'react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, CartesianGrid, Legend } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 import { getDashboard, getDashboardSeries } from '../api';
 
@@ -19,26 +19,76 @@ const Dashboard: React.FC = () => {
     supplies_total: 0,
     low_stock: 0,
     menus_published: 0,
+    month_summary: {
+      meals_served: 0,
+      deliveries_realized: 0,
+    },
+    recent_activities: [] as Array<{
+      title: string;
+      subtitle: string;
+      icon: string;
+      iconBg: string;
+      iconColor: string;
+    }>,
   });
   const [error, setError] = useState('');
   const [series, setSeries] = useState(defaultData);
+  const [servedBySchoolCategory, setServedBySchoolCategory] = useState<Array<{
+    school_id: string;
+    school_name: string;
+    meal_type: string;
+    meal_label: string;
+    value: number;
+  }>>([]);
+  const [selectedSchool, setSelectedSchool] = useState('ALL');
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     setIsLoading(true);
     Promise.all([
       getDashboard()
-        .then((data) => setMetrics(data))
+        .then((data) => setMetrics((prev) => ({ ...prev, ...data })))
         .catch(() => setError('Não foi possível carregar o painel.')),
       getDashboardSeries()
-        .then((data) => {
+        .then((data: any) => {
           if (data?.consumption_by_month?.length) {
             setSeries(data.consumption_by_month);
           }
+          setServedBySchoolCategory(data?.served_by_school_category || []);
         })
         .catch(() => { })
     ]).finally(() => setIsLoading(false));
   }, []);
+
+  const schoolsOptions = useMemo(
+    () => Array.from(new Set(servedBySchoolCategory.map((item) => item.school_name))).sort((a, b) => a.localeCompare(b)),
+    [servedBySchoolCategory],
+  );
+  const categories = useMemo(
+    () => Array.from(new Set(servedBySchoolCategory.map((item) => item.meal_label))),
+    [servedBySchoolCategory],
+  );
+  const categoryKeys = useMemo(
+    () =>
+      categories.reduce<Record<string, string>>((acc, label, index) => {
+        acc[label] = `cat_${index}`;
+        return acc;
+      }, {}),
+    [categories],
+  );
+  const servedChartData = useMemo(() => {
+    const grouped = servedBySchoolCategory.reduce<Record<string, any>>((acc, item) => {
+      const row = acc[item.school_name] || { school_name: item.school_name };
+      const key = categoryKeys[item.meal_label];
+      row[key] = (row[key] || 0) + item.value;
+      acc[item.school_name] = row;
+      return acc;
+    }, {});
+    return Object.values(grouped)
+      .filter((row: any) => selectedSchool === 'ALL' || row.school_name === selectedSchool)
+      .sort((a: any, b: any) => a.school_name.localeCompare(b.school_name));
+  }, [categoryKeys, selectedSchool, servedBySchoolCategory]);
+  const chartPalette = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#f97316'];
 
   const statCards = [
     {
@@ -88,12 +138,6 @@ const Dashboard: React.FC = () => {
     { icon: 'inventory_2', label: 'Gerenciar Estoque', path: '/admin/inventory', color: 'bg-secondary-500' },
     { icon: 'school', label: 'Gerenciar Escolas', path: '/admin/schools', color: 'bg-primary-500' },
     { icon: 'local_shipping', label: 'Ver Entregas', path: '/admin/deliveries', color: 'bg-accent-500' },
-  ];
-
-  const recentActivities = [
-    { icon: 'upload_file', title: 'Cardápio Fundamental I - Março', subtitle: 'Publicado há 2 horas', iconBg: 'bg-primary-100 dark:bg-primary-900/30', iconColor: 'text-primary-500' },
-    { icon: 'low_priority', title: 'Estoque de Feijão Baixo', subtitle: 'Escola Municipal Dom Bosco • 4h atrás', iconBg: 'bg-warning-100 dark:bg-warning-900/30', iconColor: 'text-warning-500' },
-    { icon: 'person_add', title: 'Novo Fornecedor Cadastrado', subtitle: 'Hortifruti Central • Ontem', iconBg: 'bg-success-100 dark:bg-success-900/30', iconColor: 'text-success-500' },
   ];
 
   return (
@@ -228,26 +272,76 @@ const Dashboard: React.FC = () => {
               </ResponsiveContainer>
             </div>
           </div>
+
+          <div className="card p-4 lg:p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Refeicoes Servidas por Categoria e Escola</h3>
+              <select
+                value={selectedSchool}
+                onChange={(e) => setSelectedSchool(e.target.value)}
+                className="input w-full sm:w-72"
+              >
+                <option value="ALL">Todas as escolas</option>
+                {schoolsOptions.map((school) => (
+                  <option key={school} value={school}>{school}</option>
+                ))}
+              </select>
+            </div>
+
+            {servedChartData.length === 0 ? (
+              <div className="text-sm text-slate-500 py-10 text-center">
+                Sem lancamentos de refeicoes servidas ainda.
+              </div>
+            ) : (
+              <div className="h-80 min-h-[20rem] min-w-0">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240}>
+                  <BarChart data={servedChartData} margin={{ top: 8, right: 12, left: 0, bottom: 16 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="school_name" stroke="#64748b" fontSize={12} tickLine={false} />
+                    <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
+                    <Tooltip />
+                    <Legend />
+                    {categories.map((category, index) => (
+                      <Bar
+                        key={category}
+                        dataKey={categoryKeys[category]}
+                        name={category}
+                        stackId="served"
+                        fill={chartPalette[index % chartPalette.length]}
+                      />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Right Column - Activity */}
         <div>
           <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-3">Atividade Recente</h3>
           <div className="card divide-y divide-slate-100 dark:divide-slate-700">
-            {recentActivities.map((activity, index) => (
-              <div
-                key={index}
-                className="flex items-center gap-4 p-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
-              >
-                <div className={`w-11 h-11 rounded-xl ${activity.iconBg} flex items-center justify-center shrink-0`}>
-                  <span className={`material-symbols-outlined ${activity.iconColor}`}>{activity.icon}</span>
+            {metrics.recent_activities?.length > 0 ? (
+              metrics.recent_activities.map((activity, index) => (
+                <div
+                  key={index}
+                  className="flex items-center gap-4 p-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
+                >
+                  <div className={`w-11 h-11 rounded-xl ${activity.iconBg} flex items-center justify-center shrink-0`}>
+                    <span className={`material-symbols-outlined ${activity.iconColor}`}>{activity.icon}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{activity.title}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{activity.subtitle}</p>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{activity.title}</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{activity.subtitle}</p>
-                </div>
+              ))
+            ) : (
+              <div className="p-8 text-center text-slate-500 dark:text-slate-400">
+                <span className="material-symbols-outlined text-4xl mb-2 opacity-50">history</span>
+                <p className="text-sm">Nenhuma atividade recente</p>
               </div>
-            ))}
+            )}
           </div>
 
           {/* Quick Stats */}
@@ -258,11 +352,11 @@ const Dashboard: React.FC = () => {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-2xl font-bold">847</p>
+                <p className="text-2xl font-bold">{metrics.month_summary?.meals_served || 0}</p>
                 <p className="text-xs text-white/70">Refeições servidas</p>
               </div>
               <div>
-                <p className="text-2xl font-bold">12</p>
+                <p className="text-2xl font-bold">{metrics.month_summary?.deliveries_realized || 0}</p>
                 <p className="text-xs text-white/70">Entregas realizadas</p>
               </div>
             </div>

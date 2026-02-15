@@ -17,7 +17,6 @@ const navItems: NavItem[] = [
 
 const moreNavItems: NavItem[] = [
   { icon: 'edit_calendar', label: 'Editor', path: '/admin/editor' },
-  { icon: 'checklist', label: 'Consumo', path: '/admin/consumption' },
   { icon: 'insert_chart', label: 'Relatórios', path: '/admin/reports' },
 ];
 

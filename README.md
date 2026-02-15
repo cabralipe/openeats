@@ -28,7 +28,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/1jdk_g9aTLr5gp6jLWJUO5O
 
 API base: `http://localhost:8000`
 
-Credenciais seed:
+Credenciais iniciais do admin:
 `admin@semed.local` / `Admin123!`
 
 ## Testes
@@ -57,4 +57,6 @@ Passos:
 
 Observações:
 - O backend executa `collectstatic`, `migrate` e `seed` automaticamente no deploy/start.
+- O `seed` padrao cria apenas o usuario administrador (sem dados de exemplo).
+- Para popular dados de exemplo manualmente, rode: `python manage.py seed --with-sample-data`
 - `SECRET_KEY` é gerada automaticamente no Render.

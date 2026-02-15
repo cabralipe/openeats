@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import jsPDF from 'jspdf';
+import QRCode from 'qrcode';
 import { createSchool, deleteSchool, getPublicLink, getSchools, getSchoolStock, updateSchool, getMenus, copyMenu, getSchoolStockConfig, updateSchoolStockLimit } from '../api';
 import { School } from '../types';
 
@@ -25,6 +27,7 @@ const Schools: React.FC = () => {
   const navigate = useNavigate();
   const [schools, setSchools] = useState<School[]>([]);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<School | null>(null);
   const [form, setForm] = useState({
@@ -53,6 +56,8 @@ const Schools: React.FC = () => {
   const [configModal, setConfigModal] = useState<{ school: School; items: StockConfigItem[] } | null>(null);
   const [configLoading, setConfigLoading] = useState(false);
   const [editingLimits, setEditingLimits] = useState<Record<string, string>>({});
+  const [plaqueModal, setPlaqueModal] = useState<{ schoolName: string; link: string; title: string } | null>(null);
+  const [plaqueQr, setPlaqueQr] = useState('');
 
   const locationLabel = useMemo(() => {
     return (school: School) => school.location || 'Sem endereço';
@@ -87,11 +92,46 @@ const Schools: React.FC = () => {
     return () => clearTimeout(timeout);
   }, [search, statusFilter, cityFilter, addressFilter]);
 
+  useEffect(() => {
+    let active = true;
+    if (!plaqueModal) {
+      setPlaqueQr('');
+      return;
+    }
+    QRCode.toDataURL(plaqueModal.link, { width: 320, margin: 1 })
+      .then((url) => {
+        if (active) setPlaqueQr(url);
+      })
+      .catch(() => setError('Não foi possível gerar o QR Code.'));
+    return () => {
+      active = false;
+    };
+  }, [plaqueModal]);
+
+  const copyText = async (text: string) => {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+  };
+
+  const buildSchoolLink = async (school: School, route: '/public/menu' | '/public/meal-service') => {
+    const link = await getPublicLink(school.id) as { slug: string; token: string };
+    const search = new URLSearchParams({ slug: link.slug, token: link.token }).toString();
+    return `${window.location.origin}/#${route}?${search}`;
+  };
+
   const openPublicMenu = async (school: School) => {
     try {
-      const link = await getPublicLink(school.id) as { slug: string; token: string };
-      const search = new URLSearchParams({ slug: link.slug, token: link.token }).toString();
-      window.open(`#/public/menu?${search}`, '_blank');
+      const url = await buildSchoolLink(school, '/public/menu');
+      await copyText(url);
+      setSuccess('Link do cardápio copiado automaticamente.');
     } catch {
       setError('Não foi possível gerar o link público.');
     }
@@ -99,11 +139,160 @@ const Schools: React.FC = () => {
 
   const openPublicConsumption = async (school: School) => {
     try {
-      const link = await getPublicLink(school.id) as { slug: string; token: string };
-      const search = new URLSearchParams({ slug: link.slug, token: link.token }).toString();
-      window.open(`#/public/consumption?${search}`, '_blank');
+      const url = await buildSchoolLink(school, '/public/meal-service');
+      await copyText(url);
+      setSuccess('Link de refeições servidas copiado automaticamente.');
     } catch {
       setError('Não foi possível gerar o link público.');
+    }
+  };
+
+  const openPlaque = async (school: School) => {
+    try {
+      const url = await buildSchoolLink(school, '/public/meal-service');
+      await copyText(url);
+      setPlaqueModal({
+        schoolName: school.name,
+        link: url,
+        title: 'Plaquinha de Refeições Servidas',
+      });
+      setSuccess('Link copiado e plaquinha gerada.');
+    } catch {
+      setError('Não foi possível gerar a plaquinha.');
+    }
+  };
+
+  const printPlaque = () => {
+    if (!plaqueModal || !plaqueQr) return;
+    const win = window.open('', '_blank', 'width=540,height=720');
+    if (!win) return;
+    win.document.write(`
+      <html>
+        <head><title>${plaqueModal.title}</title></head>
+        <body style="font-family: Arial, sans-serif; padding: 24px; text-align: center;">
+          <h2 style="margin: 0 0 8px;">${plaqueModal.title}</h2>
+          <p style="margin: 0 0 16px; font-size: 18px; font-weight: 600;">${plaqueModal.schoolName}</p>
+          <img src="${plaqueQr}" alt="QR Code" style="width: 320px; height: 320px;" />
+          <p style="margin-top: 16px; font-size: 12px; word-break: break-all;">${plaqueModal.link}</p>
+        </body>
+      </html>
+    `);
+    win.document.close();
+    win.focus();
+    win.print();
+  };
+
+  const drawWrappedCenteredText = (
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    x: number,
+    y: number,
+    maxWidth: number,
+    lineHeight: number,
+  ) => {
+    const words = text.split(' ');
+    let line = '';
+    let currentY = y;
+    words.forEach((word) => {
+      const testLine = line ? `${line} ${word}` : word;
+      if (ctx.measureText(testLine).width > maxWidth && line) {
+        ctx.fillText(line, x, currentY);
+        line = word;
+        currentY += lineHeight;
+      } else {
+        line = testLine;
+      }
+    });
+    if (line) ctx.fillText(line, x, currentY);
+    return currentY;
+  };
+
+  const loadImage = (src: string): Promise<HTMLImageElement> => (
+    new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    })
+  );
+
+  const buildPlaqueCanvas = async () => {
+    if (!plaqueModal || !plaqueQr) return null;
+    const width = 1240;
+    const height = 1754;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.fillStyle = '#0f172a';
+    ctx.textAlign = 'center';
+    ctx.font = '700 56px Arial';
+    ctx.fillText(plaqueModal.title, width / 2, 120);
+
+    ctx.fillStyle = '#334155';
+    ctx.font = '700 46px Arial';
+    drawWrappedCenteredText(ctx, plaqueModal.schoolName, width / 2, 200, width - 180, 56);
+
+    const qrImage = await loadImage(plaqueQr);
+    const qrSize = 760;
+    const qrX = (width - qrSize) / 2;
+    const qrY = 320;
+    ctx.drawImage(qrImage, qrX, qrY, qrSize, qrSize);
+
+    ctx.fillStyle = '#475569';
+    ctx.font = '600 30px Arial';
+    ctx.fillText('Escaneie para acessar', width / 2, 1130);
+
+    ctx.fillStyle = '#64748b';
+    ctx.font = '400 22px Arial';
+    drawWrappedCenteredText(ctx, plaqueModal.link, width / 2, 1210, width - 160, 30);
+
+    return canvas;
+  };
+
+  const downloadPlaquePng = async () => {
+    try {
+      const canvas = await buildPlaqueCanvas();
+      if (!canvas || !plaqueModal) return;
+      const a = document.createElement('a');
+      const schoolSlug = plaqueModal.schoolName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      a.href = canvas.toDataURL('image/png');
+      a.download = `plaquinha-${schoolSlug || 'escola'}.png`;
+      a.click();
+      setSuccess('Plaquinha em PNG baixada.');
+    } catch {
+      setError('Não foi possível baixar a plaquinha em PNG.');
+    }
+  };
+
+  const downloadPlaquePdf = async () => {
+    try {
+      const canvas = await buildPlaqueCanvas();
+      if (!canvas || !plaqueModal) return;
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgData = canvas.toDataURL('image/png');
+      const imgRatio = canvas.width / canvas.height;
+      let renderWidth = pageWidth - 40;
+      let renderHeight = renderWidth / imgRatio;
+      if (renderHeight > pageHeight - 40) {
+        renderHeight = pageHeight - 40;
+        renderWidth = renderHeight * imgRatio;
+      }
+      const x = (pageWidth - renderWidth) / 2;
+      const y = (pageHeight - renderHeight) / 2;
+      pdf.addImage(imgData, 'PNG', x, y, renderWidth, renderHeight);
+      const schoolSlug = plaqueModal.schoolName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      pdf.save(`plaquinha-${schoolSlug || 'escola'}.pdf`);
+      setSuccess('Plaquinha em PDF baixada.');
+    } catch {
+      setError('Não foi possível baixar a plaquinha em PDF.');
     }
   };
 
@@ -251,6 +440,12 @@ const Schools: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    if (!success) return;
+    const timer = setTimeout(() => setSuccess(''), 2500);
+    return () => clearTimeout(timer);
+  }, [success]);
+
   // Generate avatar color from school name
   const getAvatarColor = (name: string) => {
     const colors = [
@@ -331,6 +526,12 @@ const Schools: React.FC = () => {
           {error}
         </div>
       )}
+      {success && (
+        <div className="mx-4 mb-4 p-4 rounded-xl bg-success-50 dark:bg-success-900/20 text-success-600 dark:text-success-400 text-sm flex items-center gap-2">
+          <span className="material-symbols-outlined">check_circle</span>
+          {success}
+        </div>
+      )}
 
       {/* Schools Grid */}
       <div className="flex-1 px-4 lg:px-6">
@@ -384,7 +585,7 @@ const Schools: React.FC = () => {
                 </div>
 
                 {/* Actions */}
-                <div className="grid grid-cols-5 gap-2">
+                <div className="grid grid-cols-6 gap-2">
                   <button
                     onClick={() => openEdit(school)}
                     className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
@@ -405,6 +606,13 @@ const Schools: React.FC = () => {
                   >
                     <span className="material-symbols-outlined text-accent-500">inventory_2</span>
                     <span className="text-[10px] font-medium text-slate-500">Consumo</span>
+                  </button>
+                  <button
+                    onClick={() => openPlaque(school)}
+                    className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-secondary-500">qr_code_2</span>
+                    <span className="text-[10px] font-medium text-slate-500">Plaquinha</span>
                   </button>
                   <button
                     onClick={() => openConfigModal(school)}
@@ -769,6 +977,37 @@ const Schools: React.FC = () => {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {plaqueModal && (
+        <div className="modal-overlay" onClick={() => setPlaqueModal(null)}>
+          <div className="modal-content max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="p-5 space-y-4">
+              <div className="text-center">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">{plaqueModal.title}</h3>
+                <p className="text-sm text-slate-500">{plaqueModal.schoolName}</p>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-4 flex items-center justify-center min-h-72 bg-white">
+                {plaqueQr ? (
+                  <img src={plaqueQr} alt="QR Code da escola" className="w-64 h-64" />
+                ) : (
+                  <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+                )}
+              </div>
+
+              <p className="text-xs text-slate-500 break-all">{plaqueModal.link}</p>
+            </div>
+
+            <div className="p-5 border-t border-slate-200 dark:border-slate-700 grid grid-cols-2 gap-2">
+              <button onClick={() => copyText(plaqueModal.link)} className="btn-secondary">Copiar</button>
+              <button onClick={printPlaque} className="btn-secondary">Imprimir</button>
+              <button onClick={downloadPlaquePng} className="btn-primary">Baixar PNG</button>
+              <button onClick={downloadPlaquePdf} className="btn-primary">Baixar PDF</button>
+              <button onClick={() => setPlaqueModal(null)} className="btn-secondary col-span-2">Fechar</button>
+            </div>
           </div>
         </div>
       )}

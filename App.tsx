@@ -5,12 +5,12 @@ import Dashboard from './pages/Dashboard';
 import Schools from './pages/Schools';
 import Inventory from './pages/Inventory';
 import MenuEditor from './pages/MenuEditor';
-import ConsumptionRegistry from './pages/ConsumptionRegistry';
 import Deliveries from './pages/Deliveries';
 import Reports from './pages/Reports';
 import PublicMenu from './pages/PublicMenu';
 import PublicDeliveryConference from './pages/PublicDeliveryConference';
 import PublicConsumption from './pages/PublicConsumption';
+import PublicMealService from './pages/PublicMealService';
 import { BottomNav, Sidebar } from './components/Navigation';
 import { AUTH_EXPIRED_EVENT, getNotifications, getUnreadNotificationsCount, markAllNotificationsAsRead, markNotificationAsRead, tokenStore } from './api';
 
@@ -87,7 +87,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       '/admin/inventory': 'Estoque',
       '/admin/deliveries': 'Entregas',
       '/admin/editor': 'Editor de Cardápio',
-      '/admin/consumption': 'Registro de Consumo',
       '/admin/reports': 'Relatórios',
     };
     return titles[location.pathname] || 'SEMED';
@@ -101,14 +100,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       '/admin/inventory': 'inventory_2',
       '/admin/deliveries': 'local_shipping',
       '/admin/editor': 'edit_calendar',
-      '/admin/consumption': 'checklist',
       '/admin/reports': 'insert_chart',
     };
     return icons[location.pathname] || 'home';
   };
 
   const isEditor = location.pathname === '/admin/editor';
-  const isConsumption = location.pathname === '/admin/consumption';
 
   return (
     <div className="flex min-h-screen bg-background-light dark:bg-background-dark">
@@ -142,7 +139,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           </div>
 
           <NavItem icon="edit_calendar" label="Editor de Cardápio" path="/admin/editor" current={location.pathname} onClick={() => navigate('/admin/editor')} />
-          <NavItem icon="checklist" label="Registro de Consumo" path="/admin/consumption" current={location.pathname} onClick={() => navigate('/admin/consumption')} />
           <NavItem icon="insert_chart" label="Relatórios" path="/admin/reports" current={location.pathname} onClick={() => navigate('/admin/reports')} />
         </nav>
 
@@ -161,8 +157,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       {/* Main Content */}
       <div className="flex-1 flex flex-col w-full lg:pl-72">
         {/* Top Header */}
-        {!isConsumption && (
-          <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-800/50">
+        <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-800/50">
             <div className="flex items-center justify-between h-16 px-4">
               {/* Left side - Menu button (mobile) or breadcrumb */}
               <div className="flex items-center gap-3">
@@ -269,8 +264,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 </button>
               </div>
             </div>
-          </header>
-        )}
+        </header>
 
         {/* Page Content */}
         <main className="flex-1 overflow-y-auto">
@@ -328,6 +322,7 @@ const App: React.FC = () => {
         <Route path="/public/menu" element={<PublicMenu />} />
         <Route path="/public/delivery" element={<PublicDeliveryConference />} />
         <Route path="/public/consumption" element={<PublicConsumption />} />
+        <Route path="/public/meal-service" element={<PublicMealService />} />
         <Route path="/admin/*" element={
           <RequireAuth>
             <Layout>
@@ -337,7 +332,6 @@ const App: React.FC = () => {
                 <Route path="/inventory" element={<Inventory />} />
                 <Route path="/deliveries" element={<Deliveries />} />
                 <Route path="/editor" element={<MenuEditor />} />
-                <Route path="/consumption" element={<ConsumptionRegistry />} />
                 <Route path="/reports" element={<Reports />} />
               </Routes>
             </Layout>

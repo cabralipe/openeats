@@ -14,8 +14,18 @@ from schools.models import School
 class Command(BaseCommand):
     help = 'Seed initial data for Merenda SEMED.'
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--with-sample-data',
+            action='store_true',
+            help='Also creates demo schools, supplies, stock and menu.',
+        )
+
     def handle(self, *args, **options):
         User = get_user_model()
+        with_sample_data = options.get('with_sample_data', False) or os.getenv('SEED_SAMPLE_DATA', '').lower() in {
+            '1', 'true', 'yes', 'on'
+        }
 
         admin_email = os.getenv('SEED_ADMIN_EMAIL', 'admin@semed.local')
         admin_password = os.getenv('SEED_ADMIN_PASSWORD', 'Admin123!')
@@ -35,6 +45,11 @@ class Command(BaseCommand):
         admin.is_superuser = True
         admin.set_password(admin_password)
         admin.save()
+
+        if not with_sample_data:
+            self.stdout.write(self.style.SUCCESS('Seed concluido (somente admin).'))
+            self.stdout.write(self.style.WARNING(f'Admin: {admin_email} / {admin_password}'))
+            return
 
         schools_data = [
             {'name': 'Escola Municipal Joao Cordeiro', 'city': 'Maceio', 'address': 'Centro'},

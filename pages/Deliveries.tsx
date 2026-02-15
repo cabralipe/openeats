@@ -181,11 +181,11 @@ const Deliveries: React.FC = () => {
     try {
       const data = await getPublicLink(school);
       const search = new URLSearchParams({ slug: data.slug, token: data.token }).toString();
-      const url = `/public/consumption?${search}`;
+      const url = `/public/meal-service?${search}`;
       setConsumptionLinkByDelivery((prev) => ({ ...prev, [deliveryId]: url }));
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(`${window.location.origin}/#${url}`);
-        setSuccess('Link copiado!');
+        setSuccess('Link de refeições servidas copiado!');
       }
     } catch {
       setError('Erro ao gerar link.');

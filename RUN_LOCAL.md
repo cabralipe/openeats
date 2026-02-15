@@ -1,6 +1,6 @@
 # Merenda SEMED - Guia De Execucao Local
 
-Este guia cobre backend (Django + PostgreSQL), frontend (Vite/React), seed inicial, testes e carga.
+Este guia cobre backend (Django + PostgreSQL), frontend (Vite/React), seed inicial (admin), testes e carga.
 
 ## 1. Pre-requisitos
 
@@ -28,7 +28,7 @@ docker compose up --build
 Isso vai:
 - subir PostgreSQL
 - rodar migrations
-- rodar seed inicial
+- rodar seed inicial (somente admin)
 - iniciar Django em `http://localhost:8000`
 - expor PostgreSQL na porta `5434` do host (configurada em `.env`; altere `POSTGRES_HOST_PORT` se quiser)
 
@@ -59,10 +59,17 @@ Backend no Render:
 cp .env.frontend.render.example .env.local
 ```
 
-## 5. Login inicial (seed)
+## 5. Login inicial
 
 - Email: `admin@semed.local`
 - Senha: `Admin123!`
+
+Para criar dados de exemplo manualmente:
+
+```bash
+cd backend
+python manage.py seed --with-sample-data
+```
 
 ## 6. URLs importantes
 
