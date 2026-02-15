@@ -167,6 +167,13 @@ export async function getMe() {
   return apiFetch('/api/auth/me/');
 }
 
+export async function updateMe(payload: { name: string }) {
+  return apiFetch('/api/auth/me/', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function getSchools(params?: { q?: string; city?: string; address?: string; is_active?: boolean }) {
   const cleanParams = params
     ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
@@ -529,6 +536,14 @@ export function exportMenusCsv() {
 
 export function exportMenuPdf(schoolId: string, weekStart: string) {
   openAuthenticatedUrl(`/api/exports/menus/pdf/?school=${schoolId}&week_start=${weekStart}`);
+}
+
+export function exportPublicMenuPdf(slug: string, weekStart: string, token?: string) {
+  const encodedSlug = encodeURIComponent(slug);
+  const params = new URLSearchParams({ week_start: weekStart });
+  if (token) params.append('token', token);
+  const url = `${API_BASE}/public/schools/${encodedSlug}/menu/pdf/?${params.toString()}`;
+  window.open(url, '_blank');
 }
 
 export function exportDeliveriesPdf(params?: { school?: string; status?: string; date_from?: string; date_to?: string }) {

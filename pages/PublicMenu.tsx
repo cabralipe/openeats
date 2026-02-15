@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { getPublicMenuCurrent, getPublicSchools } from '../api';
+import { getPublicMenuCurrent, getPublicSchools, exportPublicMenuPdf } from '../api';
 import { IMAGES } from '../constants';
 
 interface School {
@@ -75,6 +75,11 @@ const PublicMenu: React.FC = () => {
     setSelectedSchool(null);
     setMenu(null);
     setError('');
+  };
+
+  const handleDownloadPdf = () => {
+    if (!menu?.week_start || !selectedSchool?.slug) return;
+    exportPublicMenuPdf(selectedSchool.slug, menu.week_start, tokenFromUrl);
   };
 
   const filteredSchools = schools.filter((s) =>
@@ -291,7 +296,11 @@ const PublicMenu: React.FC = () => {
               ))}
             </div>
             <div className="flex px-4 py-6">
-              <button className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-xl h-14 px-6 flex-1 bg-primary text-white gap-3 text-base font-bold leading-normal tracking-[0.015em] shadow-lg active:scale-95 transition-transform hover:bg-primary/90" disabled>
+              <button
+                onClick={handleDownloadPdf}
+                className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-xl h-14 px-6 flex-1 bg-primary text-white gap-3 text-base font-bold leading-normal tracking-[0.015em] shadow-lg active:scale-95 transition-transform hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={!menu}
+              >
                 <span className="material-symbols-outlined">download</span>
                 <span className="truncate">Baixar PDF do cardápio</span>
               </button>

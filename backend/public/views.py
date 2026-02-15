@@ -1,4 +1,5 @@
 from datetime import date
+from django.http import HttpResponse
 
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
@@ -18,6 +19,7 @@ from inventory.serializers import (
 )
 from menus.models import MealServiceEntry, MealServiceReport, Menu, MenuItem
 from menus.serializers import MenuSerializer
+from menus.utils import generate_menu_pdf
 from schools.models import School
 from schools.serializers import SchoolPublicSerializer
 
@@ -85,6 +87,27 @@ class PublicMenuCurrentView(APIView):
         return Response(MenuSerializer(menu).data)
 
 
+
+class PublicMenuPdfView(PublicBaseView):
+    def get(self, request, slug):
+        school = get_object_or_404(School, public_slug=slug)
+        token = request.query_params.get('token')
+        self._validate_token(school, token)
+        week_start = request.query_params.get('week_start')
+        if not week_start:
+            raise PermissionDenied('week_start obrigatorio.')
+        menu = get_object_or_404(
+            Menu.objects.prefetch_related('items'),
+            school=school,
+            status=Menu.Status.PUBLISHED,
+            week_start=week_start,
+        )
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = 'attachment; filename=\"menu.pdf\"'
+        generate_menu_pdf(menu, response)
+        return response
+
+
 class PublicMenuByWeekView(PublicBaseView):
     def get(self, request, slug):
         school = get_object_or_404(School, public_slug=slug)
@@ -100,6 +123,7 @@ class PublicMenuByWeekView(PublicBaseView):
             week_start=week_start,
         )
         return Response(MenuSerializer(menu).data)
+
 
 
 class PublicDeliveryCurrentView(PublicBaseView):

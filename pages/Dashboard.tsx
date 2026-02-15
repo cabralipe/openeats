@@ -331,8 +331,8 @@ const Dashboard: React.FC = () => {
                     <span className={`material-symbols-outlined ${activity.iconColor}`}>{activity.icon}</span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{activity.title}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{activity.subtitle}</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white mb-0.5">{activity.title}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">{activity.subtitle}</p>
                   </div>
                 </div>
               ))

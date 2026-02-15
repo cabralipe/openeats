@@ -27,7 +27,7 @@ from inventory.views import (
     ConsumptionExportXlsxView,
 )
 from menus.views import MenuViewSet, MenuExportCsvView, MenuExportPdfView
-from public.views import PublicConsumptionView, PublicDeliveryCurrentView, PublicMealServiceView, PublicMenuByWeekView, PublicMenuCurrentView, PublicSchoolDetailView, PublicSchoolListView
+from public.views import PublicConsumptionView, PublicDeliveryCurrentView, PublicMealServiceView, PublicMenuByWeekView, PublicMenuCurrentView, PublicSchoolDetailView, PublicSchoolListView, PublicMenuPdfView
 
 router = DefaultRouter()
 router.register(r'schools', SchoolViewSet, basename='school')
@@ -67,6 +67,7 @@ urlpatterns = [
     path('public/schools/', PublicSchoolListView.as_view(), name='public-school-list'),
     path('public/schools/<slug:slug>/menu/current/', PublicMenuCurrentView.as_view(), name='public-menu-current'),
     path('public/schools/<slug:slug>/menu/', PublicMenuByWeekView.as_view(), name='public-menu-by-week'),
+    path('public/schools/<slug:slug>/menu/pdf/', PublicMenuPdfView.as_view(), name='public-menu-pdf'),
     path('public/schools/<slug:slug>/delivery/current/', PublicDeliveryCurrentView.as_view(), name='public-delivery-current'),
     path('public/schools/<slug:slug>/consumption/', PublicConsumptionView.as_view(), name='public-consumption'),
     path('public/schools/<slug:slug>/meal-service/', PublicMealServiceView.as_view(), name='public-meal-service'),

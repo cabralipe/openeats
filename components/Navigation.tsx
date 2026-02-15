@@ -47,8 +47,8 @@ export const BottomNav: React.FC = () => {
               key={item.path}
               onClick={() => navigate(item.path)}
               className={`flex flex-col items-center justify-center gap-0.5 py-2 px-4 rounded-2xl transition-all duration-200 ${isActive
-                  ? 'text-primary-500'
-                  : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                ? 'text-primary-500'
+                : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
                 }`}
             >
               <span className={`material-symbols-outlined text-2xl transition-transform duration-200 ${isActive ? 'filled scale-110' : ''}`}>
@@ -69,9 +69,11 @@ interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
   onLogout?: () => void;
+  user?: { name: string; email: string; role: string } | null;
+  onOpenProfile?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, onLogout }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, onLogout, user, onOpenProfile }) => {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -100,9 +102,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, onLogout }) =
               <div className="w-10 h-10 rounded-xl bg-gradient-primary flex items-center justify-center shadow-glow-primary">
                 <span className="material-symbols-outlined text-white text-xl">restaurant</span>
               </div>
-              <div>
-                <h2 className="text-lg font-bold text-slate-900 dark:text-white">Merenda</h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">SEMED Admin</p>
+              <div onClick={onOpenProfile} className="cursor-pointer hover:opacity-80 transition-opacity">
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white">{user?.name || 'Carregando...'}</h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">{user?.role || 'SEMED Admin'}</p>
               </div>
             </div>
             <button
@@ -127,8 +129,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, onLogout }) =
                   onClose();
                 }}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all duration-200 ${isActive
-                    ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
               >
                 <span className={`material-symbols-outlined ${isActive ? 'filled' : ''}`}>{item.icon}</span>
@@ -150,8 +152,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, onLogout }) =
                   onClose();
                 }}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all duration-200 ${isActive
-                    ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
               >
                 <span className={`material-symbols-outlined ${isActive ? 'filled' : ''}`}>{item.icon}</span>

@@ -1,0 +1,11 @@
+Creating test database for alias 'default'...
+Found 3 test(s).
+System check identified no issues (0 silenced).
+/home/cabralipe/.local/lib/python3.10/site-packages/django/core/handlers/base.py:61: UserWarning: No directory at: /mnt/c/Users/Felipe Cabral/openeats/backend/staticfiles/
+  mw_instance = middleware(adapted_handler)
+...
+----------------------------------------------------------------------
+Ran 3 tests in 5.162s
+
+OK
+Destroying test database for alias 'default'...
