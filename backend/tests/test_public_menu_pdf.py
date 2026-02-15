@@ -40,7 +40,7 @@ class PublicMenuPdfTest(APITestCase):
 
     def test_public_menu_pdf_generation(self):
         url = reverse('public-menu-pdf', kwargs={'slug': self.school.public_slug})
-        response = self.client.get(url, {'week_start': self.menu.week_start, 'token': self.school.public_token})
+        response = self.client.get(url, {'week_start': self.menu.week_start})
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response['Content-Type'], 'application/pdf')
@@ -48,7 +48,7 @@ class PublicMenuPdfTest(APITestCase):
 
     def test_public_menu_pdf_requires_week_start(self):
         url = reverse('public-menu-pdf', kwargs={'slug': self.school.public_slug})
-        response = self.client.get(url, {'token': self.school.public_token}) # Missing week_start
+        response = self.client.get(url) # Missing week_start
         
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN) # PermissionDenied because week_start is mandatory
 

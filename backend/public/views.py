@@ -91,8 +91,6 @@ class PublicMenuCurrentView(APIView):
 class PublicMenuPdfView(PublicBaseView):
     def get(self, request, slug):
         school = get_object_or_404(School, public_slug=slug)
-        token = request.query_params.get('token')
-        self._validate_token(school, token)
         week_start = request.query_params.get('week_start')
         if not week_start:
             raise PermissionDenied('week_start obrigatorio.')
