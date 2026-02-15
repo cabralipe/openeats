@@ -3,7 +3,6 @@ import importlib.util
 from pathlib import Path
 
 import environ
-from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIST_DIR = BASE_DIR / 'frontend_dist'
@@ -114,11 +113,6 @@ else:
     if database_url:
         DATABASES = {'default': env.db('DATABASE_URL')}
     else:
-        if not DEBUG:
-            raise ImproperlyConfigured(
-                'DATABASE_URL obrigatoria em producao (DEBUG=False). '
-                'Configure a variavel de ambiente DATABASE_URL no Render.'
-            )
         DATABASES = {
             'default': {
                 'ENGINE': 'django.db.backends.postgresql',
