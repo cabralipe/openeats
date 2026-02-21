@@ -130,6 +130,13 @@ def test_dashboard_series(api_client, admin_user):
     assert 'served_by_school_category' in response.data
 
 
+def test_menus_invalid_school_filter_returns_400(api_client, admin_user):
+    api_client.force_authenticate(user=admin_user)
+    response = api_client.get('/api/menus/?school=invalid-school-id')
+    assert response.status_code == 400
+    assert 'school' in response.data
+
+
 def test_delivery_send_deducts_stock_and_enables_conference(api_client, admin_user):
     api_client.force_authenticate(user=admin_user)
     school = School.objects.create(name='Escola Entrega')

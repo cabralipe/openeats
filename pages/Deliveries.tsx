@@ -810,97 +810,268 @@ const Deliveries: React.FC = () => {
     const statusLabel = getStatusLabel(delivery.status);
     const isDraft = delivery.status === 'DRAFT';
     const isConferred = delivery.status === 'CONFERRED';
+    const detailDate = formatDateShort(delivery.delivery_date);
+    const itemCount = delivery.items?.length || 0;
+    const statusChip = delivery.status === 'CONFERRED'
+      ? 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800'
+      : delivery.status === 'SENT'
+        ? 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800'
+        : 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800';
 
     return (
-      <div className="bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 min-h-screen pb-56">
-        <header className="px-4 py-3 sticky top-0 z-40 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md border-b border-slate-100 dark:border-slate-800">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setSelectedDelivery(null)}
-              className="w-10 h-10 flex items-center justify-center rounded-full active:bg-slate-100 dark:active:bg-slate-800 transition-colors"
-            >
-              <span className="material-symbols-outlined text-slate-600 dark:text-slate-400">arrow_back_ios_new</span>
-            </button>
-            <div>
-              <h1 className="text-lg font-bold tracking-tight leading-tight">{delivery.school_name}</h1>
-              <p className="text-[11px] text-slate-500 font-medium uppercase tracking-wider">Detalhes da Entrega</p>
-            </div>
-          </div>
-        </header>
-
-        <main className="px-5 pt-6">
-          <div className="mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-bold uppercase tracking-widest border ${isConferred
-                ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/50'
-                : 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-500 border-amber-200 dark:border-amber-800/50'
-                }`}>
-                {isConferred && <span className="material-symbols-outlined text-[16px]">check_circle</span>}
-                {statusLabel}
-              </span>
-              <p className="text-xs text-slate-400 dark:text-slate-500 font-medium uppercase tracking-tighter">ID: #{String(delivery.id).slice(0, 6)}</p>
-            </div>
-
-            <div className={`grid grid-cols-2 gap-4 p-4 rounded-2xl border ${isConferred
-              ? 'bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-100/50 dark:border-emerald-800/20'
-              : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800'
-              }`}>
-              <div className="space-y-1">
-                <p className="text-[10px] text-slate-400 font-semibold uppercase">Data da Entrega</p>
-                <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
-                  <span className={`material-symbols-outlined text-sm ${isConferred ? 'text-emerald-500' : ''}`}>calendar_today</span>
-                  <span className="text-sm font-semibold">{formatDateShort(delivery.delivery_date)}</span>
+      <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen">
+        <div className="lg:hidden pb-56">
+          <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 px-4 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setSelectedDelivery(null)}
+                  className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+                >
+                  <span className="material-symbols-outlined text-[20px]">arrow_back_ios_new</span>
+                </button>
+                <div>
+                  <h1 className="text-lg font-bold leading-tight">{delivery.school_name}</h1>
+                  <p className="text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400 font-semibold">Detalhes da Entrega</p>
                 </div>
               </div>
-              <div className="space-y-1 border-l border-slate-200 dark:border-slate-800 pl-4">
-                <p className="text-[10px] text-slate-400 font-semibold uppercase">Responsável</p>
-                <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
-                  <span className={`material-symbols-outlined text-sm ${isConferred ? 'text-emerald-500' : ''}`}>person</span>
-                  <span className="text-sm font-semibold">{delivery.responsible_name || 'Não informado'}</span>
+              <div className="flex gap-1">
+                <button type="button" className="w-10 h-10 flex items-center justify-center text-slate-500 dark:text-slate-400">
+                  <span className="material-symbols-outlined">notifications_none</span>
+                </button>
+                <button type="button" className="w-10 h-10 flex items-center justify-center text-slate-500 dark:text-slate-400">
+                  <span className="material-symbols-outlined">account_circle</span>
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <main className="p-4 space-y-6">
+            <div className="flex items-center justify-between">
+              <span className={`px-3 py-1 text-xs font-bold rounded-full uppercase tracking-widest border ${statusChip}`}>{statusLabel}</span>
+              <span className="text-xs text-slate-400 dark:text-slate-500 font-mono">ID: #{String(delivery.id).slice(0, 6)}</span>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3">
+              <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-primary-500">
+                  <span className="material-symbols-outlined">calendar_today</span>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400 font-bold">Data da Entrega</p>
+                  <p className="font-semibold">{detailDate}</p>
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-primary-50 dark:bg-primary-900/20 flex items-center justify-center text-primary-600 dark:text-primary-400">
+                  <span className="material-symbols-outlined">person</span>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400 font-bold">Responsável</p>
+                  <p className="font-semibold">{delivery.responsible_name || 'Não informado'}</p>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div className="mb-8">
-            <h2 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-4 px-1 flex items-center justify-between">
-              Itens da Entrega
-              <span className="text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-500 px-2 py-0.5 rounded">{delivery.items?.length || 0} Itens</span>
-            </h2>
-            <table className="w-full text-left">
-              <thead>
-                <tr className="text-[10px] uppercase text-slate-400 font-bold border-b border-slate-100 dark:border-slate-800">
-                  <th className="pb-2 font-bold">Item</th>
-                  <th className="pb-2 text-center font-bold">Qtd.</th>
-                  <th className="pb-2 text-right font-bold">Unid.</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+            <section className="space-y-3">
+              <div className="flex items-center justify-between px-1">
+                <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500">Itens da Entrega</h2>
+                <span className="text-[10px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded">{itemCount} Item{itemCount !== 1 ? 's' : ''}</span>
+              </div>
+              <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-800 overflow-hidden shadow-sm divide-y divide-slate-100 dark:divide-slate-700/50">
                 {(delivery.items || []).map((item: any) => (
-                  <tr key={item.id}>
-                    <td className="py-4">
-                      <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">{item.supply_name}</p>
-                      <p className="text-[10px] text-slate-400">Cód: {String(item.supply).slice(0, 6)}</p>
-                    </td>
-                    <td className="py-4 text-center text-sm font-medium">{Number(item.planned_quantity).toFixed(2)}</td>
-                    <td className="py-4 text-right text-sm text-slate-500 uppercase">{item.supply_unit || '-'}</td>
-                  </tr>
+                  <div key={item.id} className="p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
+                        <span className="material-symbols-outlined text-slate-400">restaurant</span>
+                      </div>
+                      <div>
+                        <p className="font-bold text-slate-800 dark:text-slate-100">{item.supply_name}</p>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-medium">Cod: {String(item.supply).slice(0, 6)}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-lg text-primary-500">{Number(item.planned_quantity).toFixed(2)}</p>
+                      <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">{item.supply_unit || '-'}</p>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 px-1">Observações</h2>
+              <div className="bg-slate-50 dark:bg-slate-900/50 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl p-6 text-center italic text-slate-400 dark:text-slate-500 text-sm">
+                {delivery.notes || 'Sem observações para esta entrega.'}
+              </div>
+            </section>
+
+            {isConferred && (
+              <section className="space-y-3">
+                <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 px-1">Autenticação</h2>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!delivery.conference_signature) return;
+                    setSignaturePreview({
+                      image: delivery.conference_signature,
+                      title: delivery.school_name,
+                      submittedAt: delivery.conference_submitted_at,
+                      signedBy: delivery.conference_signed_by,
+                    });
+                  }}
+                  className="w-full flex items-center justify-between p-4 bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center">
+                      <span className="material-symbols-outlined text-emerald-600 dark:text-emerald-400">draw</span>
+                    </div>
+                    <div className="text-left">
+                      <p className="text-sm font-bold text-slate-800 dark:text-slate-100">Ver Assinatura Digital</p>
+                      <p className="text-[10px] text-slate-500 font-medium uppercase tracking-tight">Assinado digitalmente</p>
+                    </div>
+                  </div>
+                  <span className="material-symbols-outlined text-slate-400 text-lg">chevron_right</span>
+                </button>
+              </section>
+            )}
+          </main>
+
+          {isDraft ? (
+            <footer className="fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-t border-slate-200 dark:border-slate-800 p-4 pb-8 space-y-3 z-50 shadow-[0_-10px_30px_-15px_rgba(0,0,0,0.1)]">
+              <button
+                type="button"
+                onClick={() => handleSend(delivery.id)}
+                className="w-full bg-primary-500 hover:bg-primary-600 text-white font-bold py-4 rounded-2xl transition-colors flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 active:scale-[0.98]"
+              >
+                <span className="material-symbols-outlined text-lg">check_circle</span>
+                Confirmar Entrega
+              </button>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => startEditDelivery(delivery)}
+                  className="flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold py-3.5 rounded-2xl active:scale-[0.98] transition-all"
+                >
+                  <span className="material-symbols-outlined text-lg">edit</span>
+                  Editar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteDelivery(delivery.id)}
+                  className="flex items-center justify-center gap-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 font-bold py-3.5 rounded-2xl active:scale-[0.98] transition-all border border-red-100 dark:border-red-900/50"
+                >
+                  <span className="material-symbols-outlined text-lg">delete_outline</span>
+                  Excluir
+                </button>
+              </div>
+            </footer>
+          ) : (
+            <footer className="fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-t border-slate-200 dark:border-slate-800 p-4 pb-8 space-y-3 z-50 shadow-[0_-10px_30px_-15px_rgba(0,0,0,0.1)]">
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold py-3.5 rounded-2xl active:scale-[0.98] transition-all"
+                >
+                  <span className="material-symbols-outlined text-lg">print</span>
+                  Imprimir
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleShareDelivery(delivery)}
+                  className="flex items-center justify-center gap-2 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 font-bold py-3.5 rounded-2xl active:scale-[0.98] transition-all border border-primary-100 dark:border-primary-900/50"
+                >
+                  <span className="material-symbols-outlined text-lg">share</span>
+                  Compartilhar
+                </button>
+              </div>
+            </footer>
+          )}
+        </div>
+
+        <div className="hidden lg:block px-8 py-8 max-w-5xl mx-auto w-full">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={() => setSelectedDelivery(null)}
+                className="p-2 hover:bg-white dark:hover:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 transition-all"
+              >
+                <span className="material-symbols-outlined text-slate-600 dark:text-slate-300">arrow_back</span>
+              </button>
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white leading-none">{delivery.school_name}</h1>
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-1 inline-block">Detalhes da Entrega</span>
+              </div>
+            </div>
+            <div className="text-right">
+              <span className={`px-3 py-1 rounded-full border text-xs font-bold tracking-wider uppercase ${statusChip}`}>{statusLabel}</span>
+              <p className="text-[10px] text-slate-400 mt-2 font-mono uppercase">ID: #{String(delivery.id).slice(0, 6)}</p>
+            </div>
           </div>
 
-          <div className="mb-10">
-            <h2 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 px-1">Observações</h2>
-            <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
-              <p className="text-sm text-slate-500 leading-relaxed italic">{delivery.notes || 'Sem observações para esta entrega.'}</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-slate-200 dark:bg-slate-700 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 mb-8 shadow-sm">
+            <div className="bg-white dark:bg-slate-900 p-6 flex flex-col gap-1">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Data da Entrega</span>
+              <div className="flex items-center gap-2 text-slate-700 dark:text-slate-200">
+                <span className="material-symbols-outlined text-primary-500 text-[20px]">calendar_today</span>
+                <span className="font-semibold">{detailDate}</span>
+              </div>
+            </div>
+            <div className="bg-white dark:bg-slate-900 p-6 flex flex-col gap-1">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Responsável</span>
+              <div className="flex items-center gap-2 text-slate-700 dark:text-slate-200">
+                <span className="material-symbols-outlined text-primary-500 text-[20px]">person_outline</span>
+                <span className="font-semibold">{delivery.responsible_name || 'Não informado'}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                Itens da Entrega
+                <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded text-[10px] font-bold">{itemCount} ITENS</span>
+              </h3>
+            </div>
+            <div className="overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 dark:bg-slate-800/50">
+                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Item</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-right">Qtd.</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-right">Unid.</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {(delivery.items || []).map((item: any) => (
+                    <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                      <td className="px-6 py-5">
+                        <p className="font-semibold text-slate-800 dark:text-slate-200">{item.supply_name}</p>
+                        <p className="text-[11px] text-slate-400 font-medium">Cod: {String(item.supply).slice(0, 6)}</p>
+                      </td>
+                      <td className="px-6 py-5 text-right font-bold text-slate-700 dark:text-slate-300">{Number(item.planned_quantity).toFixed(2)}</td>
+                      <td className="px-6 py-5 text-right text-slate-500 dark:text-slate-400 font-medium uppercase">{item.supply_unit || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="mb-8">
+            <h3 className="font-bold text-lg text-slate-800 dark:text-slate-100 mb-4">Observações</h3>
+            <div className="bg-slate-50 dark:bg-slate-800/50 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl p-6 italic text-slate-400 dark:text-slate-500 text-sm">
+              {delivery.notes || 'Sem observações para esta entrega.'}
             </div>
           </div>
 
           {isConferred && (
-            <div className="mb-10">
-              <h2 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 px-1">Autenticação</h2>
+            <div className="mb-8">
+              <h3 className="font-bold text-lg text-slate-800 dark:text-slate-100 mb-4">Autenticação</h3>
               <button
                 type="button"
                 onClick={() => {
@@ -927,58 +1098,58 @@ const Deliveries: React.FC = () => {
               </button>
             </div>
           )}
-        </main>
 
-        {isDraft ? (
-          <div className="fixed bottom-0 left-0 right-0 p-6 bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl border-t border-slate-100 dark:border-slate-800 flex flex-col gap-3 z-50">
-            <button
-              type="button"
-              onClick={() => handleSend(delivery.id)}
-              className="w-full bg-primary-500 text-white font-bold py-4 rounded-2xl shadow-lg shadow-primary-500/20"
-            >
-              Confirmar Entrega
-            </button>
-            <div className="flex gap-3">
+          {isDraft ? (
+            <div className="flex flex-col gap-4 sticky bottom-8 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-4 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-xl">
               <button
                 type="button"
-                onClick={() => startEditDelivery(delivery)}
-                className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold py-3.5 rounded-2xl"
+                onClick={() => handleSend(delivery.id)}
+                className="w-full bg-primary-500 hover:bg-primary-600 text-white font-bold py-4 px-6 rounded-2xl transition-all active:scale-[0.98] shadow-lg shadow-blue-500/20"
               >
-                Editar
+                Confirmar Entrega
               </button>
-              <button
-                type="button"
-                onClick={() => handleDeleteDelivery(delivery.id)}
-                className="flex-1 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-500 font-bold py-3.5 rounded-2xl"
-              >
-                Excluir
-              </button>
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => startEditDelivery(delivery)}
+                  className="flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold py-3.5 px-4 rounded-2xl transition-all active:scale-[0.98]"
+                >
+                  <span className="material-symbols-outlined text-[18px]">edit</span>
+                  Editar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteDelivery(delivery.id)}
+                  className="flex items-center justify-center gap-2 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 font-bold py-3.5 px-4 rounded-2xl transition-all active:scale-[0.98]"
+                >
+                  <span className="material-symbols-outlined text-[18px]">delete_outline</span>
+                  Excluir
+                </button>
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="fixed bottom-0 left-0 right-0 p-6 bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl border-t border-slate-100 dark:border-slate-800 flex flex-col gap-3 z-50">
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="flex-1 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2"
-              >
-                <span className="material-symbols-outlined text-[20px]">print</span>
-                Imprimir Comprovante
-              </button>
-              <button
-                type="button"
-                onClick={() => handleShareDelivery(delivery)}
-                className="w-14 h-[52px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl flex items-center justify-center"
-              >
-                <span className="material-symbols-outlined">share</span>
-              </button>
+          ) : (
+            <div className="flex flex-col gap-4 sticky bottom-8 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-4 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-xl">
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold py-3.5 px-4 rounded-2xl transition-all active:scale-[0.98]"
+                >
+                  <span className="material-symbols-outlined text-[18px]">print</span>
+                  Imprimir
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleShareDelivery(delivery)}
+                  className="flex items-center justify-center gap-2 bg-primary-50 dark:bg-primary-900/20 hover:bg-primary-100 dark:hover:bg-primary-900/30 text-primary-600 dark:text-primary-400 font-bold py-3.5 px-4 rounded-2xl transition-all active:scale-[0.98]"
+                >
+                  <span className="material-symbols-outlined text-[18px]">share</span>
+                  Compartilhar
+                </button>
+              </div>
             </div>
-            <button type="button" onClick={() => setSelectedDelivery(null)} className="w-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold py-4 rounded-2xl">
-              Voltar
-            </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     );
   };

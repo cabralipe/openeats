@@ -28,6 +28,8 @@ const PublicMenu: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [loadingMenu, setLoadingMenu] = useState(false);
   const [search, setSearch] = useState('');
+  const [currentDayIndex, setCurrentDayIndex] = useState(0);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
 
   const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const slugFromUrl = params.get('slug') || '';
@@ -123,15 +125,94 @@ const PublicMenu: React.FC = () => {
     return order
       .filter((day) => byDay[day])
       .map((day, index) => ({
+        dayCode: day,
         ...byDay[day],
         fallbackImage: fallbackImages[index % fallbackImages.length],
       }));
   }, [menu]);
 
+  useEffect(() => {
+    if (!groupedItems.length) {
+      setCurrentDayIndex(0);
+      return;
+    }
+    const nowDay = new Date().getDay(); // 0=Sun ... 6=Sat
+    const nowCode = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][nowDay];
+    const foundIndex = groupedItems.findIndex((day) => day.dayCode === nowCode);
+    setCurrentDayIndex(foundIndex >= 0 ? foundIndex : 0);
+  }, [groupedItems]);
+
   const weekLabel = useMemo(() => {
     if (!menu?.week_start || !menu?.week_end) return '';
     return `${menu.week_start} a ${menu.week_end}`;
   }, [menu]);
+
+  const currentDay = groupedItems[currentDayIndex];
+
+  const currentDayTitle = useMemo(() => {
+    if (!menu?.week_start || !currentDay) return currentDay?.day || 'Cardápio do Dia';
+    try {
+      const offsetByCode: Record<string, number> = { MON: 0, TUE: 1, WED: 2, THU: 3, FRI: 4 };
+      const offset = offsetByCode[currentDay.dayCode] ?? 0;
+      const base = new Date(`${menu.week_start}T12:00:00`);
+      const date = new Date(base);
+      date.setDate(base.getDate() + offset);
+      return date.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
+    } catch {
+      return currentDay.day;
+    }
+  }, [currentDay, menu?.week_start]);
+
+  const currentMealsByType = useMemo(() => {
+    if (!currentDay?.meals?.length) return [];
+    const iconByMeal: Record<string, string> = {
+      BREAKFAST1: 'breakfast_dining',
+      BREAKFAST2: 'breakfast_dining',
+      BREAKFAST: 'breakfast_dining',
+      LUNCH: 'restaurant',
+      SNACK1: 'bakery_dining',
+      SNACK2: 'bakery_dining',
+      SNACK: 'bakery_dining',
+      DINNER_COFFEE: 'coffee',
+    };
+    const grouped: Record<string, { key: string; label: string; icon: string; items: string[] }> = {};
+    for (const meal of currentDay.meals) {
+      const key = meal.mealType || meal.mealLabel;
+      if (!grouped[key]) {
+        grouped[key] = {
+          key,
+          label: meal.mealLabel,
+          icon: iconByMeal[meal.mealType] || 'restaurant',
+          items: [],
+        };
+      }
+      const text = [meal.mealName, meal.description].filter(Boolean).join(' - ') || meal.description || meal.mealName || 'Item sem descrição';
+      grouped[key].items.push(meal.portionText ? `${text} (${meal.portionText})` : text);
+    }
+    return Object.values(grouped);
+  }, [currentDay]);
+
+  const navigateDay = (direction: 'prev' | 'next') => {
+    if (!groupedItems.length) return;
+    setCurrentDayIndex((prev) => {
+      if (direction === 'prev') return prev === 0 ? groupedItems.length - 1 : prev - 1;
+      return prev === groupedItems.length - 1 ? 0 : prev + 1;
+    });
+  };
+
+  const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    setTouchStartX(event.touches[0]?.clientX ?? null);
+  };
+
+  const handleTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (touchStartX === null) return;
+    const endX = event.changedTouches[0]?.clientX ?? touchStartX;
+    const delta = endX - touchStartX;
+    if (Math.abs(delta) > 50) {
+      navigateDay(delta > 0 ? 'prev' : 'next');
+    }
+    setTouchStartX(null);
+  };
 
   // Loading state
   if (loading) {
@@ -228,31 +309,37 @@ const PublicMenu: React.FC = () => {
 
   // Menu display
   return (
-    <div className="relative flex h-auto min-h-screen w-full flex-col bg-background-light dark:bg-background-dark overflow-x-hidden">
-      <header className="flex items-center bg-white dark:bg-slate-900 p-4 pb-4 justify-between border-b border-slate-200 dark:border-slate-800 sticky top-0 z-10">
-        {!slugFromUrl && (
-          <button onClick={goBack} className="text-primary flex size-12 shrink-0 items-center justify-center cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
-            <span className="material-symbols-outlined">arrow_back</span>
-          </button>
-        )}
-        <div onClick={() => navigate('/')} className="text-primary flex size-12 shrink-0 items-center justify-center cursor-pointer">
-          <span className="material-symbols-outlined">restaurant</span>
-        </div>
-        <h2 className="text-[#0d141b] dark:text-slate-100 text-lg font-bold leading-tight tracking-[-0.015em] flex-1 text-center pr-12">
-          {selectedSchool?.name || menu?.school_name || 'Cardápio Público'}
+    <div className="relative flex min-h-screen w-full flex-col bg-background-light dark:bg-background-dark overflow-x-hidden">
+      <header className="flex items-center bg-white dark:bg-slate-900 px-4 py-3 justify-between border-b border-slate-200 dark:border-slate-800 sticky top-0 z-20">
+        <button
+          onClick={() => (slugFromUrl ? navigate('/') : goBack())}
+          className="text-slate-900 dark:text-white flex size-10 items-center justify-center cursor-pointer"
+        >
+          <span className="material-symbols-outlined">arrow_back_ios_new</span>
+        </button>
+        <h2 className="text-slate-900 dark:text-white text-lg font-bold leading-tight tracking-tight flex-1 text-center font-display">
+          NutriSemed
         </h2>
+        <button
+          onClick={handleDownloadPdf}
+          className="flex size-10 items-center justify-end cursor-pointer text-slate-900 dark:text-white"
+          disabled={!menu}
+          title="Baixar PDF"
+        >
+          <span className="material-symbols-outlined">calendar_month</span>
+        </button>
       </header>
 
-      <main className="flex-grow">
+      <main className="flex-1 overflow-y-auto px-6 py-8 flex flex-col items-center">
         {loadingMenu ? (
-          <div className="flex items-center justify-center py-20">
+          <div className="flex items-center justify-center py-20 w-full">
             <div className="flex items-center gap-3 text-slate-500">
               <div className="w-8 h-8 border-3 border-slate-300 border-t-primary rounded-full animate-spin"></div>
               <span>Carregando cardápio...</span>
             </div>
           </div>
         ) : error ? (
-          <div className="p-4">
+          <div className="p-4 w-full max-w-md">
             <div className="bg-warning-50 border border-warning-200 rounded-xl p-6 text-center">
               <span className="material-symbols-outlined text-warning-500 text-3xl mb-2">info</span>
               <p className="text-warning-700">{error}</p>
@@ -265,63 +352,142 @@ const PublicMenu: React.FC = () => {
           </div>
         ) : (
           <>
-            <div className="px-4 py-4">
-              <div className="bg-primary/10 dark:bg-primary/20 rounded-xl py-3 px-4">
-                <h4 className="text-primary dark:text-primary text-sm font-bold leading-normal tracking-[0.015em] text-center">
-                  {weekLabel ? `Semana: ${weekLabel}` : 'Semana em carregamento'}
-                </h4>
+            <div
+              className="relative w-full max-w-md bg-white dark:bg-slate-800 rounded-xl flex flex-col overflow-hidden min-h-[580px] border border-slate-200 dark:border-slate-700"
+              style={{ boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)' }}
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+            >
+              <div className="pt-8 pb-6 px-8 text-center border-b border-dashed border-slate-200 dark:border-slate-700">
+                <p className="text-primary font-semibold text-sm uppercase tracking-widest mb-1">Menu do Dia</p>
+                <h1 className="text-2xl font-bold text-slate-900 dark:text-white capitalize">{currentDayTitle}</h1>
+                {selectedSchool?.name && (
+                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{selectedSchool.name}</p>
+                )}
+                {weekLabel && (
+                  <p className="mt-1 text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider">Semana: {weekLabel}</p>
+                )}
               </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
-              {groupedItems.map((item, idx) => (
-                <div key={idx} className="flex flex-col gap-3 pb-3 bg-white dark:bg-slate-900 rounded-xl overflow-hidden border border-slate-100 dark:border-slate-800 shadow-sm">
-                  <div
-                    className="w-full bg-center bg-no-repeat aspect-video bg-cover"
-                    style={{ backgroundImage: `url("${item.meals?.[0]?.image || item.fallbackImage}")` }}
-                  />
-                  <div className="p-4">
-                    <p className="text-[#0d141b] dark:text-slate-100 text-base font-bold leading-normal">{item.day}</p>
-                    <div className="mt-2 space-y-3">
-                      {item.meals?.map((meal: any, mealIndex: number) => (
-                        <div key={`${item.day}-${mealIndex}`} className="rounded-lg border border-slate-100 dark:border-slate-800 p-3">
-                          <p className="text-sm font-bold text-primary">{meal.mealLabel}</p>
-                          {meal.mealName && <p className="text-sm font-semibold text-[#0d141b] dark:text-slate-100">{meal.mealName}</p>}
-                          {meal.portionText && <p className="text-xs text-slate-500">Quantidade: {meal.portionText}</p>}
-                          {meal.description && <p className="text-sm text-[#4c739a] dark:text-slate-400 mt-1">{meal.description}</p>}
-                        </div>
-                      ))}
+
+              <div className="flex-1 p-8 space-y-8">
+                {currentMealsByType.map((mealSection) => (
+                  <section key={mealSection.key}>
+                    <div className="flex items-center gap-2 mb-4">
+                      <span className="material-symbols-outlined text-primary filled">{mealSection.icon}</span>
+                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">{mealSection.label}</h3>
                     </div>
+                    <ul className="space-y-4">
+                      {mealSection.items.map((desc, idx) => (
+                        <li key={`${mealSection.key}-${idx}`} className="flex items-start gap-3">
+                          <span className="material-symbols-outlined text-slate-400 text-sm mt-1">fiber_manual_record</span>
+                          <p className="text-slate-700 dark:text-slate-300">{desc}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ))}
+
+                {currentMealsByType.length === 0 && (
+                  <section>
+                    <p className="text-slate-500 dark:text-slate-400">Nenhum item registrado para este dia.</p>
+                  </section>
+                )}
+              </div>
+
+              <div className="bg-primary/5 dark:bg-primary/10 px-8 py-5 border-t border-slate-100 dark:border-slate-700">
+                <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">Informação Nutricional</h4>
+                <div className="flex flex-wrap gap-3">
+                  <div className="bg-white dark:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm flex items-center gap-2">
+                    <span className="text-xs font-bold text-primary">Kcal</span>
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200">-</span>
+                  </div>
+                  <div className="bg-white dark:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm flex items-center gap-2">
+                    <span className="text-xs font-bold text-primary">Prot</span>
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200">-</span>
+                  </div>
+                  <div className="bg-white dark:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm flex items-center gap-2">
+                    <span className="text-xs font-bold text-primary">Carbs</span>
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200">-</span>
                   </div>
                 </div>
+              </div>
+
+              <div className="absolute bottom-0 right-0">
+                <div
+                  style={{
+                    width: 0,
+                    height: 0,
+                    borderStyle: 'solid',
+                    borderWidth: '0 0 40px 40px',
+                    borderColor: 'transparent transparent #e2e8f0 transparent',
+                    filter: 'drop-shadow(-2px -2px 2px rgba(0,0,0,0.05))',
+                  }}
+                />
+                <div className="absolute bottom-2 right-2 text-slate-400 pointer-events-none">
+                  <span className="material-symbols-outlined text-sm">keyboard_double_arrow_right</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex gap-2">
+              {groupedItems.map((_, idx) => (
+                <button
+                  key={`dot-${idx}`}
+                  onClick={() => setCurrentDayIndex(idx)}
+                  className={`size-2 rounded-full ${idx === currentDayIndex ? 'bg-primary' : 'bg-slate-300 dark:bg-slate-700'}`}
+                  aria-label={`Ir para dia ${idx + 1}`}
+                />
               ))}
             </div>
-            <div className="flex px-4 py-6">
+            <p className="mt-4 text-slate-400 text-xs font-medium uppercase tracking-widest text-center">
+              Deslize para ver o próximo dia
+            </p>
+            <div className="mt-4 flex gap-3">
               <button
-                onClick={handleDownloadPdf}
-                className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-xl h-14 px-6 flex-1 bg-primary text-white gap-3 text-base font-bold leading-normal tracking-[0.015em] shadow-lg active:scale-95 transition-transform hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={!menu}
+                onClick={() => navigateDay('prev')}
+                className="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900"
               >
-                <span className="material-symbols-outlined">download</span>
-                <span className="truncate">Baixar PDF do cardápio</span>
+                Dia anterior
+              </button>
+              <button
+                onClick={() => navigateDay('next')}
+                className="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900"
+              >
+                Próximo dia
               </button>
             </div>
           </>
         )}
       </main>
 
-      <footer className="flex flex-col gap-6 px-5 py-10 text-center bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800">
-        <div className="flex flex-wrap items-center justify-center gap-6">
-          <a className="text-primary text-sm font-medium leading-normal hover:underline" href="#">Privacidade</a>
-          <a className="text-primary text-sm font-medium leading-normal hover:underline" href="#">Contato</a>
-          <a className="text-primary text-sm font-medium leading-normal hover:underline" href="#">Nutricional</a>
+      <nav className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 pb-safe">
+        <div className="flex gap-2 px-4 pb-3 pt-2">
+          <button className="flex flex-1 flex-col items-center justify-end gap-1 text-slate-400 dark:text-slate-500">
+            <div className="flex h-8 items-center justify-center">
+              <span className="material-symbols-outlined">home</span>
+            </div>
+            <p className="text-xs font-medium leading-normal tracking-wide">Início</p>
+          </button>
+          <button className="flex flex-1 flex-col items-center justify-end gap-1 text-primary">
+            <div className="flex h-8 items-center justify-center">
+              <span className="material-symbols-outlined filled">restaurant_menu</span>
+            </div>
+            <p className="text-xs font-bold leading-normal tracking-wide">Cardápio</p>
+          </button>
+          <button className="flex flex-1 flex-col items-center justify-end gap-1 text-slate-400 dark:text-slate-500">
+            <div className="flex h-8 items-center justify-center">
+              <span className="material-symbols-outlined">nutrition</span>
+            </div>
+            <p className="text-xs font-medium leading-normal tracking-wide">Nutrição</p>
+          </button>
+          <button className="flex flex-1 flex-col items-center justify-end gap-1 text-slate-400 dark:text-slate-500">
+            <div className="flex h-8 items-center justify-center">
+              <span className="material-symbols-outlined">person</span>
+            </div>
+            <p className="text-xs font-medium leading-normal tracking-wide">Perfil</p>
+          </button>
         </div>
-        <div className="flex flex-col items-center gap-2">
-          <p className="text-[#4c739a] dark:text-slate-400 text-xs font-normal leading-normal">
-            © 2026 SEMED - Secretaria Municipal de Educação
-          </p>
-          <div className="h-1 w-12 bg-primary/30 rounded-full"></div>
-        </div>
-      </footer>
+      </nav>
     </div>
   );
 };

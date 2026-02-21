@@ -1,9 +1,11 @@
+import uuid
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 import csv
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from merenda_semed.authentication import QueryParamJWTAuthentication
@@ -27,7 +29,11 @@ class MenuViewSet(viewsets.ModelViewSet):
         date_to = self.request.query_params.get('date_to')
         status_value = self.request.query_params.get('status')
         if school:
-            queryset = queryset.filter(school_id=school)
+            try:
+                school_uuid = uuid.UUID(str(school))
+            except (TypeError, ValueError):
+                raise ValidationError({'school': 'Parametro school invalido. Informe um UUID valido.'})
+            queryset = queryset.filter(school_id=school_uuid)
         if week_start:
             queryset = queryset.filter(week_start=week_start)
         if week_end:

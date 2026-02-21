@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, CartesianGrid, Legend } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 import { getDashboard, getDashboardSeries } from '../api';
@@ -10,6 +10,41 @@ const defaultData = [
   { name: 'Abr', value: 30 },
   { name: 'Mai', value: 20 },
 ];
+
+function useChartContainerReady(enabled: boolean) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    if (!enabled) {
+      setReady(false);
+      return;
+    }
+
+    const el = ref.current;
+    if (!el) {
+      setReady(false);
+      return;
+    }
+
+    const update = () => {
+      const { width, height } = el.getBoundingClientRect();
+      setReady(width > 0 && height > 0);
+    };
+
+    update();
+
+    if (typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [enabled]);
+
+  return { ref, ready };
+}
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -43,6 +78,8 @@ const Dashboard: React.FC = () => {
   const [selectedSchool, setSelectedSchool] = useState('ALL');
   const [isLoading, setIsLoading] = useState(true);
   const [chartsReady, setChartsReady] = useState(false);
+  const consumptionChartContainer = useChartContainerReady(chartsReady);
+  const servedChartContainer = useChartContainerReady(chartsReady);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => setChartsReady(true));
@@ -241,8 +278,8 @@ const Dashboard: React.FC = () => {
                 <span>Saídas de estoque</span>
               </div>
             </div>
-            <div className="h-64 min-h-[16rem] min-w-0">
-              {chartsReady ? (
+            <div ref={consumptionChartContainer.ref} className="h-64 min-h-[16rem] min-w-0">
+              {chartsReady && consumptionChartContainer.ready ? (
                 <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
                   <AreaChart data={series}>
                     <defs>
@@ -303,8 +340,8 @@ const Dashboard: React.FC = () => {
                 Sem lancamentos de refeicoes servidas ainda.
               </div>
             ) : (
-              <div className="h-80 min-h-[20rem] min-w-0">
-                {chartsReady ? (
+              <div ref={servedChartContainer.ref} className="h-80 min-h-[20rem] min-w-0">
+                {chartsReady && servedChartContainer.ready ? (
                   <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240}>
                     <BarChart data={servedChartData} margin={{ top: 8, right: 12, left: 0, bottom: 16 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
