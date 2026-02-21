@@ -16,6 +16,10 @@ export interface InventoryItem {
   quantity: number;
   minQuantity: number;
   status: 'critical' | 'adequate' | 'warning';
+  nova_classification?: string;
+  nova_classification_display?: string;
+  nutritional_function?: string;
+  nutritional_function_display?: string;
 }
 
 export interface MenuItem {

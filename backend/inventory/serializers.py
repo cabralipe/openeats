@@ -21,9 +21,21 @@ from .models import (
 
 
 class SupplySerializer(serializers.ModelSerializer):
+    nova_classification_display = serializers.CharField(
+        source='get_nova_classification_display', read_only=True,
+    )
+    nutritional_function_display = serializers.CharField(
+        source='get_nutritional_function_display', read_only=True,
+    )
+
     class Meta:
         model = Supply
-        fields = ['id', 'name', 'category', 'unit', 'min_stock', 'is_active', 'created_at', 'updated_at']
+        fields = [
+            'id', 'name', 'category', 'unit',
+            'nova_classification', 'nova_classification_display',
+            'nutritional_function', 'nutritional_function_display',
+            'min_stock', 'is_active', 'created_at', 'updated_at',
+        ]
 
 
 class StockBalanceSerializer(serializers.ModelSerializer):

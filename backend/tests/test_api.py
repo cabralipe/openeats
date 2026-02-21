@@ -202,6 +202,51 @@ def test_public_delivery_conference_submission(api_client, admin_user):
     assert float(balance.quantity) == 32.0
 
 
+def test_copy_delivery_to_multiple_schools_creates_drafts(api_client, admin_user):
+    api_client.force_authenticate(user=admin_user)
+    source_school = School.objects.create(name='Escola Origem')
+    target_school_a = School.objects.create(name='Escola Destino A')
+    target_school_b = School.objects.create(name='Escola Destino B')
+    supply = Supply.objects.create(name='Macarrao', category='Graos', unit=Supply.Units.KG, min_stock=10)
+
+    source_delivery = Delivery.objects.create(
+        school=source_school,
+        delivery_date=date.today(),
+        notes='Copiar para outras escolas',
+        responsible_name='Joao',
+        responsible_phone='82999990000',
+        created_by=admin_user,
+        status=Delivery.Status.SENT,
+        conference_enabled=True,
+    )
+    DeliveryItem.objects.create(delivery=source_delivery, supply=supply, planned_quantity='12.00')
+
+    response = api_client.post(
+        f'/api/deliveries/{source_delivery.id}/copy/',
+        {'target_schools': [str(target_school_a.id), str(target_school_b.id)]},
+        format='json',
+    )
+
+    assert response.status_code == 200
+    assert response.data['count'] == 2
+
+    copied_deliveries = Delivery.objects.filter(
+        school_id__in=[target_school_a.id, target_school_b.id],
+        delivery_date=source_delivery.delivery_date,
+        notes=source_delivery.notes,
+    )
+    assert copied_deliveries.count() == 2
+    assert all(delivery.status == Delivery.Status.DRAFT for delivery in copied_deliveries)
+    assert all(delivery.conference_enabled is False for delivery in copied_deliveries)
+
+    for delivery in copied_deliveries:
+        copied_items = DeliveryItem.objects.filter(delivery=delivery)
+        assert copied_items.count() == 1
+        item = copied_items.first()
+        assert str(item.supply_id) == str(supply.id)
+        assert float(item.planned_quantity) == 12.0
+
+
 def test_public_consumption_works_without_previous_delivery(api_client, admin_user):
     school = School.objects.create(name='Escola Consumo')
     supply = Supply.objects.create(name='Leite', category='Mercearia', unit=Supply.Units.L, min_stock=10)

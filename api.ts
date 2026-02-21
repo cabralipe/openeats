@@ -283,6 +283,8 @@ export async function createSupply(payload: {
   unit: string;
   min_stock: number;
   is_active?: boolean;
+  nova_classification?: string;
+  nutritional_function?: string;
 }) {
   return apiFetch('/api/supplies/', {
     method: 'POST',
@@ -296,11 +298,17 @@ export async function updateSupply(id: string, payload: Partial<{
   unit: string;
   min_stock: number;
   is_active: boolean;
+  nova_classification: string;
+  nutritional_function: string;
 }>) {
   return apiFetch(`/api/supplies/${id}/`, {
     method: 'PATCH',
     body: JSON.stringify(payload),
   });
+}
+
+export async function getSupplyCategories(): Promise<string[]> {
+  return apiFetch('/api/supplies/categories/');
 }
 
 export async function deleteSupply(id: string) {
@@ -352,6 +360,20 @@ export async function createDelivery(payload: {
   });
 }
 
+export async function updateDelivery(deliveryId: string, payload: {
+  school: string;
+  delivery_date: string;
+  responsible_name?: string;
+  responsible_phone?: string;
+  notes?: string;
+  items: Array<{ supply: string; planned_quantity: number }>;
+}) {
+  return apiFetch(`/api/deliveries/${deliveryId}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function sendDelivery(deliveryId: string) {
   return apiFetch(`/api/deliveries/${deliveryId}/send/`, {
     method: 'POST',
@@ -360,6 +382,19 @@ export async function sendDelivery(deliveryId: string) {
 
 export async function getDeliveryConferenceLink(deliveryId: string) {
   return apiFetch(`/api/deliveries/${deliveryId}/conference_link/`);
+}
+
+export async function copyDelivery(deliveryId: string, targetSchools: string[]) {
+  return apiFetch(`/api/deliveries/${deliveryId}/copy/`, {
+    method: 'POST',
+    body: JSON.stringify({ target_schools: targetSchools }),
+  });
+}
+
+export async function deleteDelivery(deliveryId: string) {
+  return apiFetch(`/api/deliveries/${deliveryId}/`, {
+    method: 'DELETE',
+  });
 }
 
 export async function getMenus(params: { school?: string; week_start?: string; week_end?: string; date_from?: string; date_to?: string; status?: string }) {
@@ -388,6 +423,8 @@ export async function updateMenu(id: string, payload: Partial<{
   week_end: string;
   status: string;
   notes: string;
+  author_name: string;
+  author_crn: string;
 }>) {
   return apiFetch(`/api/menus/${id}/`, {
     method: 'PATCH',
@@ -416,10 +453,14 @@ export async function publishMenu(menuId: string) {
   });
 }
 
-export async function copyMenu(menuId: string, targetSchool: string, weekStart?: string, weekEnd?: string) {
+export async function copyMenu(menuId: string, payload: {
+  target_schools: string[];
+  week_start?: string;
+  week_end?: string;
+}) {
   return apiFetch(`/api/menus/${menuId}/copy/`, {
     method: 'POST',
-    body: JSON.stringify({ target_school: targetSchool, week_start: weekStart, week_end: weekEnd }),
+    body: JSON.stringify(payload),
   });
 }
 

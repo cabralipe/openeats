@@ -27,8 +27,9 @@ class MenuSerializer(serializers.ModelSerializer):
     class Meta:
         model = Menu
         fields = [
-            'id', 'school', 'school_name', 'name', 'week_start', 'week_end', 'status', 'notes', 'created_by',
-            'published_at', 'created_at', 'updated_at', 'items'
+            'id', 'school', 'school_name', 'name', 'week_start', 'week_end', 'status', 'notes',
+            'author_name', 'author_crn',
+            'created_by', 'published_at', 'created_at', 'updated_at', 'items'
         ]
         read_only_fields = ['created_by', 'published_at', 'created_at', 'updated_at']
 

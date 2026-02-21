@@ -14,10 +14,28 @@ class Supply(models.Model):
         ML = 'ml', 'ml'
         UNIT = 'unit', 'Unit'
 
+    class NovaClassification(models.TextChoices):
+        IN_NATURA = 'IN_NATURA', 'In natura ou minimamente processados'
+        CULINARIOS = 'CULINARIOS', 'Ingredientes culinários processados'
+        PROCESSADOS = 'PROCESSADOS', 'Alimentos processados'
+        ULTRAPROCESSADOS = 'ULTRAPROCESSADOS', 'Alimentos ultraprocessados'
+
+    class NutritionalFunction(models.TextChoices):
+        CONSTRUTORES = 'CONSTRUTORES', 'Alimentos Construtores'
+        ENERGETICOS = 'ENERGETICOS', 'Alimentos Energéticos'
+        REGULADORES = 'REGULADORES', 'Alimentos Reguladores'
+        ENERGETICOS_EXTRAS = 'ENERGETICOS_EXTRAS', 'Alimentos Energéticos Extras'
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
-    category = models.CharField(max_length=100)
+    category = models.CharField(max_length=100, default='Outros', blank=True)
     unit = models.CharField(max_length=10, choices=Units.choices)
+    nova_classification = models.CharField(
+        max_length=20, choices=NovaClassification.choices, blank=True, default='',
+    )
+    nutritional_function = models.CharField(
+        max_length=20, choices=NutritionalFunction.choices, blank=True, default='',
+    )
     min_stock = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)

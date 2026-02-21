@@ -1,6 +1,45 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { createStockMovement, createSupply, deleteSupply, exportStockCsv, getStock, getSupplies, updateSupply } from '../api';
+import { createStockMovement, createSupply, deleteSupply, exportStockCsv, getStock, getSupplies, getSupplyCategories, updateSupply } from '../api';
 import { InventoryItem } from '../types';
+
+const NOVA_OPTIONS = [
+  { value: '', label: 'Sem classificação' },
+  { value: 'IN_NATURA', label: 'In natura ou minimamente processados' },
+  { value: 'CULINARIOS', label: 'Ingredientes culinários processados' },
+  { value: 'PROCESSADOS', label: 'Alimentos processados' },
+  { value: 'ULTRAPROCESSADOS', label: 'Alimentos ultraprocessados' },
+];
+
+const NUTRITIONAL_OPTIONS = [
+  { value: '', label: 'Sem classificação' },
+  { value: 'CONSTRUTORES', label: 'Alimentos Construtores' },
+  { value: 'ENERGETICOS', label: 'Alimentos Energéticos' },
+  { value: 'REGULADORES', label: 'Alimentos Reguladores' },
+  { value: 'ENERGETICOS_EXTRAS', label: 'Alimentos Energéticos Extras' },
+];
+
+const NOVA_TO_NUTRITIONAL: Record<string, string> = {
+  IN_NATURA: 'CONSTRUTORES',
+  CULINARIOS: 'ENERGETICOS',
+  PROCESSADOS: 'REGULADORES',
+  ULTRAPROCESSADOS: 'ENERGETICOS_EXTRAS',
+};
+
+const PRESET_CATEGORIES = ['Grãos', 'Proteínas', 'Hortifruti', 'Mercearia'];
+
+const NOVA_COLORS: Record<string, string> = {
+  IN_NATURA: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400',
+  CULINARIOS: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400',
+  PROCESSADOS: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400',
+  ULTRAPROCESSADOS: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',
+};
+
+const NUTRITIONAL_COLORS: Record<string, string> = {
+  CONSTRUTORES: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400',
+  ENERGETICOS: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400',
+  REGULADORES: 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400',
+  ENERGETICOS_EXTRAS: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400',
+};
 
 const Inventory: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
@@ -9,15 +48,36 @@ const Inventory: React.FC = () => {
   const [supplies, setSupplies] = useState<any[]>([]);
   const [selectedSupplyId, setSelectedSupplyId] = useState('');
   const [movement, setMovement] = useState({ quantity: '', movement_date: '', note: '' });
-  const [supplyForm, setSupplyForm] = useState({ name: '', category: '', unit: 'kg', min_stock: '0', is_active: true });
+  const [supplyForm, setSupplyForm] = useState({
+    name: '', category: 'Outros', unit: 'kg', min_stock: '0', is_active: true,
+    nova_classification: '', nutritional_function: '',
+  });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('Todos');
   const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'ok'>('all');
   const [isLoading, setIsLoading] = useState(true);
+  const [dynamicCategories, setDynamicCategories] = useState<string[]>([]);
+  const [showCustomCategory, setShowCustomCategory] = useState(false);
+  const [customCategoryInput, setCustomCategoryInput] = useState('');
 
-  const categories = ['Todos', 'Grãos', 'Proteínas', 'Hortifruti', 'Mercearia'];
+  // Merge preset + dynamic categories (deduplicated)
+  const allCategories = useMemo(() => {
+    const set = new Set([...PRESET_CATEGORIES, ...dynamicCategories]);
+    set.delete('');
+    set.delete('Outros');
+    const sorted = Array.from(set).sort();
+    return ['Todos', ...sorted, 'Outros'];
+  }, [dynamicCategories]);
+
+  // Categories available for the form dropdown (without 'Todos')
+  const formCategories = useMemo(() => {
+    const set = new Set([...PRESET_CATEGORIES, ...dynamicCategories]);
+    set.delete('');
+    const sorted = Array.from(set).sort();
+    return [...sorted, 'Outros'];
+  }, [dynamicCategories]);
 
   const loadStock = (filters?: { q?: string; category?: string; low_stock?: boolean }) => {
     return getStock(filters)
@@ -34,6 +94,10 @@ const Inventory: React.FC = () => {
             quantity,
             minQuantity,
             status,
+            nova_classification: entry.supply.nova_classification || '',
+            nova_classification_display: entry.supply.nova_classification_display || '',
+            nutritional_function: entry.supply.nutritional_function || '',
+            nutritional_function_display: entry.supply.nutritional_function_display || '',
           } as InventoryItem;
         });
         setItems(mapped);
@@ -47,9 +111,15 @@ const Inventory: React.FC = () => {
       .catch(() => setError('Não foi possível carregar os insumos.'));
   };
 
+  const loadCategories = () => {
+    return getSupplyCategories()
+      .then((cats) => setDynamicCategories(cats))
+      .catch(() => { /* ignore */ });
+  };
+
   useEffect(() => {
     setIsLoading(true);
-    Promise.all([loadStock(), loadSupplies()]).finally(() => setIsLoading(false));
+    Promise.all([loadStock(), loadSupplies(), loadCategories()]).finally(() => setIsLoading(false));
   }, []);
 
   useEffect(() => {
@@ -73,22 +143,62 @@ const Inventory: React.FC = () => {
     setMode(nextMode);
     setShowModal(true);
     setError('');
+    setShowCustomCategory(false);
+    setCustomCategoryInput('');
     if (nextMode === 'edit' && item) {
       const supply = supplies.find((entry) => entry.id === item.id);
       setEditingId(item.id);
+      const cat = item.category || 'Outros';
+      const isCustom = !formCategories.includes(cat) && cat !== 'Outros';
       setSupplyForm({
         name: item.name,
-        category: item.category,
+        category: isCustom ? '__custom__' : cat,
         unit: item.unit,
         min_stock: String(item.minQuantity),
         is_active: supply ? supply.is_active : true,
+        nova_classification: item.nova_classification || '',
+        nutritional_function: item.nutritional_function || '',
       });
+      if (isCustom) {
+        setShowCustomCategory(true);
+        setCustomCategoryInput(cat);
+      }
     } else {
       setEditingId(null);
-      setSupplyForm({ name: '', category: '', unit: 'kg', min_stock: '0', is_active: true });
+      setSupplyForm({
+        name: '', category: 'Outros', unit: 'kg', min_stock: '0', is_active: true,
+        nova_classification: '', nutritional_function: '',
+      });
       setMovement({ quantity: '', movement_date: new Date().toISOString().slice(0, 10), note: '' });
       setSelectedSupplyId(item?.id || '');
     }
+  };
+
+  const handleNovaChange = (value: string) => {
+    const suggestedNutritional = NOVA_TO_NUTRITIONAL[value] || '';
+    setSupplyForm({
+      ...supplyForm,
+      nova_classification: value,
+      nutritional_function: suggestedNutritional,
+    });
+  };
+
+  const handleCategorySelectChange = (value: string) => {
+    if (value === '__custom__') {
+      setShowCustomCategory(true);
+      setSupplyForm({ ...supplyForm, category: '__custom__' });
+    } else {
+      setShowCustomCategory(false);
+      setCustomCategoryInput('');
+      setSupplyForm({ ...supplyForm, category: value });
+    }
+  };
+
+  const resolvedCategory = () => {
+    if (supplyForm.category === '__custom__') {
+      return customCategoryInput.trim() || 'Outros';
+    }
+    return supplyForm.category || 'Outros';
   };
 
   const handleSaveSupply = async (event: React.FormEvent) => {
@@ -97,10 +207,12 @@ const Inventory: React.FC = () => {
     try {
       const payload = {
         name: supplyForm.name,
-        category: supplyForm.category,
+        category: resolvedCategory(),
         unit: supplyForm.unit,
         min_stock: Number(supplyForm.min_stock),
         is_active: supplyForm.is_active,
+        nova_classification: supplyForm.nova_classification,
+        nutritional_function: supplyForm.nutritional_function,
       };
       if (mode === 'edit' && editingId) {
         await updateSupply(editingId, payload);
@@ -111,6 +223,7 @@ const Inventory: React.FC = () => {
       const low_stock = stockFilter === 'all' ? undefined : stockFilter === 'low';
       await loadSupplies({ q: search, category });
       await loadStock({ q: search, category, low_stock });
+      await loadCategories();
       setShowModal(false);
     } catch {
       setError('Não foi possível salvar o insumo.');
@@ -145,6 +258,7 @@ const Inventory: React.FC = () => {
       const low_stock = stockFilter === 'all' ? undefined : stockFilter === 'low';
       await loadSupplies({ q: search, category });
       await loadStock({ q: search, category, low_stock });
+      await loadCategories();
     } catch {
       setError('Não foi possível excluir o insumo.');
     }
@@ -220,13 +334,13 @@ const Inventory: React.FC = () => {
       {/* Category Tabs */}
       <div className="px-4 lg:px-6">
         <div className="flex gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl overflow-x-auto no-scrollbar">
-          {categories.map((cat) => (
+          {allCategories.map((cat) => (
             <button
               key={cat}
               onClick={() => setCategoryFilter(cat)}
               className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${categoryFilter === cat
-                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
             >
               {cat}
@@ -302,8 +416,8 @@ const Inventory: React.FC = () => {
             >
               {/* Icon */}
               <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${item.status === 'critical'
-                  ? 'bg-danger-100 dark:bg-danger-900/30 text-danger-600'
-                  : getCategoryColor(item.category)
+                ? 'bg-danger-100 dark:bg-danger-900/30 text-danger-600'
+                : getCategoryColor(item.category)
                 }`}>
                 <span className="material-symbols-outlined">
                   {item.status === 'critical' ? 'warning' : getCategoryIcon(item.category)}
@@ -316,10 +430,22 @@ const Inventory: React.FC = () => {
                 <p className="text-sm text-slate-500 dark:text-slate-400">
                   {item.category} • Min: {item.minQuantity}{item.unit}
                 </p>
-                <span className={`badge mt-1 ${item.status === 'critical' ? 'badge-danger' : 'badge-success'
-                  }`}>
-                  {item.status === 'critical' ? 'Estoque Baixo' : 'Adequado'}
-                </span>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  <span className={`badge ${item.status === 'critical' ? 'badge-danger' : 'badge-success'
+                    }`}>
+                    {item.status === 'critical' ? 'Estoque Baixo' : 'Adequado'}
+                  </span>
+                  {item.nova_classification_display && (
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${NOVA_COLORS[item.nova_classification || ''] || 'bg-slate-100 dark:bg-slate-800 text-slate-600'}`}>
+                      {item.nova_classification_display}
+                    </span>
+                  )}
+                  {item.nutritional_function_display && (
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${NUTRITIONAL_COLORS[item.nutritional_function || ''] || 'bg-slate-100 dark:bg-slate-800 text-slate-600'}`}>
+                      {item.nutritional_function_display}
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Quantity */}
@@ -357,12 +483,12 @@ const Inventory: React.FC = () => {
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${mode === 'in' ? 'bg-success-100 dark:bg-success-900/30' :
-                    mode === 'out' ? 'bg-warning-100 dark:bg-warning-900/30' :
-                      'bg-primary-100 dark:bg-primary-900/30'
+                  mode === 'out' ? 'bg-warning-100 dark:bg-warning-900/30' :
+                    'bg-primary-100 dark:bg-primary-900/30'
                   }`}>
                   <span className={`material-symbols-outlined ${mode === 'in' ? 'text-success-500' :
-                      mode === 'out' ? 'text-warning-500' :
-                        'text-primary-500'
+                    mode === 'out' ? 'text-warning-500' :
+                      'text-primary-500'
                     }`}>
                     {mode === 'register' ? 'add_circle' : mode === 'edit' ? 'edit' : mode === 'in' ? 'login' : 'logout'}
                   </span>
@@ -389,11 +515,32 @@ const Inventory: React.FC = () => {
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Nome</label>
                   <input className="input" value={supplyForm.name} onChange={(e) => setSupplyForm({ ...supplyForm, name: e.target.value })} required />
                 </div>
+
+                {/* Category selector */}
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Categoria</label>
+                  <select
+                    className="input"
+                    value={supplyForm.category}
+                    onChange={(e) => handleCategorySelectChange(e.target.value)}
+                  >
+                    {formCategories.map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                    <option value="__custom__">+ Nova categoria...</option>
+                  </select>
+                  {showCustomCategory && (
+                    <input
+                      className="input mt-2"
+                      placeholder="Digite o nome da nova categoria..."
+                      value={customCategoryInput}
+                      onChange={(e) => setCustomCategoryInput(e.target.value)}
+                      autoFocus
+                    />
+                  )}
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Categoria</label>
-                    <input className="input" value={supplyForm.category} onChange={(e) => setSupplyForm({ ...supplyForm, category: e.target.value })} required />
-                  </div>
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Unidade</label>
                     <select className="input" value={supplyForm.unit} onChange={(e) => setSupplyForm({ ...supplyForm, unit: e.target.value })}>
@@ -404,17 +551,57 @@ const Inventory: React.FC = () => {
                       <option value="unid">unid</option>
                     </select>
                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Estoque mínimo</label>
                     <input className="input" value={supplyForm.min_stock} onChange={(e) => setSupplyForm({ ...supplyForm, min_stock: e.target.value })} type="number" step="0.01" />
                   </div>
-                  <label className="flex items-center gap-3 mt-7 cursor-pointer">
-                    <input type="checkbox" checked={supplyForm.is_active} onChange={(e) => setSupplyForm({ ...supplyForm, is_active: e.target.checked })} className="w-5 h-5 rounded" />
-                    <span className="text-sm text-slate-700 dark:text-slate-300">Ativo</span>
-                  </label>
                 </div>
+
+                {/* NOVA Classification */}
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 space-y-4">
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    Classificação Nutricional (Opcional)
+                  </p>
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Grau de Processamento (NOVA)
+                    </label>
+                    <select
+                      className="input"
+                      value={supplyForm.nova_classification}
+                      onChange={(e) => handleNovaChange(e.target.value)}
+                    >
+                      {NOVA_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Função Nutricional
+                    </label>
+                    <select
+                      className="input"
+                      value={supplyForm.nutritional_function}
+                      onChange={(e) => setSupplyForm({ ...supplyForm, nutritional_function: e.target.value })}
+                    >
+                      {NUTRITIONAL_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                    {supplyForm.nova_classification && NOVA_TO_NUTRITIONAL[supplyForm.nova_classification] && (
+                      <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                        💡 Sugerido automaticamente com base na classificação NOVA
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input type="checkbox" checked={supplyForm.is_active} onChange={(e) => setSupplyForm({ ...supplyForm, is_active: e.target.checked })} className="w-5 h-5 rounded" />
+                  <span className="text-sm text-slate-700 dark:text-slate-300">Ativo</span>
+                </label>
+
                 <button className="w-full btn-primary h-12" type="submit">Salvar</button>
               </form>
             )}

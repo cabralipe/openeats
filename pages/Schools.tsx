@@ -48,10 +48,11 @@ const Schools: React.FC = () => {
   const [menuLoading, setMenuLoading] = useState(false);
   const [copyModalOpen, setCopyModalOpen] = useState(false);
   const [copyingMenuId, setCopyingMenuId] = useState<string | null>(null);
-  const [copyTargetSchool, setCopyTargetSchool] = useState('');
+  const [copyTargetSchools, setCopyTargetSchools] = useState<string[]>([]);
   const [copyWeekStart, setCopyWeekStart] = useState('');
   const [copyWeekEnd, setCopyWeekEnd] = useState('');
   const [copySuccess, setCopySuccess] = useState('');
+  const [copying, setCopying] = useState(false);
   // Stock config modal state
   const [configModal, setConfigModal] = useState<{ school: School; items: StockConfigItem[] } | null>(null);
   const [configLoading, setConfigLoading] = useState(false);
@@ -329,24 +330,61 @@ const Schools: React.FC = () => {
 
   const openCopyModal = (menuId: string) => {
     setCopyingMenuId(menuId);
-    setCopyTargetSchool('');
+    setCopyTargetSchools([]);
     setCopyWeekStart('');
     setCopyWeekEnd('');
     setCopySuccess('');
+    setCopying(false);
     setCopyModalOpen(true);
   };
 
+  const toggleCopySchool = (schoolId: string) => {
+    setCopyTargetSchools((prev) =>
+      prev.includes(schoolId) ? prev.filter((id) => id !== schoolId) : [...prev, schoolId]
+    );
+  };
+
+  const handleCopyDateChange = (dateStr: string) => {
+    if (!dateStr) {
+      setCopyWeekStart('');
+      setCopyWeekEnd('');
+      return;
+    }
+    const d = new Date(`${dateStr}T12:00:00`);
+    if (Number.isNaN(d.getTime())) return;
+    const dow = d.getDay();
+    const diff = dow === 0 ? -6 : 1 - dow;
+    const mon = new Date(d);
+    mon.setDate(d.getDate() + diff);
+    const fri = new Date(mon);
+    fri.setDate(mon.getDate() + 4);
+    setCopyWeekStart(mon.toISOString().slice(0, 10));
+    setCopyWeekEnd(fri.toISOString().slice(0, 10));
+  };
+
   const handleCopyMenu = async () => {
-    if (!copyingMenuId || !copyTargetSchool) return;
+    if (!copyingMenuId || copyTargetSchools.length === 0) return;
+    setCopying(true);
     try {
-      await copyMenu(copyingMenuId, copyTargetSchool, copyWeekStart || undefined, copyWeekEnd || undefined);
-      setCopySuccess('Cardápio copiado com sucesso!');
+      const result = await copyMenu(copyingMenuId, {
+        target_schools: copyTargetSchools,
+        week_start: copyWeekStart || undefined,
+        week_end: copyWeekEnd || undefined,
+      }) as any;
+      const count = result?.count || copyTargetSchools.length;
+      setCopySuccess(
+        count === 1
+          ? 'Cardápio copiado para 1 escola como rascunho!'
+          : `Cardápio copiado para ${count} escolas como rascunho!`
+      );
       setTimeout(() => {
         setCopyModalOpen(false);
         setCopySuccess('');
-      }, 2000);
+      }, 2500);
     } catch {
       setError('Não foi possível copiar o cardápio.');
+    } finally {
+      setCopying(false);
     }
   };
 
@@ -918,62 +956,130 @@ const Schools: React.FC = () => {
       {/* Copy Menu Modal */}
       {copyModalOpen && (
         <div className="modal-overlay" onClick={() => setCopyModalOpen(false)}>
-          <div className="modal-content max-w-md" onClick={(e) => e.stopPropagation()}>
-            <div className="p-5">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Copiar Cardápio</h3>
+          <div className="modal-content max-w-lg" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-secondary-100 dark:bg-secondary-900/30 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-secondary-500">content_copy</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 dark:text-white">Copiar Cardápio</h3>
+                  <p className="text-xs text-slate-500">Selecione as escolas de destino</p>
+                </div>
+              </div>
+              <button onClick={() => setCopyModalOpen(false)} className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800">
+                <span className="material-symbols-outlined text-slate-400">close</span>
+              </button>
+            </div>
 
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-5 max-h-[60vh]">
               {copySuccess ? (
-                <div className="text-center py-8">
-                  <span className="material-symbols-outlined text-4xl text-success-500 mb-2">check_circle</span>
-                  <p className="text-success-600">{copySuccess}</p>
+                <div className="flex flex-col items-center py-8 gap-4">
+                  <div className="w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-green-600 text-3xl">check_circle</span>
+                  </div>
+                  <p className="text-sm font-semibold text-green-600">{copySuccess}</p>
                 </div>
               ) : (
                 <div className="space-y-4">
+                  {/* School multi-select */}
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Escola destino *</label>
-                    <select
-                      value={copyTargetSchool}
-                      onChange={(e) => setCopyTargetSchool(e.target.value)}
-                      className="input w-full"
-                    >
-                      <option value="">Selecione...</option>
-                      {schools.filter(s => s.id !== menuModal?.school.id).map((s) => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Início da semana</label>
-                      <input
-                        type="date"
-                        value={copyWeekStart}
-                        onChange={(e) => setCopyWeekStart(e.target.value)}
-                        className="input w-full"
-                        placeholder="Manter original"
-                      />
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                        Escolas ({copyTargetSchools.length} selecionada{copyTargetSchools.length !== 1 ? 's' : ''})
+                      </label>
+                      <button
+                        onClick={() => {
+                          const otherSchools = schools.filter(s => s.id !== menuModal?.school.id).map(s => s.id);
+                          setCopyTargetSchools(copyTargetSchools.length === otherSchools.length ? [] : otherSchools);
+                        }}
+                        className="text-xs text-primary-500 font-semibold"
+                      >
+                        {copyTargetSchools.length === schools.filter(s => s.id !== menuModal?.school.id).length
+                          ? 'Desmarcar todas'
+                          : 'Selecionar todas'}
+                      </button>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Fim da semana</label>
-                      <input
-                        type="date"
-                        value={copyWeekEnd}
-                        onChange={(e) => setCopyWeekEnd(e.target.value)}
-                        className="input w-full"
-                        placeholder="Manter original"
-                      />
+                    <div className="space-y-2 max-h-52 overflow-y-auto">
+                      {schools
+                        .filter(s => s.id !== menuModal?.school.id)
+                        .map((s) => {
+                          const isChecked = copyTargetSchools.includes(s.id);
+                          return (
+                            <label
+                              key={s.id}
+                              className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${isChecked
+                                  ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/10'
+                                  : 'border-slate-200 dark:border-slate-700 hover:border-primary-300'
+                                }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => toggleCopySchool(s.id)}
+                                className="w-5 h-5 rounded accent-primary"
+                              />
+                              <div className="flex items-center gap-2 flex-1 min-w-0">
+                                <div className={`w-8 h-8 rounded-lg ${getAvatarColor(s.name)} flex items-center justify-center text-white text-sm font-bold`}>
+                                  {s.name.charAt(0).toUpperCase()}
+                                </div>
+                                <span className="text-sm font-medium text-slate-900 dark:text-white truncate">{s.name}</span>
+                              </div>
+                            </label>
+                          );
+                        })}
                     </div>
                   </div>
-                  <p className="text-xs text-slate-500">Deixe as datas em branco para usar as mesmas do cardápio original.</p>
+
+                  {/* Dates */}
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Semana (opcional)</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <input
+                          type="date"
+                          value={copyWeekStart}
+                          onChange={(e) => handleCopyDateChange(e.target.value)}
+                          className="input w-full"
+                        />
+                      </div>
+                      <div>
+                        <input
+                          type="date"
+                          value={copyWeekEnd}
+                          readOnly
+                          className="input w-full bg-slate-50 dark:bg-slate-800 text-slate-500 cursor-not-allowed"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">Deixe em branco para usar as datas originais. Selecionamos seg–sex automaticamente.</p>
+                  </div>
                 </div>
               )}
             </div>
+
+            {/* Footer */}
             {!copySuccess && (
               <div className="p-5 border-t border-slate-200 dark:border-slate-700 flex gap-2">
                 <button onClick={() => setCopyModalOpen(false)} className="btn-secondary flex-1">Cancelar</button>
-                <button onClick={handleCopyMenu} disabled={!copyTargetSchool} className="btn-primary flex-1">
-                  <span className="material-symbols-outlined">content_copy</span>
-                  Copiar
+                <button
+                  onClick={handleCopyMenu}
+                  disabled={copying || copyTargetSchools.length === 0}
+                  className="btn-primary flex-1 flex items-center justify-center gap-2"
+                >
+                  {copying ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      Copiando...
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined">content_copy</span>
+                      Copiar para {copyTargetSchools.length} escola{copyTargetSchools.length !== 1 ? 's' : ''}
+                    </>
+                  )}
                 </button>
               </div>
             )}

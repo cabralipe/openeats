@@ -15,6 +15,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from merenda_semed.authentication import QueryParamJWTAuthentication
+from schools.models import School
 
 from .models import (
     Delivery,
@@ -119,6 +120,17 @@ class SupplyViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         supply = serializer.save()
         StockBalance.objects.get_or_create(supply=supply)
+
+    @action(detail=False, methods=['get'])
+    def categories(self, request):
+        """Return distinct category values used across all supplies."""
+        cats = (
+            Supply.objects.values_list('category', flat=True)
+            .exclude(category='')
+            .distinct()
+            .order_by('category')
+        )
+        return Response(list(cats))
 
 
 class StockViewSet(viewsets.ReadOnlyModelViewSet):
@@ -1198,6 +1210,63 @@ class DeliveryViewSet(viewsets.ModelViewSet):
             'url': f"/public/delivery?slug={delivery.school.public_slug}&token={delivery.school.public_token}&delivery_id={delivery.id}",
             'api_url': f"/public/schools/{delivery.school.public_slug}/delivery/current/?token={delivery.school.public_token}&delivery_id={delivery.id}",
         })
+
+    @action(detail=True, methods=['post'])
+    def copy(self, request, pk=None):
+        source_delivery = self.get_object()
+        target_schools = request.data.get('target_schools')
+
+        if not isinstance(target_schools, list) or not target_schools:
+            raise ValidationError({'target_schools': 'Informe ao menos uma escola de destino.'})
+
+        target_school_ids = []
+        seen = set()
+        for school_id in target_schools:
+            school_id = str(school_id).strip()
+            if not school_id or school_id in seen:
+                continue
+            seen.add(school_id)
+            target_school_ids.append(school_id)
+
+        if not target_school_ids:
+            raise ValidationError({'target_schools': 'Nenhuma escola de destino válida foi informada.'})
+
+        schools = list(School.objects.filter(id__in=target_school_ids))
+        if len(schools) != len(target_school_ids):
+            found_ids = {str(s.id) for s in schools}
+            missing = [school_id for school_id in target_school_ids if school_id not in found_ids]
+            raise ValidationError({'target_schools': f'Escola(s) inválida(s): {", ".join(missing)}'})
+
+        items = list(source_delivery.items.select_related('supply').all())
+        if not items:
+            raise ValidationError('A entrega de origem não possui itens para copiar.')
+
+        school_by_id = {str(s.id): s for s in schools}
+        created_deliveries = []
+        with transaction.atomic():
+            for school_id in target_school_ids:
+                school = school_by_id[school_id]
+                delivery = Delivery.objects.create(
+                    school=school,
+                    delivery_date=source_delivery.delivery_date,
+                    sender=source_delivery.sender,
+                    responsible_name=source_delivery.responsible_name,
+                    responsible_phone=source_delivery.responsible_phone,
+                    notes=source_delivery.notes,
+                    created_by=request.user,
+                )
+                DeliveryItem.objects.bulk_create([
+                    DeliveryItem(
+                        delivery=delivery,
+                        supply=item.supply,
+                        planned_quantity=item.planned_quantity,
+                    )
+                    for item in items
+                ])
+                created_deliveries.append(delivery)
+
+        serializer = self.get_serializer(created_deliveries, many=True)
+        return Response({'count': len(created_deliveries), 'deliveries': serializer.data})
 
 
 class NotificationViewSet(viewsets.ModelViewSet):

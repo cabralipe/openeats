@@ -67,50 +67,73 @@ class MenuViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def copy(self, request, pk=None):
-        """Copy a menu to another school."""
-        source_menu = self.get_object()
-        target_school_id = request.data.get('target_school')
-        week_start = request.data.get('week_start')
-        week_end = request.data.get('week_end')
-        
-        if not target_school_id:
-            return Response({'detail': 'Escola destino obrigatória.'}, status=400)
-        
+        """Copy a menu to one or more schools."""
+        from django.db import transaction
         from schools.models import School
-        try:
-            target_school = School.objects.get(id=target_school_id)
-        except School.DoesNotExist:
-            return Response({'detail': 'Escola destino não encontrada.'}, status=404)
-        
-        # Use source menu dates if not provided
-        if not week_start:
-            week_start = source_menu.week_start
-        if not week_end:
-            week_end = source_menu.week_end
-        
-        # Create new menu for target school
-        new_menu = Menu.objects.create(
-            school=target_school,
-            name=source_menu.name,
-            week_start=week_start,
-            week_end=week_end,
-            status=Menu.Status.DRAFT,
-            created_by=self.request.user,
-        )
-        
-        # Copy all items
-        for item in source_menu.items.all():
-            MenuItem.objects.create(
-                menu=new_menu,
-                day_of_week=item.day_of_week,
-                meal_type=item.meal_type,
-                meal_name=item.meal_name,
-                description=item.description,
-                portion_text=item.portion_text,
-                image_url=item.image_url,
-            )
-        
-        return Response(MenuSerializer(new_menu).data, status=status.HTTP_201_CREATED)
+
+        source_menu = self.get_object()
+
+        # Accept both target_schools (list) and target_school (single) for backwards compat
+        target_schools = request.data.get('target_schools')
+        if not target_schools:
+            single = request.data.get('target_school')
+            if single:
+                target_schools = [single]
+
+        if not isinstance(target_schools, list) or not target_schools:
+            return Response({'detail': 'Informe ao menos uma escola de destino.'}, status=400)
+
+        week_start = request.data.get('week_start') or source_menu.week_start
+        week_end = request.data.get('week_end') or source_menu.week_end
+
+        # Deduplicate and validate schools
+        seen = set()
+        unique_ids = []
+        for sid in target_schools:
+            sid = str(sid).strip()
+            if sid and sid not in seen:
+                seen.add(sid)
+                unique_ids.append(sid)
+
+        schools = list(School.objects.filter(id__in=unique_ids))
+        if len(schools) != len(unique_ids):
+            found_ids = {str(s.id) for s in schools}
+            missing = [sid for sid in unique_ids if sid not in found_ids]
+            return Response({'detail': f'Escola(s) não encontrada(s): {", ".join(missing)}'}, status=404)
+
+        source_items = list(source_menu.items.all())
+        school_by_id = {str(s.id): s for s in schools}
+        created_menus = []
+
+        with transaction.atomic():
+            for sid in unique_ids:
+                school = school_by_id[sid]
+                new_menu = Menu.objects.create(
+                    school=school,
+                    name=source_menu.name,
+                    week_start=week_start,
+                    week_end=week_end,
+                    status=Menu.Status.DRAFT,
+                    created_by=self.request.user,
+                )
+                MenuItem.objects.bulk_create([
+                    MenuItem(
+                        menu=new_menu,
+                        day_of_week=item.day_of_week,
+                        meal_type=item.meal_type,
+                        meal_name=item.meal_name,
+                        description=item.description,
+                        portion_text=item.portion_text,
+                        image_url=item.image_url,
+                    )
+                    for item in source_items
+                ])
+                created_menus.append(new_menu)
+
+        return Response({
+            'count': len(created_menus),
+            'menus': MenuSerializer(created_menus, many=True).data,
+        }, status=status.HTTP_201_CREATED)
 
 
 
