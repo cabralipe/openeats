@@ -456,38 +456,18 @@ const PublicMenu: React.FC = () => {
                 Próximo dia
               </button>
             </div>
+            <div className="mt-6 text-center">
+              <p className="text-xs uppercase tracking-wider text-slate-400 dark:text-slate-500">Material elaborado por</p>
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                {menu?.author_name || 'Nutricionista responsável não informada'}
+              </p>
+              {menu?.author_crn && (
+                <p className="text-xs text-slate-500 dark:text-slate-400">CRN: {menu.author_crn}</p>
+              )}
+            </div>
           </>
         )}
       </main>
-
-      <nav className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 pb-safe">
-        <div className="flex gap-2 px-4 pb-3 pt-2">
-          <button className="flex flex-1 flex-col items-center justify-end gap-1 text-slate-400 dark:text-slate-500">
-            <div className="flex h-8 items-center justify-center">
-              <span className="material-symbols-outlined">home</span>
-            </div>
-            <p className="text-xs font-medium leading-normal tracking-wide">Início</p>
-          </button>
-          <button className="flex flex-1 flex-col items-center justify-end gap-1 text-primary">
-            <div className="flex h-8 items-center justify-center">
-              <span className="material-symbols-outlined filled">restaurant_menu</span>
-            </div>
-            <p className="text-xs font-bold leading-normal tracking-wide">Cardápio</p>
-          </button>
-          <button className="flex flex-1 flex-col items-center justify-end gap-1 text-slate-400 dark:text-slate-500">
-            <div className="flex h-8 items-center justify-center">
-              <span className="material-symbols-outlined">nutrition</span>
-            </div>
-            <p className="text-xs font-medium leading-normal tracking-wide">Nutrição</p>
-          </button>
-          <button className="flex flex-1 flex-col items-center justify-end gap-1 text-slate-400 dark:text-slate-500">
-            <div className="flex h-8 items-center justify-center">
-              <span className="material-symbols-outlined">person</span>
-            </div>
-            <p className="text-xs font-medium leading-normal tracking-wide">Perfil</p>
-          </button>
-        </div>
-      </nav>
     </div>
   );
 };

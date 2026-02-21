@@ -211,7 +211,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               {notificationsOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setNotificationsOpen(false)} />
-                  <div className="absolute top-12 right-0 w-80 max-h-[70vh] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden">
+                  <div className="absolute top-12 right-0 w-[min(28rem,calc(100vw-1rem))] max-h-[75vh] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden">
                     {/* Header */}
                     <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
                       <h3 className="font-bold text-slate-900 dark:text-white">Notificações</h3>
@@ -223,7 +223,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                     </div>
 
                     {/* Notifications List */}
-                    <div className="max-h-[50vh] overflow-y-auto">
+                    <div className="max-h-[60vh] overflow-y-auto">
                       {notifications.length === 0 ? (
                         <div className="p-8 text-center text-slate-500">
                           <span className="material-symbols-outlined text-3xl mb-2">notifications_off</span>
@@ -252,10 +252,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                                 </span>
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className={`text-sm truncate ${!notif.is_read ? 'font-semibold text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>
+                                <p className={`text-sm whitespace-normal break-words leading-snug ${!notif.is_read ? 'font-semibold text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>
                                   {notif.title}
                                 </p>
-                                <p className="text-xs text-slate-500 line-clamp-2 mt-0.5">{notif.message}</p>
+                                <p className="text-xs text-slate-500 whitespace-normal break-words leading-relaxed mt-1">{notif.message}</p>
                                 <p className="text-[10px] text-slate-400 mt-1">
                                   {new Date(notif.created_at).toLocaleString('pt-BR')}
                                 </p>
