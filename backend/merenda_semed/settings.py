@@ -6,6 +6,7 @@ import environ
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIST_DIR = BASE_DIR / 'frontend_dist'
+ENV_FILE_PATH = os.path.join(BASE_DIR, '.env')
 
 env = environ.Env(
     DEBUG=(bool, False),
@@ -27,7 +28,23 @@ env = environ.Env(
     SECURE_SSL_REDIRECT=(bool, False),
 )
 
-environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
+environ.Env.read_env(ENV_FILE_PATH)
+
+
+def _database_url_from_env_file(path: str):
+    """Return DATABASE_URL only when explicitly present in local .env file."""
+    try:
+        with open(path, 'r', encoding='utf-8') as env_file:
+            for raw_line in env_file:
+                line = raw_line.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                key, value = line.split('=', 1)
+                if key.strip() == 'DATABASE_URL':
+                    return value.strip()
+    except OSError:
+        return None
+    return None
 
 SECRET_KEY = env('SECRET_KEY', default='unsafe-secret-key')
 DEBUG = env('DEBUG')
@@ -110,6 +127,10 @@ if os.environ.get('PYTEST_CURRENT_TEST'):
     }
 else:
     database_url = env('DATABASE_URL').strip()
+    # In local DEBUG runs, avoid inheriting unrelated DATABASE_URL from shell/session.
+    database_url_from_file = _database_url_from_env_file(ENV_FILE_PATH)
+    if DEBUG and database_url_from_file is None:
+        database_url = ''
     if database_url:
         # Some providers expose SQLAlchemy-style URLs (postgresql+psycopg2://),
         # but Django expects a Django backend alias (postgres/postgresql).
