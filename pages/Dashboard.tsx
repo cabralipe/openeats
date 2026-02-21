@@ -42,6 +42,12 @@ const Dashboard: React.FC = () => {
   }>>([]);
   const [selectedSchool, setSelectedSchool] = useState('ALL');
   const [isLoading, setIsLoading] = useState(true);
+  const [chartsReady, setChartsReady] = useState(false);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setChartsReady(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   useEffect(() => {
     setIsLoading(true);
@@ -236,40 +242,44 @@ const Dashboard: React.FC = () => {
               </div>
             </div>
             <div className="h-64 min-h-[16rem] min-w-0">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
-                <AreaChart data={series}>
-                  <defs>
-                    <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <XAxis
-                    dataKey="name"
-                    stroke="#94a3b8"
-                    fontSize={12}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <Tooltip
-                    cursor={{ fill: 'transparent' }}
-                    contentStyle={{
-                      borderRadius: '12px',
-                      border: 'none',
-                      boxShadow: '0 10px 25px -5px rgb(0 0 0 / 0.1)',
-                      backgroundColor: 'white',
-                      padding: '8px 12px'
-                    }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="value"
-                    stroke="#3b82f6"
-                    strokeWidth={2}
-                    fill="url(#colorValue)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+              {chartsReady ? (
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
+                  <AreaChart data={series}>
+                    <defs>
+                      <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis
+                      dataKey="name"
+                      stroke="#94a3b8"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <Tooltip
+                      cursor={{ fill: 'transparent' }}
+                      contentStyle={{
+                        borderRadius: '12px',
+                        border: 'none',
+                        boxShadow: '0 10px 25px -5px rgb(0 0 0 / 0.1)',
+                        backgroundColor: 'white',
+                        padding: '8px 12px'
+                      }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="value"
+                      stroke="#3b82f6"
+                      strokeWidth={2}
+                      fill="url(#colorValue)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full w-full" />
+              )}
             </div>
           </div>
 
@@ -294,24 +304,28 @@ const Dashboard: React.FC = () => {
               </div>
             ) : (
               <div className="h-80 min-h-[20rem] min-w-0">
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240}>
-                  <BarChart data={servedChartData} margin={{ top: 8, right: 12, left: 0, bottom: 16 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="school_name" stroke="#64748b" fontSize={12} tickLine={false} />
-                    <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
-                    <Tooltip />
-                    <Legend />
-                    {categories.map((category, index) => (
-                      <Bar
-                        key={category}
-                        dataKey={categoryKeys[category]}
-                        name={category}
-                        stackId="served"
-                        fill={chartPalette[index % chartPalette.length]}
-                      />
-                    ))}
-                  </BarChart>
-                </ResponsiveContainer>
+                {chartsReady ? (
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240}>
+                    <BarChart data={servedChartData} margin={{ top: 8, right: 12, left: 0, bottom: 16 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="school_name" stroke="#64748b" fontSize={12} tickLine={false} />
+                      <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
+                      <Tooltip />
+                      <Legend />
+                      {categories.map((category, index) => (
+                        <Bar
+                          key={category}
+                          dataKey={categoryKeys[category]}
+                          name={category}
+                          stackId="served"
+                          fill={chartPalette[index % chartPalette.length]}
+                        />
+                      ))}
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full w-full" />
+                )}
               </div>
             )}
           </div>

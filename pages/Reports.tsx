@@ -25,22 +25,57 @@ const Reports: React.FC = () => {
   const [movementTo, setMovementTo] = useState('');
   const [movementSchool, setMovementSchool] = useState('');
   const [error, setError] = useState('');
+  const [loadingHeader, setLoadingHeader] = useState(true);
   const [activeSection, setActiveSection] = useState<'quick' | 'menu' | 'delivery' | 'consumption'>('quick');
 
   useEffect(() => {
-    setError('');
-    getDashboard().then((data) => setMetrics(data)).catch(() => setError('Erro ao carregar indicadores.'));
-    getSchools().then((data) => {
-      setSchools(data);
-      if (data.length) {
-        setSelectedSchool(data[0].id);
-        setDeliverySchool(data[0].id);
+    let cancelled = false;
+    const loadInitialData = async () => {
+      setError('');
+      setLoadingHeader(true);
+
+      const [dashboardRes, schoolsRes, suppliesRes] = await Promise.allSettled([
+        getDashboard(),
+        getSchools(),
+        getSupplies(),
+      ]);
+
+      if (cancelled) return;
+
+      if (dashboardRes.status === 'fulfilled') {
+        setMetrics(dashboardRes.value as any);
       }
-    }).catch(() => setError('Erro ao carregar escolas.'));
-    getSupplies().then((data) => {
-      setSupplies(data);
-      if (data.length) setMovementSupply(data[0].id);
-    }).catch(() => setError('Erro ao carregar insumos.'));
+      if (schoolsRes.status === 'fulfilled') {
+        const data = schoolsRes.value as any[];
+        setSchools(data);
+        if (data.length) {
+          setSelectedSchool((prev) => prev || data[0].id);
+          setDeliverySchool((prev) => prev || data[0].id);
+        }
+      }
+      if (suppliesRes.status === 'fulfilled') {
+        const data = suppliesRes.value as any[];
+        setSupplies(data);
+        if (data.length) {
+          setMovementSupply((prev) => prev || data[0].id);
+        }
+      }
+
+      const failed: string[] = [];
+      if (dashboardRes.status === 'rejected') failed.push('indicadores');
+      if (schoolsRes.status === 'rejected') failed.push('escolas');
+      if (suppliesRes.status === 'rejected') failed.push('insumos');
+      if (failed.length > 0) {
+        setError(`Erro ao carregar: ${failed.join(', ')}.`);
+      }
+
+      setLoadingHeader(false);
+    };
+
+    loadInitialData();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleExportMenuPdf = () => {
@@ -126,28 +161,28 @@ const Reports: React.FC = () => {
             <div className="w-10 h-10 rounded-xl bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center mx-auto mb-2">
               <span className="material-symbols-outlined text-primary-500">school</span>
             </div>
-            <p className="text-2xl font-bold text-slate-900 dark:text-white">{metrics.schools_total}</p>
+            <p className="text-2xl font-bold text-slate-900 dark:text-white">{loadingHeader ? '...' : metrics.schools_total}</p>
             <p className="text-xs text-slate-500 uppercase tracking-wider">Escolas</p>
           </div>
           <div className="card p-4 text-center">
             <div className="w-10 h-10 rounded-xl bg-secondary-100 dark:bg-secondary-900/30 flex items-center justify-center mx-auto mb-2">
               <span className="material-symbols-outlined text-secondary-500">inventory_2</span>
             </div>
-            <p className="text-2xl font-bold text-slate-900 dark:text-white">{metrics.supplies_total}</p>
+            <p className="text-2xl font-bold text-slate-900 dark:text-white">{loadingHeader ? '...' : metrics.supplies_total}</p>
             <p className="text-xs text-slate-500 uppercase tracking-wider">Insumos</p>
           </div>
           <div className={`card p-4 text-center ${metrics.low_stock > 0 ? 'border-danger-200 dark:border-danger-900/50' : ''}`}>
             <div className="w-10 h-10 rounded-xl bg-danger-100 dark:bg-danger-900/30 flex items-center justify-center mx-auto mb-2">
               <span className="material-symbols-outlined text-danger-500">warning</span>
             </div>
-            <p className={`text-2xl font-bold ${metrics.low_stock > 0 ? 'text-danger-600' : 'text-slate-900 dark:text-white'}`}>{metrics.low_stock}</p>
+            <p className={`text-2xl font-bold ${metrics.low_stock > 0 ? 'text-danger-600' : 'text-slate-900 dark:text-white'}`}>{loadingHeader ? '...' : metrics.low_stock}</p>
             <p className="text-xs text-slate-500 uppercase tracking-wider">Alertas</p>
           </div>
           <div className="card p-4 text-center">
             <div className="w-10 h-10 rounded-xl bg-accent-100 dark:bg-accent-900/30 flex items-center justify-center mx-auto mb-2">
               <span className="material-symbols-outlined text-accent-500">restaurant_menu</span>
             </div>
-            <p className="text-2xl font-bold text-slate-900 dark:text-white">{metrics.menus_published}</p>
+            <p className="text-2xl font-bold text-slate-900 dark:text-white">{loadingHeader ? '...' : metrics.menus_published}</p>
             <p className="text-xs text-slate-500 uppercase tracking-wider">Cardápios</p>
           </div>
         </div>

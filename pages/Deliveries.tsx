@@ -94,22 +94,35 @@ const Deliveries: React.FC = () => {
 
   const loadData = async () => {
     setError('');
-    try {
-      const [schoolsData, suppliesData, deliveriesData] = await Promise.all([
-        getSchools(),
-        getSupplies({ is_active: true }),
-        getDeliveries(statusFilter ? { status: statusFilter } : undefined),
-      ]);
+    const [schoolsRes, suppliesRes, deliveriesRes] = await Promise.allSettled([
+      getSchools(),
+      getSupplies({ is_active: true }),
+      getDeliveries(statusFilter ? { status: statusFilter } : undefined),
+    ]);
+
+    if (schoolsRes.status === 'fulfilled') {
+      const schoolsData = schoolsRes.value as any[];
       setSchools(schoolsData);
-      setSupplies(suppliesData);
-      setDeliveries(deliveriesData);
       if (!schoolId && schoolsData.length) setSchoolId(schoolsData[0].id);
+    }
+    if (suppliesRes.status === 'fulfilled') {
+      setSupplies(suppliesRes.value as any[]);
+    }
+    if (deliveriesRes.status === 'fulfilled') {
+      const deliveriesData = deliveriesRes.value as any[];
+      setDeliveries(deliveriesData);
       if (selectedDelivery) {
         const updated = deliveriesData.find((d: any) => d.id === selectedDelivery.id);
         if (updated) setSelectedDelivery(updated);
       }
-    } catch {
-      setError('Não foi possível carregar as entregas.');
+    }
+
+    const failed: string[] = [];
+    if (schoolsRes.status === 'rejected') failed.push('escolas');
+    if (suppliesRes.status === 'rejected') failed.push('insumos');
+    if (deliveriesRes.status === 'rejected') failed.push('entregas');
+    if (failed.length) {
+      setError(`Não foi possível carregar: ${failed.join(', ')}.`);
     }
   };
 

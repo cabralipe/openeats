@@ -79,7 +79,10 @@ const Inventory: React.FC = () => {
     return [...sorted, 'Outros'];
   }, [dynamicCategories]);
 
-  const loadStock = (filters?: { q?: string; category?: string; low_stock?: boolean }) => {
+  const loadStock = (
+    filters?: { q?: string; category?: string; low_stock?: boolean },
+    suppressError = false,
+  ) => {
     return getStock(filters)
       .then((data) => {
         const mapped = data.map((entry: any) => {
@@ -102,13 +105,17 @@ const Inventory: React.FC = () => {
         });
         setItems(mapped);
       })
-      .catch(() => setError('Não foi possível carregar o estoque.'));
+      .catch(() => {
+        if (!suppressError) setError('Não foi possível carregar o estoque.');
+      });
   };
 
-  const loadSupplies = (filters?: { q?: string; category?: string }) => {
+  const loadSupplies = (filters?: { q?: string; category?: string }, suppressError = false) => {
     return getSupplies(filters)
       .then((data) => setSupplies(data))
-      .catch(() => setError('Não foi possível carregar os insumos.'));
+      .catch(() => {
+        if (!suppressError) setError('Não foi possível carregar os insumos.');
+      });
   };
 
   const loadCategories = () => {
@@ -118,8 +125,28 @@ const Inventory: React.FC = () => {
   };
 
   useEffect(() => {
-    setIsLoading(true);
-    Promise.all([loadStock(), loadSupplies(), loadCategories()]).finally(() => setIsLoading(false));
+    let cancelled = false;
+    const loadInitialData = async () => {
+      setIsLoading(true);
+      setError('');
+      const [stockRes, suppliesRes] = await Promise.allSettled([
+        loadStock(undefined, true),
+        loadSupplies(undefined, true),
+      ]);
+      await loadCategories();
+      if (cancelled) return;
+      const failed: string[] = [];
+      if (stockRes.status === 'rejected') failed.push('estoque');
+      if (suppliesRes.status === 'rejected') failed.push('insumos');
+      if (failed.length) {
+        setError(`Não foi possível carregar: ${failed.join(', ')}.`);
+      }
+      setIsLoading(false);
+    };
+    loadInitialData();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {

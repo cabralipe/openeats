@@ -64,7 +64,10 @@ const Schools: React.FC = () => {
     return (school: School) => school.location || 'Sem endereço';
   }, []);
 
-  const loadSchools = (filters?: { q?: string; is_active?: boolean; city?: string; address?: string }) => {
+  const loadSchools = (
+    filters?: { q?: string; is_active?: boolean; city?: string; address?: string },
+    suppressError = false,
+  ) => {
     return getSchools(filters)
       .then((data) => {
         const mapped = (data as any[]).map((school: any) => ({
@@ -77,18 +80,33 @@ const Schools: React.FC = () => {
         }));
         setSchools(mapped);
       })
-      .catch(() => setError('Não foi possível carregar as escolas.'));
+      .catch(() => {
+        if (!suppressError) setError('Não foi possível carregar as escolas.');
+      });
   };
 
   useEffect(() => {
-    setIsLoading(true);
-    loadSchools().finally(() => setIsLoading(false));
+    let cancelled = false;
+    const loadInitialData = async () => {
+      setIsLoading(true);
+      setError('');
+      const result = await Promise.allSettled([loadSchools(undefined, true)]);
+      if (cancelled) return;
+      if (result[0].status === 'rejected') {
+        setError('Não foi possível carregar as escolas.');
+      }
+      setIsLoading(false);
+    };
+    loadInitialData();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
       const isActive = statusFilter === 'all' ? undefined : statusFilter === 'active';
-      loadSchools({ q: search, is_active: isActive, city: cityFilter, address: addressFilter });
+      loadSchools({ q: search, is_active: isActive, city: cityFilter, address: addressFilter }, true);
     }, 300);
     return () => clearTimeout(timeout);
   }, [search, statusFilter, cityFilter, addressFilter]);
