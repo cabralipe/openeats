@@ -109,9 +109,13 @@ if os.environ.get('PYTEST_CURRENT_TEST'):
         }
     }
 else:
-    database_url = env('DATABASE_URL')
+    database_url = env('DATABASE_URL').strip()
     if database_url:
-        DATABASES = {'default': env.db('DATABASE_URL')}
+        # Some providers expose SQLAlchemy-style URLs (postgresql+psycopg2://),
+        # but Django expects a Django backend alias (postgres/postgresql).
+        if database_url.startswith('postgresql+psycopg2://'):
+            database_url = 'postgres://' + database_url[len('postgresql+psycopg2://'):]
+        DATABASES = {'default': environ.Env.db_url_config(database_url)}
     else:
         DATABASES = {
             'default': {
