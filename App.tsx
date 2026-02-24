@@ -12,6 +12,8 @@ import PublicMenu from './pages/PublicMenu';
 import PublicDeliveryConference from './pages/PublicDeliveryConference';
 import PublicConsumption from './pages/PublicConsumption';
 import PublicMealService from './pages/PublicMealService';
+import MenuProductionCalculator from './pages/MenuProductionCalculator';
+import PublicCalculator from './pages/PublicCalculator';
 import { BottomNav, Sidebar } from './components/Navigation';
 import { AUTH_EXPIRED_EVENT, getNotifications, getUnreadNotificationsCount, markAllNotificationsAsRead, markNotificationAsRead, tokenStore, getMe } from './api';
 import { ProfileModal } from './components/ProfileModal';
@@ -96,6 +98,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       '/admin/editor': 'Editor de Cardápio',
       '/admin/reports': 'Relatórios',
       '/admin/audit': 'Auditoria',
+      '/admin/production-calculator': 'Calculadora de Produção',
     };
     return titles[location.pathname] || 'SEMED';
   };
@@ -110,11 +113,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       '/admin/editor': 'edit_calendar',
       '/admin/reports': 'insert_chart',
       '/admin/audit': 'history',
+      '/admin/production-calculator': 'calculate',
     };
     return icons[location.pathname] || 'home';
   };
 
-  const isEditor = location.pathname === '/admin/editor';
+  const isEditor = location.pathname === '/admin/editor' || location.pathname === '/admin/production-calculator';
 
   return (
     <div className="flex min-h-screen bg-background-light dark:bg-background-dark">
@@ -157,6 +161,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           </div>
 
           <NavItem icon="edit_calendar" label="Editor de Cardápio" path="/admin/editor" current={location.pathname} onClick={() => navigate('/admin/editor')} />
+          <NavItem icon="calculate" label="Calculadora Produção" path="/admin/production-calculator" current={location.pathname} onClick={() => navigate('/admin/production-calculator')} />
           <NavItem icon="insert_chart" label="Relatórios" path="/admin/reports" current={location.pathname} onClick={() => navigate('/admin/reports')} />
           <NavItem icon="history" label="Auditoria" path="/admin/audit" current={location.pathname} onClick={() => navigate('/admin/audit')} />
         </nav>
@@ -352,6 +357,7 @@ const App: React.FC = () => {
         <Route path="/public/delivery" element={<PublicDeliveryConference />} />
         <Route path="/public/consumption" element={<PublicConsumption />} />
         <Route path="/public/meal-service" element={<PublicMealService />} />
+        <Route path="/public/calculator/:token" element={<PublicCalculator />} />
         <Route path="/admin/*" element={
           <RequireAuth>
             <Layout>
@@ -361,6 +367,7 @@ const App: React.FC = () => {
                 <Route path="/inventory" element={<Inventory />} />
                 <Route path="/deliveries" element={<Deliveries />} />
                 <Route path="/editor" element={<MenuEditor />} />
+                <Route path="/production-calculator" element={<MenuProductionCalculator />} />
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/audit" element={<Audit />} />
               </Routes>

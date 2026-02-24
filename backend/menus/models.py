@@ -34,6 +34,10 @@ class Menu(models.Model):
 
 
 class MenuItem(models.Model):
+    class CalcMode(models.TextChoices):
+        FREE_TEXT = 'FREE_TEXT', 'Texto livre'
+        RECIPE = 'RECIPE', 'Receita'
+
     class DayOfWeek(models.TextChoices):
         MON = 'MON', 'Segunda'
         TUE = 'TUE', 'Terca'
@@ -60,7 +64,16 @@ class MenuItem(models.Model):
     image_url = models.URLField(blank=True)
     image_data = models.TextField(blank=True)
     description = models.TextField()
+    recipe = models.ForeignKey('recipes.Recipe', null=True, blank=True, on_delete=models.SET_NULL, related_name='menu_items')
+    calc_mode = models.CharField(max_length=20, choices=CalcMode.choices, default=CalcMode.FREE_TEXT)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if self.recipe_id:
+            self.calc_mode = self.CalcMode.RECIPE
+        elif not self.calc_mode:
+            self.calc_mode = self.CalcMode.FREE_TEXT
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f"{self.menu} - {self.day_of_week} {self.meal_type}"

@@ -76,6 +76,8 @@ INSTALLED_APPS = [
     'schools',
     'inventory',
     'menus',
+    'recipes',
+    'production',
     'public',
 ]
 

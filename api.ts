@@ -440,10 +440,50 @@ export async function bulkMenuItems(menuId: string, items: Array<{
   image_url?: string;
   image_data?: string;
   description: string;
+  recipe?: string | null;
+  calc_mode?: 'FREE_TEXT' | 'RECIPE';
 }>) {
   return apiFetch(`/api/menus/${menuId}/items/bulk/`, {
     method: 'POST',
     body: JSON.stringify({ items }),
+  });
+}
+
+export async function getRecipes(params?: { active?: boolean; search?: string; category?: string }) {
+  const cleanParams = params
+    ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
+    : undefined;
+  const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
+  return apiFetch(`/api/recipes/${search ? `?${search}` : ''}`);
+}
+
+export async function calculateMenuProduction(menuId: string, payload: {
+  students_by_meal_type?: Record<string, number>;
+  waste_percent?: number;
+  include_stock?: boolean;
+  rounding?: { mode?: 'UP' | 'NEAREST' | 'NONE'; decimals?: number };
+}) {
+  return apiFetch(`/api/menus/${menuId}/production/calculate/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getPublicCalculatorMeta(token: string) {
+  return apiFetch(`/public/calculator/${token}/meta/`, { skipAuth: true });
+}
+
+export async function calculatePublicMenuProduction(token: string, payload: {
+  week_start: string;
+  students_by_meal_type?: Record<string, number>;
+  waste_percent?: number;
+  include_stock?: boolean;
+  rounding?: { mode?: 'UP' | 'NEAREST' | 'NONE'; decimals?: number };
+}) {
+  return apiFetch(`/public/calculator/${token}/calculate/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    skipAuth: true,
   });
 }
 

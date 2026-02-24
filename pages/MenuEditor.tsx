@@ -6,6 +6,7 @@ import {
   createMenu,
   exportMenuPdf,
   exportMenusCsv,
+  getRecipes,
   getMenus,
   getPublicLink,
   getSchools,
@@ -40,6 +41,8 @@ type MealContent = {
   image_url: string;
   image_data: string;
   description: string;
+  recipe: string | null;
+  calc_mode: 'FREE_TEXT' | 'RECIPE';
 };
 
 type DayContent = Record<MealKey, MealContent>;
@@ -53,6 +56,8 @@ const emptyMeal = (): MealContent => ({
   image_url: '',
   image_data: '',
   description: '',
+  recipe: null,
+  calc_mode: 'FREE_TEXT',
 });
 
 const createEmptyDay = (): DayContent => ({
@@ -78,6 +83,7 @@ const MenuEditor: React.FC = () => {
   const [wizardStep, setWizardStep] = useState<WizardStep>(1);
   const [stockItems, setStockItems] = useState<Array<{ id: string; name: string; unit: string; quantity: number }>>([]);
   const [schools, setSchools] = useState<any[]>([]);
+  const [recipes, setRecipes] = useState<any[]>([]);
   const [selectedSchool, setSelectedSchool] = useState('');
   const [menuName, setMenuName] = useState('');
   const [weekStart, setWeekStart] = useState('');
@@ -132,6 +138,10 @@ const MenuEditor: React.FC = () => {
         setStockItems(parsed);
       })
       .catch(() => setError('Nao foi possivel carregar os produtos do inventario.'));
+
+    getRecipes({ active: true })
+      .then((data) => setRecipes(Array.isArray(data) ? data : []))
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -194,6 +204,8 @@ const MenuEditor: React.FC = () => {
         image_url: item.image_url || '',
         image_data: item.image_data || '',
         description: item.description || '',
+        recipe: item.recipe || null,
+        calc_mode: item.recipe ? 'RECIPE' : ((item.calc_mode || 'FREE_TEXT') as 'FREE_TEXT' | 'RECIPE'),
       };
     });
 
@@ -269,7 +281,7 @@ const MenuEditor: React.FC = () => {
   };
 
   const mealHasContent = (content: MealContent) => {
-    return Boolean(content.description || content.meal_name || content.portion_text || content.image_data || content.image_url);
+    return Boolean(content.description || content.meal_name || content.portion_text || content.image_data || content.image_url || content.recipe);
   };
 
   const getIngredients = (description: string) => {
@@ -319,6 +331,24 @@ const MenuEditor: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
+  const handleRecipeSelect = (mealKey: MealKey, recipeId: string) => {
+    const selectedRecipe = recipes.find((recipe) => recipe.id === recipeId);
+    setItems((prev) => ({
+      ...prev,
+      [activeDay]: {
+        ...prev[activeDay],
+        [mealKey]: {
+          ...prev[activeDay][mealKey],
+          recipe: recipeId || null,
+          calc_mode: recipeId ? 'RECIPE' : 'FREE_TEXT',
+          description: recipeId && selectedRecipe && !prev[activeDay][mealKey].description
+            ? (selectedRecipe.ingredients || []).map((ing: any) => ing.supply_name).filter(Boolean).join(', ')
+            : prev[activeDay][mealKey].description,
+        },
+      },
+    }));
+  };
+
   const clearMealImage = (mealKey: MealKey) => {
     updateMealField(mealKey, 'image_data', '');
     updateMealField(mealKey, 'image_url', '');
@@ -333,6 +363,8 @@ const MenuEditor: React.FC = () => {
       image_url: string;
       image_data: string;
       description: string;
+      recipe: string | null;
+      calc_mode: 'FREE_TEXT' | 'RECIPE';
     }> = [];
 
     days.forEach((day) => {
@@ -347,6 +379,8 @@ const MenuEditor: React.FC = () => {
           image_url: content.image_url,
           image_data: content.image_data,
           description: content.description,
+          recipe: content.recipe,
+          calc_mode: content.recipe ? 'RECIPE' : content.calc_mode,
         });
       });
     });
@@ -730,6 +764,36 @@ const MenuEditor: React.FC = () => {
 
               <div className="p-5 space-y-5">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <label className="block md:col-span-2">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Receita vinculada (opcional)</span>
+                    <div className="mt-1 flex gap-2">
+                      <select
+                        value={selectedMeal.recipe || ''}
+                        onChange={(e) => handleRecipeSelect(activeMeal, e.target.value)}
+                        className="flex-1 h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-sm"
+                      >
+                        <option value="">Sem receita (texto livre)</option>
+                        {recipes.map((recipe) => (
+                          <option key={recipe.id} value={recipe.id}>
+                            {recipe.name}{recipe.category ? ` • ${recipe.category}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      {selectedMeal.recipe && (
+                        <button
+                          type="button"
+                          onClick={() => handleRecipeSelect(activeMeal, '')}
+                          className="px-4 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-semibold"
+                        >
+                          Limpar
+                        </button>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-slate-400 mt-1 block">
+                      {selectedMeal.recipe ? 'Cálculo por receita habilitado neste slot.' : 'Sem receita: cálculo usa descrição + aliases/regras.'}
+                    </span>
+                  </label>
+
                   <label className="block">
                     <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Nome da refeicao</span>
                     <input

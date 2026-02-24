@@ -5,14 +5,17 @@ from django.utils import timezone
 import csv
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import ValidationError, PermissionDenied
 from rest_framework.response import Response
 
 from merenda_semed.authentication import QueryParamJWTAuthentication
+from accounts.permissions import IsSemedAdmin
 
 from .models import Menu, MenuItem
 from .serializers import MenuItemBulkSerializer, MenuItemSerializer, MenuSerializer
 from .utils import generate_menu_pdf
+from production.serializers import MenuProductionCalculateSerializer
+from production.services.production_calc import calculate_for_menu
 
 
 class MenuViewSet(viewsets.ModelViewSet):
@@ -140,6 +143,23 @@ class MenuViewSet(viewsets.ModelViewSet):
             'count': len(created_menus),
             'menus': MenuSerializer(created_menus, many=True).data,
         }, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='production/calculate')
+    def production_calculate(self, request, pk=None):
+        if not IsSemedAdmin().has_permission(request, self):
+            raise PermissionDenied(IsSemedAdmin.message)
+        menu = self.get_object()
+        serializer = MenuProductionCalculateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = serializer.validated_data
+        result = calculate_for_menu(
+            menu=menu,
+            students_by_meal_type=payload.get('students_by_meal_type') or {},
+            waste_percent=payload.get('waste_percent') or 0,
+            include_stock=payload.get('include_stock', True),
+            rounding=payload.get('rounding') or {'mode': 'NEAREST', 'decimals': 2},
+        )
+        return Response(result)
 
 
 

@@ -4,6 +4,8 @@ from .models import MealServiceEntry, MealServiceReport, Menu, MenuItem
 
 
 class MenuItemSerializer(serializers.ModelSerializer):
+    recipe_name = serializers.CharField(source='recipe.name', read_only=True)
+
     class Meta:
         model = MenuItem
         fields = [
@@ -15,9 +17,23 @@ class MenuItemSerializer(serializers.ModelSerializer):
             'image_url',
             'image_data',
             'description',
+            'recipe',
+            'recipe_name',
+            'calc_mode',
             'created_at',
         ]
         read_only_fields = ['id', 'created_at']
+
+    def validate(self, attrs):
+        recipe = attrs.get('recipe', getattr(self.instance, 'recipe', None))
+        calc_mode = attrs.get('calc_mode', getattr(self.instance, 'calc_mode', MenuItem.CalcMode.FREE_TEXT))
+        if recipe:
+            if not recipe.active:
+                raise serializers.ValidationError({'recipe': 'Receita inativa nao pode ser vinculada.'})
+            attrs['calc_mode'] = MenuItem.CalcMode.RECIPE
+        elif calc_mode == MenuItem.CalcMode.RECIPE:
+            attrs['calc_mode'] = MenuItem.CalcMode.FREE_TEXT
+        return attrs
 
 
 class MenuSerializer(serializers.ModelSerializer):
