@@ -54,6 +54,13 @@ const Deliveries: React.FC = () => {
   const [draftSupplyId, setDraftSupplyId] = useState('');
   const [draftQuantity, setDraftQuantity] = useState('');
 
+  const buildAbsoluteHashUrl = (path: string) => {
+    if (!path) return '';
+    if (/^https?:\/\//i.test(path)) return path;
+    const normalized = path.startsWith('/') ? path : `/${path}`;
+    return `${window.location.origin}/#${normalized}`;
+  };
+
   const persistResponsibles = (next: Responsible[]) => {
     setResponsibles(next);
     localStorage.setItem(RESPONSIBLES_STORAGE_KEY, JSON.stringify(next));
@@ -129,6 +136,20 @@ const Deliveries: React.FC = () => {
   useEffect(() => {
     loadData();
   }, [statusFilter]);
+
+  useEffect(() => {
+    const delivery = selectedDelivery;
+    if (!delivery || delivery.status !== 'SENT') return;
+    if (linkByDelivery[delivery.id]) return;
+
+    getDeliveryConferenceLink(delivery.id)
+      .then((data) => {
+        setLinkByDelivery((prev) => ({ ...prev, [delivery.id]: data.url }));
+      })
+      .catch(() => {
+        // Silent: user can still generate/copy manually via action buttons.
+      });
+  }, [selectedDelivery, linkByDelivery]);
 
   const selectedSchoolName = useMemo(() => schools.find((school) => school.id === schoolId)?.name || 'Não selecionada', [schools, schoolId]);
 
@@ -287,7 +308,7 @@ const Deliveries: React.FC = () => {
       const data = await getDeliveryConferenceLink(deliveryId);
       setLinkByDelivery((prev) => ({ ...prev, [deliveryId]: data.url }));
       if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(`${window.location.origin}/#${data.url}`);
+        await navigator.clipboard.writeText(buildAbsoluteHashUrl(data.url));
         setSuccess('Link copiado!');
       }
     } catch {
@@ -370,8 +391,11 @@ const Deliveries: React.FC = () => {
 
   const handleShareDelivery = async (delivery: any) => {
     try {
-      const data = await getDeliveryConferenceLink(delivery.id);
-      const absoluteUrl = `${window.location.origin}/#${data.url}`;
+      const relativeUrl = linkByDelivery[delivery.id] || (await getDeliveryConferenceLink(delivery.id)).url;
+      if (!linkByDelivery[delivery.id]) {
+        setLinkByDelivery((prev) => ({ ...prev, [delivery.id]: relativeUrl }));
+      }
+      const absoluteUrl = buildAbsoluteHashUrl(relativeUrl);
       if (navigator.share) {
         await navigator.share({
           title: `Entrega - ${delivery.school_name}`,
@@ -384,6 +408,24 @@ const Deliveries: React.FC = () => {
       }
     } catch {
       setError('Não foi possível compartilhar a entrega.');
+    }
+  };
+
+  const handleCopyConferenceLink = async (delivery: any) => {
+    try {
+      const relativeUrl = linkByDelivery[delivery.id] || (await getDeliveryConferenceLink(delivery.id)).url;
+      if (!linkByDelivery[delivery.id]) {
+        setLinkByDelivery((prev) => ({ ...prev, [delivery.id]: relativeUrl }));
+      }
+      const absoluteUrl = buildAbsoluteHashUrl(relativeUrl);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(absoluteUrl);
+        setSuccess('Link da entrega copiado!');
+        return;
+      }
+      setError('Copiar não suportado neste navegador.');
+    } catch {
+      setError('Não foi possível copiar o link da entrega.');
     }
   };
 
@@ -809,7 +851,9 @@ const Deliveries: React.FC = () => {
     if (!delivery) return null;
     const statusLabel = getStatusLabel(delivery.status);
     const isDraft = delivery.status === 'DRAFT';
+    const isSent = delivery.status === 'SENT';
     const isConferred = delivery.status === 'CONFERRED';
+    const conferenceLink = linkByDelivery[delivery.id] ? buildAbsoluteHashUrl(linkByDelivery[delivery.id]) : '';
     const detailDate = formatDateShort(delivery.delivery_date);
     const itemCount = delivery.items?.length || 0;
     const statusChip = delivery.status === 'CONFERRED'
@@ -874,6 +918,28 @@ const Deliveries: React.FC = () => {
                 </div>
               </div>
             </div>
+
+            {isSent && (
+              <section className="space-y-2">
+                <div className="flex items-center justify-between px-1">
+                  <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500">Link de Conferência</h2>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyConferenceLink(delivery)}
+                    className="text-xs font-semibold text-primary-600 dark:text-primary-400"
+                  >
+                    Copiar
+                  </button>
+                </div>
+                <input
+                  readOnly
+                  value={conferenceLink}
+                  onFocus={(e) => e.currentTarget.select()}
+                  className="input rounded-xl font-mono text-xs"
+                  placeholder="Gerando link..."
+                />
+              </section>
+            )}
 
             <section className="space-y-3">
               <div className="flex items-center justify-between px-1">
@@ -970,7 +1036,7 @@ const Deliveries: React.FC = () => {
             </footer>
           ) : (
             <footer className="fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-t border-slate-200 dark:border-slate-800 p-4 pb-8 space-y-3 z-50 shadow-[0_-10px_30px_-15px_rgba(0,0,0,0.1)]">
-              <div className="grid grid-cols-2 gap-3">
+              <div className={`grid gap-3 ${isSent ? 'grid-cols-3' : 'grid-cols-2'}`}>
                 <button
                   type="button"
                   onClick={() => window.print()}
@@ -979,6 +1045,16 @@ const Deliveries: React.FC = () => {
                   <span className="material-symbols-outlined text-lg">print</span>
                   Imprimir
                 </button>
+                {isSent && (
+                  <button
+                    type="button"
+                    onClick={() => handleCopyConferenceLink(delivery)}
+                    className="flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold py-3.5 rounded-2xl active:scale-[0.98] transition-all border border-slate-200 dark:border-slate-700"
+                  >
+                    <span className="material-symbols-outlined text-lg">content_copy</span>
+                    Copiar
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => handleShareDelivery(delivery)}
@@ -1029,6 +1105,29 @@ const Deliveries: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {isSent && (
+            <div className="mb-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <h3 className="font-bold text-sm uppercase tracking-wider text-slate-500">Link de Conferência</h3>
+                <button
+                  type="button"
+                  onClick={() => handleCopyConferenceLink(delivery)}
+                  className="inline-flex items-center gap-2 text-sm font-semibold text-primary-600 dark:text-primary-400"
+                >
+                  <span className="material-symbols-outlined text-[18px]">content_copy</span>
+                  Copiar
+                </button>
+              </div>
+              <input
+                readOnly
+                value={conferenceLink}
+                onFocus={(e) => e.currentTarget.select()}
+                className="input rounded-xl font-mono text-xs"
+                placeholder="Gerando link..."
+              />
+            </div>
+          )}
 
           <div className="mb-8">
             <div className="flex items-center justify-between mb-4">
@@ -1129,7 +1228,7 @@ const Deliveries: React.FC = () => {
             </div>
           ) : (
             <div className="flex flex-col gap-4 sticky bottom-8 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-4 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-xl">
-              <div className="grid grid-cols-2 gap-4">
+              <div className={`grid gap-4 ${isSent ? 'grid-cols-3' : 'grid-cols-2'}`}>
                 <button
                   type="button"
                   onClick={() => window.print()}
@@ -1138,6 +1237,16 @@ const Deliveries: React.FC = () => {
                   <span className="material-symbols-outlined text-[18px]">print</span>
                   Imprimir
                 </button>
+                {isSent && (
+                  <button
+                    type="button"
+                    onClick={() => handleCopyConferenceLink(delivery)}
+                    className="flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold py-3.5 px-4 rounded-2xl transition-all active:scale-[0.98]"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">content_copy</span>
+                    Copiar
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => handleShareDelivery(delivery)}
