@@ -56,7 +56,8 @@ class DashboardView(APIView):
         try:
             meals_served = StockMovement.objects.filter(
                 type=StockMovement.Types.OUT,
-                movement_date__gte=current_month_start
+                movement_date__gte=current_month_start,
+                school__isnull=False,
             ).aggregate(total=Sum('quantity'))['total'] or 0
         except DatabaseError:
             meals_served = 0
