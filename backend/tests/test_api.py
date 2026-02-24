@@ -4,9 +4,12 @@ import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
+from auditlog.models import AuditLog
 from inventory.models import Delivery, DeliveryItem, Notification, SchoolStockBalance, StockBalance, StockMovement, Supply
 from menus.models import MealServiceEntry, MealServiceReport, Menu, MenuItem
 from schools.models import School
+
+pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
@@ -17,13 +20,32 @@ def api_client():
 @pytest.fixture
 def admin_user():
     User = get_user_model()
-    user = User.objects.create_user(
+    user = User.objects.create(
         email='test@semed.local',
-        password='Test123!',
         name='Teste',
+        role=User.Roles.SEMED_ADMIN,
         is_staff=True,
         is_superuser=True,
+        is_active=True,
     )
+    user.set_password('Test123!')
+    user.save(update_fields=['password'])
+    return user
+
+
+@pytest.fixture
+def nutritionist_user():
+    User = get_user_model()
+    user = User.objects.create(
+        email='nutri@semed.local',
+        name='Nutricionista',
+        role=User.Roles.NUTRITIONIST,
+        is_staff=False,
+        is_superuser=False,
+        is_active=True,
+    )
+    user.set_password('Nutri123!')
+    user.save(update_fields=['password'])
     return user
 
 
@@ -38,6 +60,58 @@ def test_create_school(api_client, admin_user):
     assert response.status_code == 201
     assert response.data['public_slug']
     assert response.data['public_token']
+
+
+def test_admin_can_crud_nutritionist(api_client, admin_user):
+    api_client.force_authenticate(user=admin_user)
+    create_response = api_client.post('/api/users/nutritionists/', {
+        'email': 'nova.nutri@semed.local',
+        'password': 'SenhaForte123',
+    }, format='json')
+    assert create_response.status_code == 201
+    assert create_response.data['role'] == 'NUTRITIONIST'
+    nutri_id = create_response.data['id']
+
+    list_response = api_client.get('/api/users/nutritionists/')
+    assert list_response.status_code == 200
+    if isinstance(list_response.data, dict) and 'results' in list_response.data:
+        emails = [item['email'] for item in list_response.data['results']]
+    else:
+        emails = [item['email'] for item in list_response.data]
+    assert 'nova.nutri@semed.local' in emails
+
+    patch_response = api_client.patch(f'/api/users/nutritionists/{nutri_id}/', {
+        'name': 'Nutri Atualizada',
+        'is_active': True,
+    }, format='json')
+    assert patch_response.status_code == 200
+
+    deactivate_response = api_client.post(f'/api/users/nutritionists/{nutri_id}/deactivate/', {}, format='json')
+    assert deactivate_response.status_code == 200
+    assert deactivate_response.data['is_active'] is False
+
+
+def test_nutritionist_cannot_access_audit_logs(api_client, nutritionist_user):
+    api_client.force_authenticate(user=nutritionist_user)
+    response = api_client.get('/api/audit-logs/')
+    assert response.status_code == 403
+
+
+def test_nutritionist_mutation_is_audited(api_client, nutritionist_user):
+    api_client.force_authenticate(user=nutritionist_user)
+    response = api_client.post('/api/schools/', {
+        'name': 'Escola Auditada',
+        'address': 'Rua 1',
+        'city': 'Maceio',
+        'is_active': True,
+    }, format='json')
+    assert response.status_code == 201
+
+    log = AuditLog.objects.filter(user=nutritionist_user, path='/api/schools/').first()
+    assert log is not None
+    assert log.method == 'POST'
+    assert log.action_type == AuditLog.ActionTypes.CREATE
+    assert isinstance(log.request_payload, dict)
 
 
 def test_stock_movement_negative_balance(api_client, admin_user):

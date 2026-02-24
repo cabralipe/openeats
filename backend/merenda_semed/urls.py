@@ -4,7 +4,8 @@ from django.views.generic import TemplateView
 from rest_framework.routers import DefaultRouter
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
-from accounts.views import MeView
+from accounts.views import MeView, NutritionistUserViewSet
+from auditlog.views import AuditLogListView
 from merenda_semed.views import DashboardView, DashboardSeriesView, DashboardClearConsumptionView
 from schools.views import SchoolViewSet
 from inventory.views import (
@@ -51,6 +52,7 @@ router.register(r'exports/consumption/xlsx', ConsumptionExportXlsxView, basename
 router.register(r'exports/supplier-receipts/pdf', SupplierReceiptExportPdfView, basename='export-supplier-receipts-pdf')
 router.register(r'notifications', NotificationViewSet, basename='notification')
 router.register(r'school-stock-config', SchoolStockConfigViewSet, basename='school-stock-config')
+router.register(r'users/nutritionists', NutritionistUserViewSet, basename='nutritionist-user')
 
 
 urlpatterns = [
@@ -61,6 +63,7 @@ urlpatterns = [
     path('api/dashboard/', DashboardView.as_view(), name='dashboard'),
     path('api/dashboard/series/', DashboardSeriesView.as_view(), name='dashboard-series'),
     path('api/dashboard/series/clear-consumption/', DashboardClearConsumptionView.as_view(), name='dashboard-clear-consumption'),
+    path('api/audit-logs/', AuditLogListView.as_view(), name='audit-log-list'),
     path('api/auth/me/', MeView.as_view(), name='auth-me'),
     path('api/auth/', include('accounts.urls')),
     path('api/', include(router.urls)),

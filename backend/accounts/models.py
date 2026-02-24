@@ -6,6 +6,7 @@ from django.db import models
 class User(AbstractUser):
     class Roles(models.TextChoices):
         SEMED_ADMIN = 'SEMED_ADMIN', 'SEMED Admin'
+        NUTRITIONIST = 'NUTRITIONIST', 'Nutricionista'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
@@ -21,3 +22,11 @@ class User(AbstractUser):
 
     def __str__(self) -> str:
         return self.email
+
+    @property
+    def is_semed_admin(self) -> bool:
+        return self.role == self.Roles.SEMED_ADMIN and self.is_active
+
+    @property
+    def is_nutritionist(self) -> bool:
+        return self.role == self.Roles.NUTRITIONIST and self.is_active
