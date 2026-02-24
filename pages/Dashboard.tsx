@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, CartesianGrid, Legend } from 'recharts';
 import { useNavigate } from 'react-router-dom';
-import { getDashboard, getDashboardSeries } from '../api';
+import { clearDashboardConsumptionSeries, getDashboard, getDashboardSeries } from '../api';
 
 const defaultData = [
   { name: 'Jan', value: 40 },
@@ -67,6 +67,7 @@ const Dashboard: React.FC = () => {
     }>,
   });
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [series, setSeries] = useState(defaultData);
   const [servedBySchoolCategory, setServedBySchoolCategory] = useState<Array<{
     school_id: string;
@@ -78,6 +79,7 @@ const Dashboard: React.FC = () => {
   const [selectedSchool, setSelectedSchool] = useState('ALL');
   const [isLoading, setIsLoading] = useState(true);
   const [chartsReady, setChartsReady] = useState(false);
+  const [isClearingConsumption, setIsClearingConsumption] = useState(false);
   const consumptionChartContainer = useChartContainerReady(chartsReady);
   const servedChartContainer = useChartContainerReady(chartsReady);
 
@@ -86,22 +88,48 @@ const Dashboard: React.FC = () => {
     return () => cancelAnimationFrame(frame);
   }, []);
 
+  const loadDashboardSeries = async () => {
+    const data: any = await getDashboardSeries();
+    setSeries(data?.consumption_by_month?.length ? data.consumption_by_month : []);
+    setServedBySchoolCategory(data?.served_by_school_category || []);
+  };
+
   useEffect(() => {
     setIsLoading(true);
     Promise.all([
       getDashboard()
         .then((data) => setMetrics((prev) => ({ ...prev, ...data })))
         .catch(() => setError('Não foi possível carregar o painel.')),
-      getDashboardSeries()
-        .then((data: any) => {
-          if (data?.consumption_by_month?.length) {
-            setSeries(data.consumption_by_month);
-          }
-          setServedBySchoolCategory(data?.served_by_school_category || []);
-        })
+      loadDashboardSeries()
         .catch(() => { })
     ]).finally(() => setIsLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!success) return;
+    const timer = window.setTimeout(() => setSuccess(''), 3000);
+    return () => window.clearTimeout(timer);
+  }, [success]);
+
+  const handleClearConsumption = async () => {
+    const confirmed = window.confirm('Limpar apenas consumos órfãos do gráfico mensal (saídas de estoque sem escola, geralmente após excluir escolas)? Esta ação não pode ser desfeita.');
+    if (!confirmed) return;
+
+    setError('');
+    setSuccess('');
+    setIsClearingConsumption(true);
+    try {
+      const result = await clearDashboardConsumptionSeries();
+      await loadDashboardSeries();
+      setSuccess(result?.deleted_count
+        ? `Consumos órfãos removidos. ${result.deleted_count} registro(s) removido(s).`
+        : 'Nenhum consumo órfão encontrado.');
+    } catch {
+      setError('Não foi possível limpar os consumos órfãos.');
+    } finally {
+      setIsClearingConsumption(false);
+    }
+  };
 
   const schoolsOptions = useMemo(
     () => Array.from(new Set(servedBySchoolCategory.map((item) => item.school_name))).sort((a, b) => a.localeCompare(b)),
@@ -212,6 +240,13 @@ const Dashboard: React.FC = () => {
           </div>
         )}
 
+        {success && (
+          <div className="mb-4 p-4 rounded-xl bg-success-50 dark:bg-success-900/20 text-success-700 dark:text-success-300 text-sm flex items-center gap-2">
+            <span className="material-symbols-outlined">check_circle</span>
+            {success}
+          </div>
+        )}
+
         {/* Stats Grid */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
           {statCards.map((stat, index) => (
@@ -273,9 +308,20 @@ const Dashboard: React.FC = () => {
           <div className="card p-4 lg:p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-slate-900 dark:text-white">Consumo Mensal</h3>
-              <div className="flex items-center gap-2 text-sm text-slate-500">
-                <span className="w-3 h-3 rounded-full bg-primary-500"></span>
-                <span>Saídas de estoque</span>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <span className="w-3 h-3 rounded-full bg-primary-500"></span>
+                  <span>Saídas de estoque</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleClearConsumption}
+                  disabled={isClearingConsumption}
+                  className="text-xs font-semibold text-danger-600 hover:text-danger-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Limpar apenas consumos órfãos do gráfico mensal"
+                >
+                  {isClearingConsumption ? 'Limpando...' : 'Limpar órfãos'}
+                </button>
               </div>
             </div>
             <div ref={consumptionChartContainer.ref} className="h-64 min-h-[16rem] min-w-0">

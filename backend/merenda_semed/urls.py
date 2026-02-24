@@ -5,7 +5,7 @@ from rest_framework.routers import DefaultRouter
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 from accounts.views import MeView
-from merenda_semed.views import DashboardView, DashboardSeriesView
+from merenda_semed.views import DashboardView, DashboardSeriesView, DashboardClearConsumptionView
 from schools.views import SchoolViewSet
 from inventory.views import (
     DeliveryViewSet,
@@ -60,6 +60,7 @@ urlpatterns = [
     path('api-auth/', include('rest_framework.urls')),
     path('api/dashboard/', DashboardView.as_view(), name='dashboard'),
     path('api/dashboard/series/', DashboardSeriesView.as_view(), name='dashboard-series'),
+    path('api/dashboard/series/clear-consumption/', DashboardClearConsumptionView.as_view(), name='dashboard-clear-consumption'),
     path('api/auth/me/', MeView.as_view(), name='auth-me'),
     path('api/auth/', include('accounts.urls')),
     path('api/', include(router.urls)),

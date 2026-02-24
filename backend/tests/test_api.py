@@ -130,6 +130,47 @@ def test_dashboard_series(api_client, admin_user):
     assert 'served_by_school_category' in response.data
 
 
+def test_dashboard_clear_consumption_series_removes_only_stock_outflows(api_client, admin_user):
+    api_client.force_authenticate(user=admin_user)
+    school = School.objects.create(name='Escola Consumo Grafico')
+    school_active = School.objects.create(name='Escola Ativa')
+    supply = Supply.objects.create(name='Leite', category='Laticinios', unit=Supply.Units.L, min_stock=0)
+
+    StockMovement.objects.create(
+        supply=supply,
+        school=school,
+        type=StockMovement.Types.OUT,
+        quantity='12.00',
+        movement_date=date.today(),
+        created_by=admin_user,
+    )
+    StockMovement.objects.create(
+        supply=supply,
+        school=school_active,
+        type=StockMovement.Types.OUT,
+        quantity='7.00',
+        movement_date=date.today(),
+        created_by=admin_user,
+    )
+    StockMovement.objects.create(
+        supply=supply,
+        school=school,
+        type=StockMovement.Types.IN,
+        quantity='20.00',
+        movement_date=date.today(),
+        created_by=admin_user,
+    )
+
+    school.delete()  # Leaves stock movement.school as NULL because FK uses SET_NULL.
+
+    response = api_client.post('/api/dashboard/series/clear-consumption/', {}, format='json')
+    assert response.status_code == 200
+    assert response.data['deleted_count'] == 1
+    assert StockMovement.objects.filter(type=StockMovement.Types.OUT).count() == 1
+    assert StockMovement.objects.filter(type=StockMovement.Types.OUT, school=school_active).count() == 1
+    assert StockMovement.objects.filter(type=StockMovement.Types.IN).count() == 1
+
+
 def test_menus_invalid_school_filter_returns_400(api_client, admin_user):
     api_client.force_authenticate(user=admin_user)
     response = api_client.get('/api/menus/?school=invalid-school-id')

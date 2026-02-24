@@ -558,6 +558,13 @@ export async function getDashboardSeries() {
   return apiFetch('/api/dashboard/series/');
 }
 
+export async function clearDashboardConsumptionSeries() {
+  return apiFetch<{ detail: string; deleted_count: number }>('/api/dashboard/series/clear-consumption/', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
 export function exportStockCsv() {
   openAuthenticatedUrl('/api/exports/stock/');
 }

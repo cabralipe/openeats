@@ -3,6 +3,7 @@ from django.db import DatabaseError
 from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework import status
 
 from django.db.models import Sum
 from django.db.models.functions import TruncMonth
@@ -165,7 +166,10 @@ class DashboardSeriesView(APIView):
     def get(self, request):
         try:
             movements = (
-                StockMovement.objects.filter(type=StockMovement.Types.OUT)
+                StockMovement.objects.filter(
+                    type=StockMovement.Types.OUT,
+                    school__isnull=False,
+                )
                 .annotate(month=TruncMonth('movement_date'))
                 .values('month')
                 .annotate(total=Sum('quantity'))
@@ -208,3 +212,20 @@ class DashboardSeriesView(APIView):
             'consumption_by_month': series,
             'served_by_school_category': served_by_school_category,
         })
+
+
+class DashboardClearConsumptionView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        deleted_count, _ = StockMovement.objects.filter(
+            type=StockMovement.Types.OUT,
+            school__isnull=True,
+        ).delete()
+        return Response(
+            {
+                'detail': 'Consumos órfãos do gráfico mensal removidos com sucesso.',
+                'deleted_count': deleted_count,
+            },
+            status=status.HTTP_200_OK,
+        )

@@ -59,21 +59,6 @@ const Login: React.FC = () => {
               Tudo em uma única plataforma.
             </p>
 
-            {/* Stats */}
-            <div className="flex gap-8 mt-12">
-              <div>
-                <p className="text-3xl font-bold text-white">50+</p>
-                <p className="text-sm text-white/60">Escolas</p>
-              </div>
-              <div>
-                <p className="text-3xl font-bold text-white">10k+</p>
-                <p className="text-sm text-white/60">Refeições/dia</p>
-              </div>
-              <div>
-                <p className="text-3xl font-bold text-white">100%</p>
-                <p className="text-sm text-white/60">Digital</p>
-              </div>
-            </div>
           </div>
         </div>
       </div>
