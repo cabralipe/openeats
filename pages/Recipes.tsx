@@ -75,13 +75,28 @@ const parseError = (error: unknown) => {
   return 'Erro na operação.';
 };
 
+const tagsObjectToInput = (tags?: Record<string, unknown>) => {
+  if (!tags || typeof tags !== 'object') return '';
+  const labels = (tags as { labels?: unknown }).labels;
+  if (Array.isArray(labels)) {
+    return labels.map((item) => String(item).trim()).filter(Boolean).join(', ');
+  }
+  return Object.entries(tags)
+    .flatMap(([key, value]) => {
+      if (Array.isArray(value)) return value.map((item) => `${key}:${String(item)}`);
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return [`${key}:${String(value)}`];
+      return [];
+    })
+    .join(', ');
+};
+
 const normalizeRecipeToForm = (recipe: RecipeRecord): RecipeForm => ({
   name: recipe.name || '',
   category: recipe.category || '',
   servings_base: String(recipe.servings_base || 100),
   instructions: recipe.instructions || '',
   active: Boolean(recipe.active),
-  tagsText: JSON.stringify(recipe.tags || {}, null, 2),
+  tagsText: tagsObjectToInput(recipe.tags),
   ingredients: (recipe.ingredients || []).length
     ? recipe.ingredients.map((ingredient) => ({
       ...ingredient,
@@ -245,19 +260,12 @@ const Recipes: React.FC = () => {
     setError('');
     setSuccess('');
 
-    let parsedTags: Record<string, unknown> = {};
-    try {
-      const raw = (form.tagsText || '{}').trim() || '{}';
-      const parsed = JSON.parse(raw);
-      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-        setError('Tags devem ser um objeto JSON (ex: {"tipo":"assado"}).');
-        return;
-      }
-      parsedTags = parsed as Record<string, unknown>;
-    } catch {
-      setError('Tags inválidas. Informe um JSON válido.');
-      return;
-    }
+    const parsedTags: Record<string, unknown> = {
+      labels: (form.tagsText || '')
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+    };
 
     const name = form.name.trim();
     if (!name) {
@@ -509,13 +517,16 @@ const Recipes: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tags (JSON)</label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tags / Palavras-chave</label>
               <textarea
                 className="input min-h-[90px] font-mono text-xs"
                 value={form.tagsText}
                 onChange={(e) => setForm((prev) => ({ ...prev, tagsText: e.target.value }))}
-                placeholder='{"tipo":"assado","restricao":"sem leite"}'
+                placeholder="Ex: assado, sem leite, integral"
               />
+              <p className="text-xs text-slate-500 mt-1">
+                Digite palavras separadas por vírgula. O sistema converte automaticamente.
+              </p>
             </div>
 
             <div className="space-y-3">
