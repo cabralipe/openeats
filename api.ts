@@ -554,6 +554,63 @@ export async function getDashboard() {
   return apiFetch('/api/dashboard/');
 }
 
+export async function getAuditLogs(params?: {
+  user_id?: string;
+  action_type?: 'CREATE' | 'UPDATE' | 'DELETE';
+  method?: string;
+  path?: string;
+  date_from?: string;
+  date_to?: string;
+  page?: number;
+  page_size?: number;
+}) {
+  const cleanParams = params
+    ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
+    : undefined;
+  const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
+  return apiFetch(`/api/audit-logs/${search ? `?${search}` : ''}`);
+}
+
+export async function getNutritionists(params?: {
+  q?: string;
+  is_active?: boolean;
+}) {
+  const cleanParams = params
+    ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
+    : undefined;
+  const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
+  return apiFetch(`/api/users/nutritionists/${search ? `?${search}` : ''}`);
+}
+
+export async function createNutritionist(payload: {
+  name?: string;
+  email: string;
+  password: string;
+}) {
+  return apiFetch('/api/users/nutritionists/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateNutritionist(id: string, payload: Partial<{
+  name: string;
+  email: string;
+  password: string;
+  is_active: boolean;
+}>) {
+  return apiFetch(`/api/users/nutritionists/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deactivateNutritionist(id: string) {
+  return apiFetch(`/api/users/nutritionists/${id}/deactivate/`, {
+    method: 'POST',
+  });
+}
+
 export async function getDashboardSeries() {
   return apiFetch('/api/dashboard/series/');
 }

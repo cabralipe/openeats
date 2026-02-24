@@ -7,6 +7,7 @@ import Inventory from './pages/Inventory';
 import MenuEditor from './pages/MenuEditor';
 import Deliveries from './pages/Deliveries';
 import Reports from './pages/Reports';
+import Audit from './pages/Audit';
 import PublicMenu from './pages/PublicMenu';
 import PublicDeliveryConference from './pages/PublicDeliveryConference';
 import PublicConsumption from './pages/PublicConsumption';
@@ -94,6 +95,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       '/admin/deliveries': 'Entregas',
       '/admin/editor': 'Editor de Cardápio',
       '/admin/reports': 'Relatórios',
+      '/admin/audit': 'Auditoria',
     };
     return titles[location.pathname] || 'SEMED';
   };
@@ -107,6 +109,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       '/admin/deliveries': 'local_shipping',
       '/admin/editor': 'edit_calendar',
       '/admin/reports': 'insert_chart',
+      '/admin/audit': 'history',
     };
     return icons[location.pathname] || 'home';
   };
@@ -155,6 +158,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
           <NavItem icon="edit_calendar" label="Editor de Cardápio" path="/admin/editor" current={location.pathname} onClick={() => navigate('/admin/editor')} />
           <NavItem icon="insert_chart" label="Relatórios" path="/admin/reports" current={location.pathname} onClick={() => navigate('/admin/reports')} />
+          <NavItem icon="history" label="Auditoria" path="/admin/audit" current={location.pathname} onClick={() => navigate('/admin/audit')} />
         </nav>
 
         {/* User section */}
@@ -358,6 +362,7 @@ const App: React.FC = () => {
                 <Route path="/deliveries" element={<Deliveries />} />
                 <Route path="/editor" element={<MenuEditor />} />
                 <Route path="/reports" element={<Reports />} />
+                <Route path="/audit" element={<Audit />} />
               </Routes>
             </Layout>
           </RequireAuth>

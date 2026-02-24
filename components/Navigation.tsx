@@ -18,6 +18,7 @@ const navItems: NavItem[] = [
 const moreNavItems: NavItem[] = [
   { icon: 'edit_calendar', label: 'Editor', path: '/admin/editor' },
   { icon: 'insert_chart', label: 'Relatórios', path: '/admin/reports' },
+  { icon: 'history', label: 'Auditoria', path: '/admin/audit' },
 ];
 
 export const BottomNav: React.FC = () => {
