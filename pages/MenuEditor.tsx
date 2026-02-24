@@ -533,6 +533,22 @@ const MenuEditor: React.FC = () => {
 
   const selectedMeal = items[activeDay][activeMeal];
   const selectedSchoolName = schools.find((school) => school.id === selectedSchool)?.name || 'Selecione uma escola';
+  const activeMealLabel = mealSlots.find((slot) => slot.key === activeMeal)?.label || '';
+
+  const openRecipesShortcut = () => {
+    const params = new URLSearchParams();
+    const firstIngredientHint = getIngredients(selectedMeal.description)[0] || '';
+    const searchSeed = selectedMeal.meal_name.trim() || firstIngredientHint;
+    if (searchSeed) params.set('search', searchSeed);
+    if (activeMealLabel) params.set('category', activeMealLabel);
+    params.set('active', 'true');
+
+    const targetPath = `/admin/recipes${params.toString() ? `?${params.toString()}` : ''}`;
+    const popup = typeof window !== 'undefined'
+      ? window.open(`#${targetPath}`, '_blank', 'noopener,noreferrer')
+      : null;
+    if (!popup) navigate(targetPath);
+  };
 
   const nextStep = () => {
     if (wizardStep === 1) {
@@ -788,6 +804,14 @@ const MenuEditor: React.FC = () => {
                           Limpar
                         </button>
                       )}
+                      <button
+                        type="button"
+                        onClick={openRecipesShortcut}
+                        className="px-4 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-semibold whitespace-nowrap"
+                        title="Abrir cadastro de receitas com filtros sugeridos"
+                      >
+                        Gerenciar receitas
+                      </button>
                     </div>
                     <span className="text-[10px] text-slate-400 mt-1 block">
                       {selectedMeal.recipe ? 'Cálculo por receita habilitado neste slot.' : 'Sem receita: cálculo usa descrição + aliases/regras.'}

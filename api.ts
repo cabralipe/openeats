@@ -457,6 +457,54 @@ export async function getRecipes(params?: { active?: boolean; search?: string; c
   return apiFetch(`/api/recipes/${search ? `?${search}` : ''}`);
 }
 
+export async function createRecipe(payload: {
+  name: string;
+  category?: string;
+  servings_base: number;
+  instructions?: string;
+  tags?: Record<string, unknown>;
+  active?: boolean;
+  ingredients?: Array<{
+    supply: string;
+    qty_base: number;
+    unit: string;
+    optional?: boolean;
+    notes?: string;
+  }>;
+}) {
+  return apiFetch('/api/recipes/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateRecipe(id: string, payload: Partial<{
+  name: string;
+  category: string;
+  servings_base: number;
+  instructions: string;
+  tags: Record<string, unknown>;
+  active: boolean;
+  ingredients: Array<{
+    supply: string;
+    qty_base: number;
+    unit: string;
+    optional?: boolean;
+    notes?: string;
+  }>;
+}>) {
+  return apiFetch(`/api/recipes/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteRecipe(id: string) {
+  return apiFetch(`/api/recipes/${id}/`, {
+    method: 'DELETE',
+  });
+}
+
 export async function calculateMenuProduction(menuId: string, payload: {
   students_by_meal_type?: Record<string, number>;
   waste_percent?: number;

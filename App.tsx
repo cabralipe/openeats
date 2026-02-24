@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Schools from './pages/Schools';
 import Inventory from './pages/Inventory';
+import Recipes from './pages/Recipes';
 import MenuEditor from './pages/MenuEditor';
 import Deliveries from './pages/Deliveries';
 import Reports from './pages/Reports';
@@ -95,6 +96,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       '/admin/schools': 'Escolas',
       '/admin/inventory': 'Estoque',
       '/admin/deliveries': 'Entregas',
+      '/admin/recipes': 'Receitas',
       '/admin/editor': 'Editor de Cardápio',
       '/admin/reports': 'Relatórios',
       '/admin/audit': 'Auditoria',
@@ -110,6 +112,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       '/admin/schools': 'school',
       '/admin/inventory': 'inventory_2',
       '/admin/deliveries': 'local_shipping',
+      '/admin/recipes': 'menu_book',
       '/admin/editor': 'edit_calendar',
       '/admin/reports': 'insert_chart',
       '/admin/audit': 'history',
@@ -155,6 +158,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           <NavItem icon="school" label="Escolas" path="/admin/schools" current={location.pathname} onClick={() => navigate('/admin/schools')} />
           <NavItem icon="inventory_2" label="Estoque" path="/admin/inventory" current={location.pathname} onClick={() => navigate('/admin/inventory')} />
           <NavItem icon="local_shipping" label="Entregas" path="/admin/deliveries" current={location.pathname} onClick={() => navigate('/admin/deliveries')} />
+          <NavItem icon="menu_book" label="Receitas" path="/admin/recipes" current={location.pathname} onClick={() => navigate('/admin/recipes')} />
 
           <div className="pt-4 pb-2">
             <p className="px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Operações</p>
@@ -366,6 +370,7 @@ const App: React.FC = () => {
                 <Route path="/schools" element={<Schools />} />
                 <Route path="/inventory" element={<Inventory />} />
                 <Route path="/deliveries" element={<Deliveries />} />
+                <Route path="/recipes" element={<Recipes />} />
                 <Route path="/editor" element={<MenuEditor />} />
                 <Route path="/production-calculator" element={<MenuProductionCalculator />} />
                 <Route path="/reports" element={<Reports />} />
