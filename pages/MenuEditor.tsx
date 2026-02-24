@@ -77,6 +77,11 @@ const createEmptyWeek = (): WeekContent => ({
   FRI: createEmptyDay(),
 });
 
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message?.trim()) return error.message;
+  return fallback;
+};
+
 const MenuEditor: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -177,7 +182,7 @@ const MenuEditor: React.FC = () => {
         }
         loadMenu(data[0]);
       })
-      .catch(() => setError('Nao foi possivel carregar o cardapio.'));
+      .catch((err) => setError(getErrorMessage(err, 'Nao foi possivel carregar o cardapio.')));
   }, [selectedSchool, weekStart]);
 
   const loadMenu = (menu: any) => {
