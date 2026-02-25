@@ -34,6 +34,59 @@ type ConferenceItemForm = {
 
 const today = new Date().toISOString().slice(0, 10);
 
+const formatQtyBR = (value: number) =>
+  new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value || 0);
+
+const decimalInputToNumber = (value: string) => {
+  const normalized = String(value || '')
+    .replace(/\./g, '')
+    .replace(',', '.')
+    .replace(/[^\d.-]/g, '');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const maskDecimalBR = (value: string) => {
+  let v = String(value || '').replace(/[^\d,]/g, '');
+  const firstComma = v.indexOf(',');
+  if (firstComma >= 0) {
+    v = v.slice(0, firstComma + 1) + v.slice(firstComma + 1).replace(/,/g, '');
+  }
+  const [intPart = '', decPart = ''] = v.split(',');
+  const cleanInt = intPart.replace(/^0+(?=\d)/, '') || (intPart.startsWith('0') ? '0' : intPart);
+  const limitedDec = decPart.slice(0, 2);
+  return v.includes(',') ? `${cleanInt},${limitedDec}` : cleanInt;
+};
+
+const maskDateBR = (value: string) => {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 8);
+  const p1 = digits.slice(0, 2);
+  const p2 = digits.slice(2, 4);
+  const p3 = digits.slice(4, 8);
+  if (digits.length <= 2) return p1;
+  if (digits.length <= 4) return `${p1}/${p2}`;
+  return `${p1}/${p2}/${p3}`;
+};
+
+const isoToDateBR = (value?: string) => {
+  if (!value) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [y, m, d] = value.split('-');
+    return `${d}/${m}/${y}`;
+  }
+  return value;
+};
+
+const dateBRToISO = (value?: string) => {
+  const masked = String(value || '').trim();
+  if (!masked) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(masked)) return masked;
+  const match = masked.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return '';
+  const [, d, m, y] = match;
+  return `${y}-${m}-${d}`;
+};
+
 const statusLabel = (status?: string) => {
   if (status === 'DRAFT') return 'Rascunho';
   if (status === 'IN_CONFERENCE') return 'Em conferência';
@@ -140,7 +193,7 @@ const SupplierReceipts: React.FC = () => {
     const next: Record<string, ConferenceItemForm> = {};
     (receipt.items || []).forEach((item: any) => {
       next[item.id] = {
-        received_quantity: String(item.received_quantity ?? item.expected_quantity ?? ''),
+        received_quantity: formatQtyBR(Number(item.received_quantity ?? item.expected_quantity ?? 0)),
         note: item.divergence_note || '',
         lots: [],
       };
@@ -151,7 +204,7 @@ const SupplierReceipts: React.FC = () => {
   };
 
   const totalDraftQty = useMemo(
-    () => draftItems.reduce((sum, item) => sum + (Number(item.expected_quantity) || 0), 0),
+    () => draftItems.reduce((sum, item) => sum + decimalInputToNumber(item.expected_quantity), 0),
     [draftItems],
   );
 
@@ -167,9 +220,7 @@ const SupplierReceipts: React.FC = () => {
 
   const formatDate = (value?: string) => {
     if (!value) return '-';
-    const [y, m, d] = value.split('-');
-    if (!y || !m || !d) return value;
-    return `${d}/${m}/${y}`;
+    return isoToDateBR(value) || value;
   };
 
   const addDraftItem = () => {
@@ -191,7 +242,7 @@ const SupplierReceipts: React.FC = () => {
       setError('Selecione um fornecedor.');
       return;
     }
-    const validItems = draftItems.filter((item) => Number(item.expected_quantity) > 0 && (item.supply || item.raw_name.trim()));
+    const validItems = draftItems.filter((item) => decimalInputToNumber(item.expected_quantity) > 0 && (item.supply || item.raw_name.trim()));
     if (!validItems.length) {
       setError('Adicione ao menos um item válido no recebimento.');
       return;
@@ -209,7 +260,7 @@ const SupplierReceipts: React.FC = () => {
           raw_name: item.supply ? undefined : item.raw_name.trim(),
           category: item.supply ? undefined : (item.category || 'Outros'),
           unit: item.unit,
-          expected_quantity: Number(item.expected_quantity),
+          expected_quantity: decimalInputToNumber(item.expected_quantity),
         })),
       });
       setSuccess('Recebimento criado.');
@@ -290,14 +341,14 @@ const SupplierReceipts: React.FC = () => {
 
     const itemsPayload = (selectedReceipt.items || []).map((item: any) => {
       const entry = conferenceForm[item.id];
-      const receivedQty = Number(entry?.received_quantity || 0);
+      const receivedQty = decimalInputToNumber(entry?.received_quantity || '');
       const lots = (entry?.lots || [])
-        .filter((lot) => lot.lot_code.trim() || Number(lot.received_quantity) > 0 || lot.expiry_date)
+        .filter((lot) => lot.lot_code.trim() || decimalInputToNumber(lot.received_quantity) > 0 || lot.expiry_date)
         .map((lot) => ({
           lot_code: lot.lot_code.trim(),
-          expiry_date: lot.expiry_date,
-          manufacture_date: lot.manufacture_date || null,
-          received_quantity: Number(lot.received_quantity || 0),
+          expiry_date: dateBRToISO(lot.expiry_date),
+          manufacture_date: dateBRToISO(lot.manufacture_date) || null,
+          received_quantity: decimalInputToNumber(lot.received_quantity),
           note: lot.note || '',
         }));
 
@@ -471,7 +522,7 @@ const SupplierReceipts: React.FC = () => {
                       )}
                     </div>
                     <div className="col-span-6 md:col-span-2">
-                      <input className="input rounded-lg bg-white dark:bg-slate-900 text-sm" placeholder="Qtd" type="number" min="0" step="0.01" value={item.expected_quantity} onChange={(e) => updateDraftItem(index, { expected_quantity: e.target.value })} />
+                      <input className="input rounded-lg bg-white dark:bg-slate-900 text-sm" placeholder="Qtd" type="text" inputMode="decimal" value={item.expected_quantity} onChange={(e) => updateDraftItem(index, { expected_quantity: maskDecimalBR(e.target.value) })} />
                     </div>
                     <div className="col-span-4 md:col-span-3">
                       <input className="input rounded-lg bg-white dark:bg-slate-900 text-sm" placeholder="Unidade" type="text" value={item.unit} onChange={(e) => updateDraftItem(index, { unit: e.target.value })} />
@@ -490,7 +541,7 @@ const SupplierReceipts: React.FC = () => {
           <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
               <span className="text-sm text-slate-500 dark:text-slate-400">Total previsto:</span>
-              <span className="text-xl font-bold ml-2 text-slate-900 dark:text-white">{totalDraftQty.toFixed(2)} <span className="text-sm font-normal text-slate-400">unidades (misto)</span></span>
+              <span className="text-xl font-bold ml-2 text-slate-900 dark:text-white">{formatQtyBR(totalDraftQty)} <span className="text-sm font-normal text-slate-400">unidades (misto)</span></span>
             </div>
             <button disabled={submitting} onClick={handleCreateReceipt} className="bg-primary hover:bg-blue-700 text-white px-8 py-2.5 rounded-lg font-bold transition-all shadow-md shadow-primary/20 disabled:opacity-60">
               {submitting ? 'Salvando...' : 'Criar Recebimento'}
@@ -584,15 +635,15 @@ const SupplierReceipts: React.FC = () => {
             <div className="p-6 space-y-8">
               {(selectedReceipt.items || []).map((item: any) => {
                 const entry = conferenceForm[item.id] || { received_quantity: '', note: '', lots: [] };
-                const lotSum = (entry.lots || []).reduce((sum, lot) => sum + (Number(lot.received_quantity) || 0), 0);
-                const lotMatches = Math.abs(lotSum - Number(entry.received_quantity || 0)) <= 0.0001;
+                  const lotSum = (entry.lots || []).reduce((sum, lot) => sum + decimalInputToNumber(lot.received_quantity), 0);
+                  const lotMatches = Math.abs(lotSum - decimalInputToNumber(entry.received_quantity || '')) <= 0.0001;
                 return (
                   <div key={item.id} className="p-6 border border-slate-200 dark:border-slate-800 rounded-2xl bg-slate-50/30 dark:bg-slate-800/10">
                     <div className="flex flex-col lg:flex-row justify-between items-start mb-6 gap-4">
                       <div>
                         <h4 className="text-xl font-bold text-slate-900 dark:text-white">{item.supply_name || item.raw_name}</h4>
                         <p className="text-sm text-slate-500 mt-1">
-                          Previsto: <span className="font-bold">{Number(item.expected_quantity || 0).toFixed(2)} {item.unit}</span>
+                          Previsto: <span className="font-bold">{formatQtyBR(Number(item.expected_quantity || 0))} {item.unit}</span>
                           {item.supply ? '' : ' • Item novo (será cadastrado se não existir)'}
                         </p>
                       </div>
@@ -600,11 +651,10 @@ const SupplierReceipts: React.FC = () => {
                         <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Peso Real Recebido</label>
                         <input
                           className="w-full text-right text-lg font-bold bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 rounded-lg focus:ring-primary"
-                          type="number"
-                          step="0.01"
-                          min="0"
+                          type="text"
+                          inputMode="decimal"
                           value={entry.received_quantity}
-                          onChange={(e) => updateConferenceItem(item.id, { received_quantity: e.target.value })}
+                          onChange={(e) => updateConferenceItem(item.id, { received_quantity: maskDecimalBR(e.target.value) })}
                           disabled={selectedReceipt.status === 'CONFERRED'}
                         />
                       </div>
@@ -633,9 +683,9 @@ const SupplierReceipts: React.FC = () => {
                         {(entry.lots || []).map((lot) => (
                           <div key={lot.id} className="grid grid-cols-12 gap-3">
                             <input className="col-span-12 md:col-span-2 input rounded-lg bg-white dark:bg-slate-900 py-2 text-sm" placeholder="Código" type="text" value={lot.lot_code} onChange={(e) => updateLot(item.id, lot.id, 'lot_code', e.target.value)} disabled={selectedReceipt.status === 'CONFERRED'} />
-                            <input className="col-span-12 md:col-span-3 input rounded-lg bg-white dark:bg-slate-900 py-2 text-sm" placeholder="Fab." type="date" value={lot.manufacture_date} onChange={(e) => updateLot(item.id, lot.id, 'manufacture_date', e.target.value)} disabled={selectedReceipt.status === 'CONFERRED'} />
-                            <input className="col-span-12 md:col-span-3 input rounded-lg bg-white dark:bg-slate-900 py-2 text-sm" placeholder="Val." type="date" value={lot.expiry_date} onChange={(e) => updateLot(item.id, lot.id, 'expiry_date', e.target.value)} disabled={selectedReceipt.status === 'CONFERRED'} />
-                            <input className="col-span-6 md:col-span-1 input rounded-lg bg-white dark:bg-slate-900 py-2 text-sm text-center" placeholder="Qtd" type="number" step="0.01" min="0" value={lot.received_quantity} onChange={(e) => updateLot(item.id, lot.id, 'received_quantity', e.target.value)} disabled={selectedReceipt.status === 'CONFERRED'} />
+                            <input className="col-span-12 md:col-span-3 input rounded-lg bg-white dark:bg-slate-900 py-2 text-sm" placeholder="Fab: dd/mm/aaaa" type="text" inputMode="numeric" value={lot.manufacture_date} onChange={(e) => updateLot(item.id, lot.id, 'manufacture_date', maskDateBR(e.target.value))} disabled={selectedReceipt.status === 'CONFERRED'} />
+                            <input className="col-span-12 md:col-span-3 input rounded-lg bg-white dark:bg-slate-900 py-2 text-sm" placeholder="Val: dd/mm/aaaa" type="text" inputMode="numeric" value={lot.expiry_date} onChange={(e) => updateLot(item.id, lot.id, 'expiry_date', maskDateBR(e.target.value))} disabled={selectedReceipt.status === 'CONFERRED'} />
+                            <input className="col-span-6 md:col-span-1 input rounded-lg bg-white dark:bg-slate-900 py-2 text-sm text-center" placeholder="Qtd" type="text" inputMode="decimal" value={lot.received_quantity} onChange={(e) => updateLot(item.id, lot.id, 'received_quantity', maskDecimalBR(e.target.value))} disabled={selectedReceipt.status === 'CONFERRED'} />
                             <input className="col-span-5 md:col-span-2 input rounded-lg bg-white dark:bg-slate-900 py-2 text-sm" placeholder="Obs do lote" type="text" value={lot.note} onChange={(e) => updateLot(item.id, lot.id, 'note', e.target.value)} disabled={selectedReceipt.status === 'CONFERRED'} />
                             <button type="button" className="col-span-1 text-red-400 hover:text-red-500 text-xs font-bold flex items-center justify-center disabled:opacity-40" disabled={selectedReceipt.status === 'CONFERRED'} onClick={() => removeLot(item.id, lot.id)}>
                               <span className="material-icons-outlined text-lg">delete_outline</span>
@@ -647,9 +697,9 @@ const SupplierReceipts: React.FC = () => {
                         )}
                       </div>
 
-                      <div className={`text-[10px] ${lotMatches || (entry.lots || []).length === 0 ? 'text-slate-400' : 'text-amber-600 dark:text-amber-400'}`}>
-                        Soma dos lotes: {lotSum.toFixed(2)} {item.unit}
-                        {(entry.lots || []).length > 0 && !lotMatches ? ` • Divergente do total do item (${Number(entry.received_quantity || 0).toFixed(2)} ${item.unit})` : ''}
+                      <div className={`text-[10px] font-medium ${(entry.lots || []).length === 0 ? 'text-slate-400' : lotMatches ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                        Soma dos lotes: {formatQtyBR(lotSum)} {item.unit}
+                        {(entry.lots || []).length > 0 && !lotMatches ? ` • Divergente do total do item (${formatQtyBR(decimalInputToNumber(entry.received_quantity || ''))} ${item.unit})` : ''}
                       </div>
                     </div>
                   </div>
