@@ -11,12 +11,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from inventory.models import Delivery, SchoolStockBalance, StockBalance, StockMovement, Supply
+from inventory.models import DeliveryItemLot, LotBalanceSchool, SupplyLot
 from inventory.serializers import (
     DeliveryConferenceInputSerializer,
     PublicConsumptionInputSerializer,
     PublicDeliverySerializer,
     SupplySerializer,
 )
+from inventory.services.lots import credit_lot_school, debit_lot_central, debit_lot_school, fefo_suggestion_service
 from menus.models import MealServiceEntry, MealServiceReport, Menu, MenuItem
 from menus.serializers import MenuSerializer
 from menus.utils import generate_menu_pdf
@@ -226,6 +228,44 @@ class PublicDeliveryCurrentView(PublicBaseView):
                 item.divergence_note = entry.get('note', '')
                 item.save(update_fields=['received_quantity', 'divergence_note'])
 
+                lot_rows = list(DeliveryItemLot.objects.select_for_update().select_related('lot').filter(delivery_item=item))
+                lot_payload = entry.get('lots') or []
+                if lot_rows:
+                    if lot_payload:
+                        payload_by_lot = {}
+                        for lp in lot_payload:
+                            lot_id = str(lp.get('delivery_item_lot') or lp.get('id') or '')
+                            if not lot_id:
+                                raise PermissionDenied('delivery_item_lot obrigatorio na conferencia por lote.')
+                            if lot_id in payload_by_lot:
+                                raise PermissionDenied('Lotes duplicados na conferencia do item.')
+                            try:
+                                payload_by_lot[lot_id] = {
+                                    'received_quantity': lp['received_quantity'],
+                                    'note': lp.get('note', ''),
+                                }
+                            except KeyError:
+                                raise PermissionDenied('received_quantity obrigatorio na conferencia por lote.')
+                        if {str(r.id) for r in lot_rows} != set(payload_by_lot.keys()):
+                            raise PermissionDenied('Envie a conferencia de todos os lotes planejados do item.')
+                        total_lot_received = sum(payload_by_lot[str(r.id)]['received_quantity'] for r in lot_rows)
+                        if total_lot_received != entry['received_quantity']:
+                            raise PermissionDenied('Soma recebida dos lotes deve ser igual ao total do item.')
+                        for row in lot_rows:
+                            lp = payload_by_lot[str(row.id)]
+                            row.received_quantity = lp['received_quantity']
+                            row.divergence_note = lp['note']
+                            row.save(update_fields=['received_quantity', 'divergence_note'])
+                    else:
+                        if entry['received_quantity'] != item.planned_quantity:
+                            raise PermissionDenied(
+                                'Divergencia agregada com lotes planejados exige conferencia por lote.'
+                            )
+                        for row in lot_rows:
+                            row.received_quantity = row.planned_quantity
+                            row.divergence_note = ''
+                            row.save(update_fields=['received_quantity', 'divergence_note'])
+
             for entry in payload_items:
                 item = delivery_items.get(str(entry['item_id']))
                 if not item:
@@ -238,6 +278,11 @@ class PublicDeliveryCurrentView(PublicBaseView):
                 )
                 school_balance.quantity += entry['received_quantity']
                 school_balance.save()
+                lot_rows = list(DeliveryItemLot.objects.select_related('lot').filter(delivery_item=item))
+                for row in lot_rows:
+                    received_lot_qty = row.received_quantity if row.received_quantity is not None else row.planned_quantity
+                    if received_lot_qty > 0:
+                        credit_lot_school(school=school, lot=row.lot, quantity=received_lot_qty)
                 StockMovement.objects.create(
                     supply=item.supply,
                     school=school,
@@ -251,6 +296,35 @@ class PublicDeliveryCurrentView(PublicBaseView):
             for entry in payload_items:
                 item = delivery_items.get(str(entry['item_id']))
                 if not item:
+                    continue
+                lot_rows = list(DeliveryItemLot.objects.select_for_update().select_related('lot').filter(delivery_item=item))
+                if lot_rows:
+                    for row in lot_rows:
+                        received_lot_qty = row.received_quantity if row.received_quantity is not None else row.planned_quantity
+                        adjustment = row.planned_quantity - received_lot_qty
+                        if adjustment == 0:
+                            continue
+                        if adjustment > 0:
+                            # planned > received: return quantity to central
+                            from inventory.services.lots import credit_lot_central
+                            credit_lot_central(row.lot, adjustment)
+                            movement_type = StockMovement.Types.IN
+                            movement_note = f"Ajuste de conferencia por lote (falta) da entrega {delivery.id} lote {row.lot.lot_code}."
+                            movement_quantity = adjustment
+                        else:
+                            movement_quantity = abs(adjustment)
+                            debit_lot_central(row.lot, movement_quantity)
+                            movement_type = StockMovement.Types.OUT
+                            movement_note = f"Ajuste de conferencia por lote (excesso) da entrega {delivery.id} lote {row.lot.lot_code}."
+                        StockMovement.objects.create(
+                            supply=item.supply,
+                            school=school,
+                            type=movement_type,
+                            quantity=movement_quantity,
+                            movement_date=delivery.delivery_date,
+                            note=movement_note,
+                            created_by=delivery.created_by,
+                        )
                     continue
                 adjustment = item.planned_quantity - entry['received_quantity']
                 if adjustment == 0:
@@ -378,6 +452,19 @@ class PublicConsumptionView(PublicBaseView):
         with transaction.atomic():
             for entry in items:
                 supply = supplies.get(str(entry['supply']))
+                # Try lot-level FEFO only when lot balances exist for this school/supply (compatibility mode).
+                school_lot_balances_exist = LotBalanceSchool.objects.filter(
+                    school=school, lot__supply=supply, quantity__gt=0
+                ).exists()
+                if school_lot_balances_exist:
+                    allocations = fefo_suggestion_service(
+                        supply=supply,
+                        qty=entry['quantity'],
+                        from_central=False,
+                        school=school,
+                    )
+                    for allocation in allocations:
+                        debit_lot_school(school=school, lot=allocation.lot, quantity=allocation.quantity)
                 # Update school stock balance
                 school_balance, _ = SchoolStockBalance.objects.select_for_update().get_or_create(
                     school=school,

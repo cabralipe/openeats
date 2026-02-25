@@ -37,6 +37,7 @@ class Supply(models.Model):
         max_length=20, choices=NutritionalFunction.choices, blank=True, default='',
     )
     min_stock = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    storage_instructions = models.TextField(blank=True, default='')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -166,6 +167,8 @@ class Notification(models.Model):
         DELIVERY_CONFERRED = 'DELIVERY_CONFERRED', 'Entrega Conferida'
         DELIVERY_WITH_NOTE = 'DELIVERY_WITH_NOTE', 'Entrega com Observação'
         DELIVERY_DIVERGENCE = 'DELIVERY_DIVERGENCE', 'Divergência na Entrega'
+        LOT_EXPIRING_SOON = 'LOT_EXPIRING_SOON', 'Lote Próximo do Vencimento'
+        LOT_EXPIRED = 'LOT_EXPIRED', 'Lote Vencido'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     notification_type = models.CharField(max_length=30, choices=NotificationType.choices)
@@ -255,3 +258,93 @@ class SupplierReceiptItem(models.Model):
     def __str__(self) -> str:
         supply_name = self.supply.name if self.supply else self.raw_name
         return f"{self.receipt_id} - {supply_name}"
+
+
+class SupplyLot(models.Model):
+    class Status(models.TextChoices):
+        ACTIVE = 'ACTIVE', 'Ativo'
+        BLOCKED = 'BLOCKED', 'Bloqueado'
+        EXPIRED = 'EXPIRED', 'Vencido'
+        DISCARDED = 'DISCARDED', 'Descartado'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    supply = models.ForeignKey(Supply, on_delete=models.CASCADE, related_name='lots')
+    lot_code = models.CharField(max_length=120)
+    manufacture_date = models.DateField(null=True, blank=True)
+    expiry_date = models.DateField()
+    storage_instructions_snapshot = models.TextField(blank=True, default='')
+    supplier = models.ForeignKey(Supplier, on_delete=models.SET_NULL, null=True, blank=True, related_name='supply_lots')
+    invoice_ref = models.CharField(max_length=255, blank=True, default='')
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.ACTIVE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['supply', 'lot_code', 'expiry_date'], name='unique_supply_lot_code_expiry'),
+        ]
+        ordering = ['expiry_date', 'lot_code']
+
+    def __str__(self) -> str:
+        return f'{self.supply.name} - Lote {self.lot_code} ({self.expiry_date})'
+
+
+class LotBalanceCentral(models.Model):
+    lot = models.OneToOneField(SupplyLot, on_delete=models.CASCADE, related_name='central_balance')
+    quantity = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f'Central {self.lot}: {self.quantity}'
+
+
+class LotBalanceSchool(models.Model):
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='lot_balances')
+    lot = models.ForeignKey(SupplyLot, on_delete=models.CASCADE, related_name='school_balances')
+    quantity = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['school', 'lot'], name='unique_school_lot_balance'),
+        ]
+
+    def __str__(self) -> str:
+        return f'{self.school.name} - {self.lot}: {self.quantity}'
+
+
+class SupplierReceiptItemLot(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    receipt_item = models.ForeignKey(SupplierReceiptItem, on_delete=models.CASCADE, related_name='lots')
+    supply = models.ForeignKey(Supply, on_delete=models.PROTECT, related_name='supplier_receipt_item_lots')
+    lot_code = models.CharField(max_length=120)
+    expiry_date = models.DateField()
+    manufacture_date = models.DateField(null=True, blank=True)
+    received_quantity = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
+    divergence_note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['expiry_date', 'lot_code']
+
+    def __str__(self) -> str:
+        return f'{self.receipt_item_id} - {self.lot_code}'
+
+
+class DeliveryItemLot(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    delivery_item = models.ForeignKey(DeliveryItem, on_delete=models.CASCADE, related_name='lots')
+    lot = models.ForeignKey(SupplyLot, on_delete=models.PROTECT, related_name='delivery_item_lots')
+    planned_quantity = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
+    received_quantity = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)])
+    divergence_note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['delivery_item', 'lot'], name='unique_lot_per_delivery_item'),
+        ]
+        ordering = ['lot__expiry_date', 'lot__lot_code']
+
+    def __str__(self) -> str:
+        return f'{self.delivery_item_id} - {self.lot.lot_code}'

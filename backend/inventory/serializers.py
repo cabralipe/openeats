@@ -6,16 +6,20 @@ from rest_framework import serializers
 from .models import (
     Delivery,
     DeliveryItem,
+    DeliveryItemLot,
     Notification,
     Responsible,
     SchoolStockBalance,
     Supplier,
     SupplierReceipt,
     SupplierReceiptItem,
+    SupplierReceiptItemLot,
     Supply,
+    SupplyLot,
     StockBalance,
     StockMovement,
 )
+from .services.lots import regenerate_delivery_item_lot_plan_fefo
 
 
 
@@ -34,7 +38,7 @@ class SupplySerializer(serializers.ModelSerializer):
             'id', 'name', 'category', 'unit',
             'nova_classification', 'nova_classification_display',
             'nutritional_function', 'nutritional_function_display',
-            'min_stock', 'is_active', 'created_at', 'updated_at',
+            'min_stock', 'storage_instructions', 'is_active', 'created_at', 'updated_at',
         ]
 
 
@@ -133,6 +137,31 @@ class SupplierReceiptItemSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class SupplierReceiptItemLotSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SupplierReceiptItemLot
+        fields = [
+            'id',
+            'receipt_item',
+            'supply',
+            'lot_code',
+            'expiry_date',
+            'manufacture_date',
+            'received_quantity',
+            'divergence_note',
+            'created_at',
+        ]
+        read_only_fields = ['id', 'receipt_item', 'created_at']
+
+
+class SupplierReceiptConferenceLotInputSerializer(serializers.Serializer):
+    lot_code = serializers.CharField(max_length=120)
+    expiry_date = serializers.DateField()
+    manufacture_date = serializers.DateField(required=False, allow_null=True)
+    received_quantity = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0)
+    note = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+
+
 class SupplierReceiptSerializer(serializers.ModelSerializer):
     supplier_name = serializers.CharField(source='supplier.name', read_only=True)
     school_name = serializers.CharField(source='school.name', read_only=True)
@@ -196,6 +225,7 @@ class SupplierReceiptConferenceItemInputSerializer(serializers.Serializer):
     item_id = serializers.UUIDField()
     received_quantity = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0)
     note = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+    lots = SupplierReceiptConferenceLotInputSerializer(many=True, required=False)
 
 
 class SupplierReceiptConferenceInputSerializer(serializers.Serializer):
@@ -271,6 +301,7 @@ class DeliveryItemSerializer(serializers.ModelSerializer):
     supply_name = serializers.CharField(source='supply.name', read_only=True)
     supply_unit = serializers.CharField(source='supply.unit', read_only=True)
     shortage_quantity = serializers.SerializerMethodField()
+    lots = serializers.SerializerMethodField()
 
     class Meta:
         model = DeliveryItem
@@ -283,6 +314,7 @@ class DeliveryItemSerializer(serializers.ModelSerializer):
             'received_quantity',
             'divergence_note',
             'shortage_quantity',
+            'lots',
         ]
         read_only_fields = ['id', 'supply_name', 'supply_unit', 'received_quantity', 'divergence_note', 'shortage_quantity']
 
@@ -291,6 +323,28 @@ class DeliveryItemSerializer(serializers.ModelSerializer):
             return None
         shortage = obj.planned_quantity - obj.received_quantity
         return shortage if shortage > 0 else 0
+
+    def get_lots(self, obj):
+        return DeliveryItemLotSerializer(obj.lots.select_related('lot').all(), many=True).data
+
+
+class DeliveryItemLotSerializer(serializers.ModelSerializer):
+    lot_code = serializers.CharField(source='lot.lot_code', read_only=True)
+    expiry_date = serializers.DateField(source='lot.expiry_date', read_only=True)
+    lot_status = serializers.CharField(source='lot.status', read_only=True)
+
+    class Meta:
+        model = DeliveryItemLot
+        fields = [
+            'id', 'delivery_item', 'lot', 'lot_code', 'expiry_date', 'lot_status',
+            'planned_quantity', 'received_quantity', 'divergence_note',
+        ]
+        read_only_fields = ['id', 'delivery_item', 'lot_code', 'expiry_date', 'lot_status']
+
+
+class DeliveryItemLotInputSerializer(serializers.Serializer):
+    lot = serializers.UUIDField()
+    planned_quantity = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0)
 
 
 class DeliverySerializer(serializers.ModelSerializer):
@@ -367,6 +421,12 @@ class DeliverySerializer(serializers.ModelSerializer):
             DeliveryItem.objects.bulk_create([
                 DeliveryItem(delivery=delivery, **item_data) for item_data in items_data
             ])
+            for item in delivery.items.select_related('supply').all():
+                try:
+                    regenerate_delivery_item_lot_plan_fefo(item)
+                except serializers.ValidationError:
+                    # Compat mode: allow draft delivery even when no lot balances are available yet.
+                    pass
         return delivery
 
     def update(self, instance, validated_data):
@@ -384,12 +444,18 @@ class DeliverySerializer(serializers.ModelSerializer):
                 DeliveryItem.objects.bulk_create([
                     DeliveryItem(delivery=instance, **item_data) for item_data in items_data
                 ])
+                for item in instance.items.select_related('supply').all():
+                    try:
+                        regenerate_delivery_item_lot_plan_fefo(item)
+                    except serializers.ValidationError:
+                        pass
         return instance
 
 
 class PublicDeliveryItemSerializer(serializers.ModelSerializer):
     supply_name = serializers.CharField(source='supply.name', read_only=True)
     supply_unit = serializers.CharField(source='supply.unit', read_only=True)
+    lots = serializers.SerializerMethodField()
 
     class Meta:
         model = DeliveryItem
@@ -400,7 +466,20 @@ class PublicDeliveryItemSerializer(serializers.ModelSerializer):
             'planned_quantity',
             'received_quantity',
             'divergence_note',
+            'lots',
         ]
+
+    def get_lots(self, obj):
+        return PublicDeliveryItemLotSerializer(obj.lots.select_related('lot').all(), many=True).data
+
+
+class PublicDeliveryItemLotSerializer(serializers.ModelSerializer):
+    lot_code = serializers.CharField(source='lot.lot_code', read_only=True)
+    expiry_date = serializers.DateField(source='lot.expiry_date', read_only=True)
+
+    class Meta:
+        model = DeliveryItemLot
+        fields = ['id', 'lot', 'lot_code', 'expiry_date', 'planned_quantity', 'received_quantity', 'divergence_note']
 
 
 class PublicDeliverySerializer(serializers.ModelSerializer):
@@ -435,6 +514,7 @@ class DeliveryConferenceItemInputSerializer(serializers.Serializer):
     item_id = serializers.UUIDField()
     received_quantity = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0)
     note = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+    lots = serializers.ListField(child=serializers.DictField(), required=False)
 
 
 class DeliveryConferenceInputSerializer(serializers.Serializer):
@@ -492,6 +572,22 @@ class PublicConsumptionInputSerializer(serializers.Serializer):
         if len(ids) != len(set(ids)):
             raise serializers.ValidationError('Itens duplicados no consumo.')
         return items
+
+
+class SupplyLotSerializer(serializers.ModelSerializer):
+    supply_name = serializers.CharField(source='supply.name', read_only=True)
+    central_quantity = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SupplyLot
+        fields = [
+            'id', 'supply', 'supply_name', 'lot_code', 'manufacture_date', 'expiry_date',
+            'storage_instructions_snapshot', 'supplier', 'invoice_ref', 'status', 'central_quantity',
+            'created_at', 'updated_at',
+        ]
+
+    def get_central_quantity(self, obj):
+        return getattr(getattr(obj, 'central_balance', None), 'quantity', None)
 
 
 class NotificationSerializer(serializers.ModelSerializer):

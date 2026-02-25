@@ -20,6 +20,8 @@ from schools.models import School
 from .models import (
     Delivery,
     DeliveryItem,
+    DeliveryItemLot,
+    SupplierReceiptItemLot,
     Notification,
     Responsible,
     SchoolStockBalance,
@@ -28,6 +30,14 @@ from .models import (
     Supply,
     StockBalance,
     StockMovement,
+)
+from .services.lots import (
+    credit_lot_central,
+    credit_lot_school,
+    debit_lot_central,
+    ensure_delivery_item_lot_plan,
+    get_or_create_supply_lot,
+    regenerate_delivery_item_lot_plan_fefo,
 )
 from .serializers import (
     DeliverySerializer,
@@ -300,9 +310,38 @@ class SupplierReceiptViewSet(viewsets.ModelViewSet):
                     item.supply_created = resolved_supply
 
                 quantity = entry['received_quantity']
+                lots_payload = entry.get('lots') or []
+                if lots_payload:
+                    lots_total = sum((lot_entry['received_quantity'] for lot_entry in lots_payload), 0)
+                    if lots_total != quantity:
+                        raise ValidationError('Soma dos lotes recebidos deve ser igual ao total recebido do item.')
                 item.received_quantity = quantity
                 item.divergence_note = entry.get('note', '')
                 item.save(update_fields=['received_quantity', 'divergence_note', 'supply_created'])
+
+                if lots_payload:
+                    SupplierReceiptItemLot.objects.filter(receipt_item=item).delete()
+                    for lot_entry in lots_payload:
+                        SupplierReceiptItemLot.objects.create(
+                            receipt_item=item,
+                            supply=resolved_supply,
+                            lot_code=lot_entry['lot_code'],
+                            expiry_date=lot_entry['expiry_date'],
+                            manufacture_date=lot_entry.get('manufacture_date'),
+                            received_quantity=lot_entry['received_quantity'],
+                            divergence_note=lot_entry.get('note', ''),
+                        )
+                        lot = get_or_create_supply_lot(
+                            supply=resolved_supply,
+                            lot_code=lot_entry['lot_code'],
+                            expiry_date=lot_entry['expiry_date'],
+                            manufacture_date=lot_entry.get('manufacture_date'),
+                            supplier=receipt.supplier,
+                        )
+                        if receipt.school_id:
+                            credit_lot_school(school=receipt.school, lot=lot, quantity=lot_entry['received_quantity'])
+                        else:
+                            credit_lot_central(lot, lot_entry['received_quantity'])
 
                 if receipt.school_id:
                     school_balance, _ = SchoolStockBalance.objects.select_for_update().get_or_create(
@@ -1175,6 +1214,7 @@ class DeliveryViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             for item in items:
+                item_lots = ensure_delivery_item_lot_plan(item)
                 balance, _ = StockBalance.objects.select_for_update().get_or_create(supply=item.supply)
                 if balance.quantity < item.planned_quantity:
                     raise ValidationError(
@@ -1182,6 +1222,8 @@ class DeliveryViewSet(viewsets.ModelViewSet):
                     )
                 balance.quantity -= item.planned_quantity
                 balance.save()
+                for item_lot in item_lots:
+                    debit_lot_central(item_lot.lot, item_lot.planned_quantity)
                 StockMovement.objects.create(
                     supply=item.supply,
                     school=delivery.school,
@@ -1199,6 +1241,34 @@ class DeliveryViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(delivery)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def suggest_item_lots(self, request, pk=None):
+        delivery = self.get_object()
+        if delivery.status != Delivery.Status.DRAFT:
+            raise ValidationError('Somente entregas em rascunho podem recalcular lotes.')
+        item_id = str(request.data.get('item_id') or '').strip()
+        if not item_id:
+            raise ValidationError({'item_id': 'Informe o item da entrega.'})
+        item = DeliveryItem.objects.select_related('delivery', 'supply').filter(delivery=delivery, id=item_id).first()
+        if not item:
+            raise ValidationError({'item_id': 'Item de entrega inválido.'})
+        rows = regenerate_delivery_item_lot_plan_fefo(item)
+        return Response({
+            'delivery_item': str(item.id),
+            'supply': str(item.supply_id),
+            'planned_quantity': item.planned_quantity,
+            'lots': [
+                {
+                    'id': str(row.id),
+                    'lot': str(row.lot_id),
+                    'lot_code': row.lot.lot_code,
+                    'expiry_date': row.lot.expiry_date,
+                    'planned_quantity': row.planned_quantity,
+                }
+                for row in rows
+            ],
+        })
 
     @action(detail=True, methods=['get'])
     def conference_link(self, request, pk=None):

@@ -3,16 +3,16 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { calculateMenuProduction, getMenus, getSchools, getRecipes } from '../api';
 
 const mealTypes = ['BREAKFAST1', 'SNACK1', 'LUNCH', 'BREAKFAST2', 'SNACK2', 'DINNER_COFFEE'] as const;
-const weekdayOrder = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'] as const;
+const weekdayOrder = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
 
 const weekdayLabels: Record<string, string> = {
-  MONDAY: 'Segunda',
-  TUESDAY: 'Terça',
-  WEDNESDAY: 'Quarta',
-  THURSDAY: 'Quinta',
-  FRIDAY: 'Sexta',
-  SATURDAY: 'Sábado',
-  SUNDAY: 'Domingo',
+  MON: 'Segunda',
+  TUE: 'Terça',
+  WED: 'Quarta',
+  THU: 'Quinta',
+  FRI: 'Sexta',
+  SAT: 'Sábado',
+  SUN: 'Domingo',
 };
 
 const mealTypeLabels: Record<string, string> = {
@@ -60,9 +60,26 @@ function weekdayIndex(dayKey?: string) {
   return idx >= 0 ? idx : 999;
 }
 
+function offsetFromMenuWeekStart(dayKey?: string) {
+  const offsets: Record<string, number> = {
+    MON: 0,
+    TUE: 1,
+    WED: 2,
+    THU: 3,
+    FRI: 4,
+    SAT: 5,
+    SUN: 6,
+  };
+  return offsets[dayKey || ''];
+}
+
 function formatQty(value: any, unit?: string) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
   return `${Number(value).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}${unit ? ` ${unit}` : ''}`;
+}
+
+function getMealRecipeId(meal: any) {
+  return meal?.recipe_id || meal?.recipe || null;
 }
 
 function getRecipePrepMeta(recipe: any) {
@@ -141,7 +158,7 @@ const MenuProductionCalculator: React.FC = () => {
     const items: Array<{ key: string; day: string; mealType: string; mealName: string; mode?: string }> = [];
     (result.days || []).forEach((day: any) => {
       (day.meals || []).forEach((meal: any, index: number) => {
-        if (meal?.recipe_id) return;
+        if (getMealRecipeId(meal)) return;
         items.push({
           key: `${day.day_of_week}-${meal.meal_type}-${index}`,
           day: day.day_of_week,
@@ -160,8 +177,8 @@ const MenuProductionCalculator: React.FC = () => {
     return [...(result.days || [])]
       .sort((a: any, b: any) => weekdayIndex(a.day_of_week) - weekdayIndex(b.day_of_week))
       .map((day: any) => {
-        const idx = weekdayIndex(day.day_of_week);
-        const date = weekStartDate && idx !== 999 ? addDays(weekStartDate, idx) : null;
+        const offset = offsetFromMenuWeekStart(day.day_of_week);
+        const date = weekStartDate && offset !== undefined ? addDays(weekStartDate, offset) : null;
         return {
           ...day,
           label: weekdayLabels[day.day_of_week] || day.day_of_week,
@@ -198,7 +215,7 @@ const MenuProductionCalculator: React.FC = () => {
           mealType: meal.meal_type,
           mealName: meal.meal_name || '',
           mealMode: meal.mode,
-          recipeId: meal.recipe_id,
+          recipeId: getMealRecipeId(meal),
           scaleFactor: meal.scale_factor,
           ...ing,
         });
@@ -228,7 +245,7 @@ const MenuProductionCalculator: React.FC = () => {
 
   const focusRecipeMeal = useMemo(() => {
     if (!selectedDay?.meals) return null;
-    const recipeMeals = (selectedDay.meals || []).filter((m: any) => !!m.recipe_id);
+    const recipeMeals = (selectedDay.meals || []).filter((m: any) => !!getMealRecipeId(m));
     if (!recipeMeals.length) return null;
     return [...recipeMeals].sort((a: any, b: any) => (Number(b.scale_factor || 0) - Number(a.scale_factor || 0)))[0];
   }, [selectedDay]);
@@ -242,8 +259,9 @@ const MenuProductionCalculator: React.FC = () => {
   }, [recipesCatalog]);
 
   const focusRecipeDetails = useMemo(() => {
-    if (!focusRecipeMeal?.recipe_id) return null;
-    return recipeById.get(String(focusRecipeMeal.recipe_id)) || null;
+    const recipeId = getMealRecipeId(focusRecipeMeal);
+    if (!recipeId) return null;
+    return recipeById.get(String(recipeId)) || null;
   }, [focusRecipeMeal, recipeById]);
 
   const handleCalculate = async () => {
@@ -601,7 +619,7 @@ const MenuProductionCalculator: React.FC = () => {
                           </p>
                           <p className="text-xs text-slate-500">
                             Modo: {meal.mode}
-                            {meal.recipe_id ? ` • Receita ${String(meal.recipe_id).slice(0, 8)}` : ' • Sem receita'}
+                            {getMealRecipeId(meal) ? ` • Receita ${String(getMealRecipeId(meal)).slice(0, 8)}` : ' • Sem receita'}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -610,11 +628,11 @@ const MenuProductionCalculator: React.FC = () => {
                               Escala {Number(meal.scale_factor).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
                             </span>
                           )}
-                          <span className={`text-xs px-2 py-1 rounded ${meal.recipe_id
+                          <span className={`text-xs px-2 py-1 rounded ${getMealRecipeId(meal)
                             ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-300'
                             : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300'
                             }`}>
-                            {meal.recipe_id ? 'Com receita' : 'Sem receita'}
+                            {getMealRecipeId(meal) ? 'Com receita' : 'Sem receita'}
                           </span>
                         </div>
                       </div>
@@ -631,9 +649,9 @@ const MenuProductionCalculator: React.FC = () => {
                     <span className="material-symbols-outlined text-orange-500">menu_book</span>
                     Modo de Preparo
                   </h3>
-                  {focusRecipeMeal?.recipe_id && (
+                  {getMealRecipeId(focusRecipeMeal) && (
                     <span className="text-xs text-slate-500 font-medium">
-                      Ref {String(focusRecipeMeal.recipe_id).slice(0, 8)}
+                      Ref {String(getMealRecipeId(focusRecipeMeal)).slice(0, 8)}
                     </span>
                   )}
                 </div>
