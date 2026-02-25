@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  createSupplier,
   createSupplierReceipt,
   getSchools,
   getSupplies,
@@ -146,6 +147,14 @@ const SupplierReceipts: React.FC = () => {
   const [receiverName, setReceiverName] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [showSupplierForm, setShowSupplierForm] = useState(false);
+  const [supplierForm, setSupplierForm] = useState({
+    name: '',
+    document: '',
+    contact_name: '',
+    phone: '',
+    email: '',
+  });
 
   const loadData = async () => {
     setLoading(true);
@@ -269,6 +278,35 @@ const SupplierReceipts: React.FC = () => {
       await loadData();
     } catch (err: any) {
       setError(err?.message || 'Não foi possível criar o recebimento.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCreateSupplier = async () => {
+    setError('');
+    setSuccess('');
+    if (!supplierForm.name.trim()) {
+      setError('Informe o nome do fornecedor.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const created = await createSupplier({
+        name: supplierForm.name.trim(),
+        document: supplierForm.document.trim() || undefined,
+        contact_name: supplierForm.contact_name.trim() || undefined,
+        phone: supplierForm.phone.trim() || undefined,
+        email: supplierForm.email.trim() || undefined,
+        is_active: true,
+      });
+      await loadData();
+      setSupplierId(created.id);
+      setSupplierForm({ name: '', document: '', contact_name: '', phone: '', email: '' });
+      setShowSupplierForm(false);
+      setSuccess('Fornecedor cadastrado com sucesso.');
+    } catch (err: any) {
+      setError(err?.message || 'Não foi possível cadastrar o fornecedor.');
     } finally {
       setSubmitting(false);
     }
@@ -403,7 +441,7 @@ const SupplierReceipts: React.FC = () => {
           </div>
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
             <div className="relative">
-              <span className="material-icons-outlined text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 text-[20px]">search</span>
+              <span className="material-symbols-outlined text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 text-[20px]">search</span>
               <input
                 className="pl-10 pr-4 py-2 bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-sm focus:ring-2 focus:ring-primary w-full sm:w-64"
                 placeholder="Buscar por fornecedor..."
@@ -427,19 +465,19 @@ const SupplierReceipts: React.FC = () => {
       <div className="p-4 lg:p-8 max-w-6xl mx-auto w-full space-y-8">
         {success && (
           <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/50 rounded-lg p-4 flex items-center gap-3 text-emerald-700 dark:text-emerald-400">
-            <span className="material-icons-outlined">check_circle</span>
+            <span className="material-symbols-outlined">check_circle</span>
             <p className="text-sm font-medium">{success}</p>
             <button type="button" className="ml-auto text-emerald-400 hover:text-emerald-600" onClick={() => setSuccess('')}>
-              <span className="material-icons-outlined">close</span>
+              <span className="material-symbols-outlined">close</span>
             </button>
           </div>
         )}
         {error && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 rounded-lg p-4 flex items-center gap-3 text-red-700 dark:text-red-400">
-            <span className="material-icons-outlined">error</span>
+            <span className="material-symbols-outlined">error</span>
             <p className="text-sm font-medium">{error}</p>
             <button type="button" className="ml-auto text-red-400 hover:text-red-600" onClick={() => setError('')}>
-              <span className="material-icons-outlined">close</span>
+              <span className="material-symbols-outlined">close</span>
             </button>
           </div>
         )}
@@ -448,7 +486,7 @@ const SupplierReceipts: React.FC = () => {
           <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-primary/10 rounded-lg text-primary">
-                <span className="material-icons-outlined">add_box</span>
+                <span className="material-symbols-outlined">add_box</span>
               </div>
               <h3 className="font-bold text-lg text-slate-900 dark:text-white">Novo Recebimento</h3>
             </div>
@@ -460,11 +498,69 @@ const SupplierReceipts: React.FC = () => {
           <div className="p-6 space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Fornecedor</label>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Fornecedor</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowSupplierForm((prev) => !prev)}
+                    className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1"
+                  >
+                    <span className="material-symbols-outlined text-sm">{showSupplierForm ? 'close' : 'add'}</span>
+                    {showSupplierForm ? 'Fechar' : 'Novo fornecedor'}
+                  </button>
+                </div>
                 <select className="input rounded-lg py-2.5 text-sm" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
                   <option value="">Selecione</option>
                   {suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
                 </select>
+                {showSupplierForm && (
+                  <div className="mt-2 rounded-xl border border-primary/20 bg-primary/5 dark:bg-primary/10 p-3 space-y-2">
+                    <input
+                      className="input rounded-lg bg-white dark:bg-slate-900 text-sm"
+                      placeholder="Nome do fornecedor *"
+                      value={supplierForm.name}
+                      onChange={(e) => setSupplierForm((prev) => ({ ...prev, name: e.target.value }))}
+                    />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input
+                        className="input rounded-lg bg-white dark:bg-slate-900 text-sm"
+                        placeholder="Documento (CNPJ)"
+                        value={supplierForm.document}
+                        onChange={(e) => setSupplierForm((prev) => ({ ...prev, document: e.target.value }))}
+                      />
+                      <input
+                        className="input rounded-lg bg-white dark:bg-slate-900 text-sm"
+                        placeholder="Contato responsável"
+                        value={supplierForm.contact_name}
+                        onChange={(e) => setSupplierForm((prev) => ({ ...prev, contact_name: e.target.value }))}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input
+                        className="input rounded-lg bg-white dark:bg-slate-900 text-sm"
+                        placeholder="Telefone"
+                        value={supplierForm.phone}
+                        onChange={(e) => setSupplierForm((prev) => ({ ...prev, phone: e.target.value }))}
+                      />
+                      <input
+                        className="input rounded-lg bg-white dark:bg-slate-900 text-sm"
+                        placeholder="E-mail"
+                        value={supplierForm.email}
+                        onChange={(e) => setSupplierForm((prev) => ({ ...prev, email: e.target.value }))}
+                      />
+                    </div>
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={handleCreateSupplier}
+                        disabled={submitting}
+                        className="px-4 py-2 rounded-lg bg-primary text-white text-xs font-bold hover:bg-blue-700 disabled:opacity-60"
+                      >
+                        {submitting ? 'Salvando...' : 'Salvar fornecedor'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Destino (Opcional)</label>
@@ -494,7 +590,7 @@ const SupplierReceipts: React.FC = () => {
               <div className="flex justify-between items-center mb-4">
                 <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">Itens do Recebimento</h4>
                 <button type="button" onClick={addDraftItem} className="text-primary hover:underline text-xs font-bold flex items-center gap-1">
-                  <span className="material-icons-outlined text-sm">add</span> Adicionar Item
+                  <span className="material-symbols-outlined text-sm">add</span> Adicionar Item
                 </button>
               </div>
               <div className="space-y-3">
@@ -529,7 +625,7 @@ const SupplierReceipts: React.FC = () => {
                     </div>
                     <div className="col-span-2 md:col-span-1 flex justify-center pt-1">
                       <button type="button" className="text-slate-400 hover:text-red-500 transition-colors" onClick={() => removeDraftItem(index)}>
-                        <span className="material-icons-outlined">delete_outline</span>
+                        <span className="material-symbols-outlined">delete_outline</span>
                       </button>
                     </div>
                   </div>
@@ -553,7 +649,7 @@ const SupplierReceipts: React.FC = () => {
           <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-amber-500/10 rounded-lg text-amber-600">
-                <span className="material-icons-outlined">history</span>
+                <span className="material-symbols-outlined">history</span>
               </div>
               <h3 className="font-bold text-lg text-slate-900 dark:text-white">Histórico de Recebimentos</h3>
             </div>
@@ -588,7 +684,7 @@ const SupplierReceipts: React.FC = () => {
                       <td className="px-6 py-4">
                         <div className="font-semibold text-slate-900 dark:text-white">{receipt.supplier_name}</div>
                         <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5">
-                          <span className="material-icons-outlined text-[14px]">location_on</span> {receipt.school_name || 'Estoque Central'}
+                          <span className="material-symbols-outlined text-[14px]">location_on</span> {receipt.school_name || 'Estoque Central'}
                         </div>
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{formatDate(receipt.expected_date)}</td>
@@ -601,7 +697,7 @@ const SupplierReceipts: React.FC = () => {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <span className="material-icons-outlined text-slate-300 group-hover:text-primary transition-colors">chevron_right</span>
+                        <span className="material-symbols-outlined text-slate-300 group-hover:text-primary transition-colors">chevron_right</span>
                       </td>
                     </tr>
                   ))
@@ -674,7 +770,7 @@ const SupplierReceipts: React.FC = () => {
                         <h5 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Lotes do Item</h5>
                         {selectedReceipt.status !== 'CONFERRED' && (
                           <button type="button" onClick={() => addLot(item.id)} className="text-primary hover:underline text-xs font-bold flex items-center gap-1">
-                            <span className="material-icons-outlined text-sm">add</span> Adicionar Lote
+                            <span className="material-symbols-outlined text-sm">add</span> Adicionar Lote
                           </button>
                         )}
                       </div>
@@ -688,7 +784,7 @@ const SupplierReceipts: React.FC = () => {
                             <input className="col-span-6 md:col-span-1 input rounded-lg bg-white dark:bg-slate-900 py-2 text-sm text-center" placeholder="Qtd" type="text" inputMode="decimal" value={lot.received_quantity} onChange={(e) => updateLot(item.id, lot.id, 'received_quantity', maskDecimalBR(e.target.value))} disabled={selectedReceipt.status === 'CONFERRED'} />
                             <input className="col-span-5 md:col-span-2 input rounded-lg bg-white dark:bg-slate-900 py-2 text-sm" placeholder="Obs do lote" type="text" value={lot.note} onChange={(e) => updateLot(item.id, lot.id, 'note', e.target.value)} disabled={selectedReceipt.status === 'CONFERRED'} />
                             <button type="button" className="col-span-1 text-red-400 hover:text-red-500 text-xs font-bold flex items-center justify-center disabled:opacity-40" disabled={selectedReceipt.status === 'CONFERRED'} onClick={() => removeLot(item.id, lot.id)}>
-                              <span className="material-icons-outlined text-lg">delete_outline</span>
+                              <span className="material-symbols-outlined text-lg">delete_outline</span>
                             </button>
                           </div>
                         ))}
@@ -720,7 +816,7 @@ const SupplierReceipts: React.FC = () => {
                   </div>
 
                   <div className="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-xl flex items-start gap-3">
-                    <span className="material-icons-outlined text-primary text-sm mt-0.5">info</span>
+                    <span className="material-symbols-outlined text-primary text-sm mt-0.5">info</span>
                     <p className="text-xs text-blue-700 dark:text-blue-400 leading-relaxed italic">
                       A assinatura digital é gerada automaticamente a partir do nome informado (modo administrativo rápido). Certifique-se de que os dados conferem com o romaneio de entrega físico.
                     </p>
@@ -729,7 +825,7 @@ const SupplierReceipts: React.FC = () => {
                   <div className="flex justify-end pt-4">
                     <button disabled={submitting} onClick={handleSubmitConference} className="bg-primary hover:bg-blue-700 text-white px-10 py-3 rounded-xl font-bold transition-all shadow-lg shadow-primary/30 flex items-center gap-2 disabled:opacity-60">
                       <span>{submitting ? 'Conferindo...' : 'Concluir Conferência'}</span>
-                      <span className="material-icons-outlined">task_alt</span>
+                      <span className="material-symbols-outlined">task_alt</span>
                     </button>
                   </div>
                 </>
