@@ -260,6 +260,29 @@ export async function deleteResponsible(id: string) {
   });
 }
 
+export async function getSuppliers(params?: { q?: string; is_active?: boolean }) {
+  const cleanParams = params
+    ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
+    : undefined;
+  const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
+  return apiFetch(`/api/suppliers/${search ? `?${search}` : ''}`);
+}
+
+export async function createSupplier(payload: {
+  name: string;
+  document?: string;
+  contact_name?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  is_active?: boolean;
+}) {
+  return apiFetch('/api/suppliers/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 
 export async function getStock(params?: { q?: string; category?: string; low_stock?: boolean }) {
   const cleanParams = params
@@ -346,6 +369,73 @@ export async function getDeliveries(params?: { school?: string; status?: string;
   return apiFetch(`/api/deliveries/${search ? `?${search}` : ''}`);
 }
 
+export async function getSupplierReceipts(params?: {
+  supplier?: string;
+  school?: string;
+  status?: string;
+  date_from?: string;
+  date_to?: string;
+}) {
+  const cleanParams = params
+    ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
+    : undefined;
+  const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
+  return apiFetch(`/api/supplier-receipts/${search ? `?${search}` : ''}`);
+}
+
+export async function createSupplierReceipt(payload: {
+  supplier: string;
+  school?: string | null;
+  expected_date: string;
+  status?: string;
+  notes?: string;
+  items: Array<{
+    supply?: string | null;
+    raw_name?: string;
+    category?: string;
+    unit: string;
+    expected_quantity: number;
+  }>;
+}) {
+  return apiFetch('/api/supplier-receipts/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function startSupplierReceiptConference(receiptId: string) {
+  return apiFetch(`/api/supplier-receipts/${receiptId}/start_conference/`, {
+    method: 'POST',
+  });
+}
+
+export async function submitSupplierReceiptConference(
+  receiptId: string,
+  payload: {
+    items: Array<{
+      item_id: string;
+      received_quantity: number;
+      note?: string;
+      lots?: Array<{
+        lot_code: string;
+        expiry_date: string;
+        manufacture_date?: string | null;
+        received_quantity: number;
+        note?: string;
+      }>;
+    }>;
+    sender_signature_data: string;
+    sender_signer_name: string;
+    receiver_signature_data: string;
+    receiver_signer_name: string;
+  },
+) {
+  return apiFetch(`/api/supplier-receipts/${receiptId}/submit_conference/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function createDelivery(payload: {
   school: string;
   delivery_date: string;
@@ -377,6 +467,13 @@ export async function updateDelivery(deliveryId: string, payload: {
 export async function sendDelivery(deliveryId: string) {
   return apiFetch(`/api/deliveries/${deliveryId}/send/`, {
     method: 'POST',
+  });
+}
+
+export async function suggestDeliveryItemLots(deliveryId: string, itemId: string) {
+  return apiFetch(`/api/deliveries/${deliveryId}/suggest_item_lots/`, {
+    method: 'POST',
+    body: JSON.stringify({ item_id: itemId }),
   });
 }
 
@@ -593,7 +690,12 @@ export async function submitPublicDeliveryConference(
   token: string,
   deliveryId: string,
   payload: {
-    items: Array<{ item_id: string; received_quantity: number; note?: string }>;
+    items: Array<{
+      item_id: string;
+      received_quantity: number;
+      note?: string;
+      lots?: Array<{ delivery_item_lot: string; received_quantity: number; note?: string }>;
+    }>;
     sender_signature_data: string;
     sender_signer_name: string;
     receiver_signature_data: string;

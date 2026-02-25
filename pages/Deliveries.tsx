@@ -9,6 +9,7 @@ import {
   getSchools,
   getSupplies,
   sendDelivery,
+  suggestDeliveryItemLots,
   updateDelivery,
 } from '../api';
 
@@ -28,6 +29,7 @@ const Deliveries: React.FC = () => {
   const [notes, setNotes] = useState('');
   const [items, setItems] = useState<DraftItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [lotSuggestionLoadingByItem, setLotSuggestionLoadingByItem] = useState<Record<string, boolean>>({});
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -300,6 +302,21 @@ const Deliveries: React.FC = () => {
       if (!keepDetailOpen) setSelectedDelivery(null);
     } catch {
       setError('Não foi possível enviar. Verifique o saldo.');
+    }
+  };
+
+  const handleSuggestLotsForItem = async (deliveryId: string, itemId: string) => {
+    setError('');
+    setSuccess('');
+    setLotSuggestionLoadingByItem((prev) => ({ ...prev, [itemId]: true }));
+    try {
+      await suggestDeliveryItemLots(deliveryId, itemId);
+      await loadData();
+      setSuccess('Sugestão FEFO atualizada para o item.');
+    } catch (err: any) {
+      setError(err?.message || 'Não foi possível gerar sugestão FEFO.');
+    } finally {
+      setLotSuggestionLoadingByItem((prev) => ({ ...prev, [itemId]: false }));
     }
   };
 
@@ -862,6 +879,55 @@ const Deliveries: React.FC = () => {
         ? 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800'
         : 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800';
 
+    const renderItemLots = (item: any) => {
+      const lots = item.lots || [];
+      if (!lots.length) {
+        return <p className="mt-2 text-[11px] text-slate-400">Sem lotes planejados.</p>;
+      }
+      const getLotStatusChip = (status?: string) => {
+        if (status === 'EXPIRED') return 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400';
+        if (status === 'BLOCKED') return 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300';
+        if (status === 'DISCARDED') return 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400';
+        return 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400';
+      };
+      const getLotStatusLabel = (status?: string) => {
+        if (status === 'EXPIRED') return 'Vencido';
+        if (status === 'BLOCKED') return 'Bloqueado';
+        if (status === 'DISCARDED') return 'Descartado';
+        if (status === 'ACTIVE') return 'Ativo';
+        return status || 'Ativo';
+      };
+      return (
+        <div className="mt-2 space-y-1.5">
+          {lots.map((lot: any) => (
+            <div key={lot.id || `${lot.lot}-${lot.lot_code}`} className="flex flex-wrap items-center justify-between gap-2 px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-900/60 text-[11px]">
+              <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                <span className="font-semibold text-slate-700 dark:text-slate-200 truncate">
+                  {lot.lot_code ? `Lote ${lot.lot_code}` : `Lote ${String(lot.lot || '').slice(0, 8)}`}
+                </span>
+                {lot.expiry_date && <span className="text-slate-400">Val. {lot.expiry_date}</span>}
+                {lot.lot_status && (
+                  <span className={`px-1.5 py-0.5 rounded font-bold uppercase ${getLotStatusChip(lot.lot_status)}`}>
+                    {getLotStatusLabel(lot.lot_status)}
+                  </span>
+                )}
+              </div>
+              <div className="text-right">
+                <span className="font-bold text-primary-600 dark:text-primary-400 block">
+                  {Number(lot.planned_quantity || 0).toFixed(2)} {item.supply_unit || ''}
+                </span>
+                {lot.received_quantity != null && (
+                  <span className="text-slate-500 dark:text-slate-400">
+                    Receb.: {Number(lot.received_quantity || 0).toFixed(2)}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    };
+
     return (
       <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen">
         <div className="lg:hidden pb-56">
@@ -948,20 +1014,35 @@ const Deliveries: React.FC = () => {
               </div>
               <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-800 overflow-hidden shadow-sm divide-y divide-slate-100 dark:divide-slate-700/50">
                 {(delivery.items || []).map((item: any) => (
-                  <div key={item.id} className="p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
-                        <span className="material-symbols-outlined text-slate-400">restaurant</span>
+                  <div key={item.id} className="p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-lg bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
+                          <span className="material-symbols-outlined text-slate-400">restaurant</span>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-bold text-slate-800 dark:text-slate-100 truncate">{item.supply_name}</p>
+                          <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-medium">Cod: {String(item.supply).slice(0, 6)}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-bold text-slate-800 dark:text-slate-100">{item.supply_name}</p>
-                        <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-medium">Cod: {String(item.supply).slice(0, 6)}</p>
+                      <div className="text-right shrink-0">
+                        <p className="font-bold text-lg text-primary-500">{Number(item.planned_quantity).toFixed(2)}</p>
+                        <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">{item.supply_unit || '-'}</p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-bold text-lg text-primary-500">{Number(item.planned_quantity).toFixed(2)}</p>
-                      <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">{item.supply_unit || '-'}</p>
-                    </div>
+                    {renderItemLots(item)}
+                    {isDraft && (
+                      <div className="mt-2 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => handleSuggestLotsForItem(delivery.id, item.id)}
+                          disabled={lotSuggestionLoadingByItem[item.id]}
+                          className="text-xs font-semibold text-primary-600 dark:text-primary-400 disabled:opacity-50"
+                        >
+                          {lotSuggestionLoadingByItem[item.id] ? 'Regerando FEFO...' : 'Regerar FEFO'}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1147,10 +1228,23 @@ const Deliveries: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {(delivery.items || []).map((item: any) => (
-                    <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                    <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors align-top">
                       <td className="px-6 py-5">
                         <p className="font-semibold text-slate-800 dark:text-slate-200">{item.supply_name}</p>
                         <p className="text-[11px] text-slate-400 font-medium">Cod: {String(item.supply).slice(0, 6)}</p>
+                        {renderItemLots(item)}
+                        {isDraft && (
+                          <div className="mt-2">
+                            <button
+                              type="button"
+                              onClick={() => handleSuggestLotsForItem(delivery.id, item.id)}
+                              disabled={lotSuggestionLoadingByItem[item.id]}
+                              className="text-xs font-semibold text-primary-600 dark:text-primary-400 disabled:opacity-50"
+                            >
+                              {lotSuggestionLoadingByItem[item.id] ? 'Regerando FEFO...' : 'Regerar FEFO'}
+                            </button>
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-5 text-right font-bold text-slate-700 dark:text-slate-300">{Number(item.planned_quantity).toFixed(2)}</td>
                       <td className="px-6 py-5 text-right text-slate-500 dark:text-slate-400 font-medium uppercase">{item.supply_unit || '-'}</td>

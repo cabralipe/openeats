@@ -2,6 +2,18 @@ import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { getPublicDeliveryCurrent, submitPublicDeliveryConference } from '../api';
 
+type LotConferenceFormEntry = {
+  received_quantity: string;
+  note: string;
+};
+
+type ItemConferenceFormEntry = {
+  received_quantity: string;
+  note: string;
+  confirmed: boolean;
+  lots?: Record<string, LotConferenceFormEntry>;
+};
+
 const PublicDeliveryConference: React.FC = () => {
   const location = useLocation();
   const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
@@ -10,7 +22,7 @@ const PublicDeliveryConference: React.FC = () => {
   const deliveryId = params.get('delivery_id') || '';
 
   const [delivery, setDelivery] = useState<any | null>(null);
-  const [form, setForm] = useState<Record<string, { received_quantity: string; note: string; confirmed: boolean }>>({});
+  const [form, setForm] = useState<Record<string, ItemConferenceFormEntry>>({});
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
@@ -48,12 +60,22 @@ const PublicDeliveryConference: React.FC = () => {
     getPublicDeliveryCurrent(slug, token, deliveryId)
       .then((data) => {
         setDelivery(data);
-        const nextForm: Record<string, { received_quantity: string; note: string; confirmed: boolean }> = {};
+        const nextForm: Record<string, ItemConferenceFormEntry> = {};
         (data.items || []).forEach((item: any) => {
+          const lotState = Object.fromEntries(
+            ((item.lots || []) as any[]).map((lot: any) => [
+              lot.id,
+              {
+                received_quantity: String(lot.received_quantity ?? lot.planned_quantity ?? ''),
+                note: lot.divergence_note || '',
+              },
+            ]),
+          );
           nextForm[item.id] = {
-            received_quantity: item.received_quantity ?? item.planned_quantity,
+            received_quantity: String(item.received_quantity ?? item.planned_quantity ?? ''),
             note: item.divergence_note || '',
             confirmed: data.status === 'CONFERRED',
+            lots: lotState,
           };
         });
         setForm(nextForm);
@@ -92,6 +114,22 @@ const PublicDeliveryConference: React.FC = () => {
     }));
   };
 
+  const updateItemLot = (itemId: string, lotId: string, field: 'received_quantity' | 'note', value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      [itemId]: {
+        ...prev[itemId],
+        lots: {
+          ...(prev[itemId]?.lots || {}),
+          [lotId]: {
+            ...(prev[itemId]?.lots?.[lotId] || { received_quantity: '', note: '' }),
+            [field]: value,
+          },
+        },
+      },
+    }));
+  };
+
   const confirmCurrentItem = () => {
     const item = items[currentStep];
     if (!item) return;
@@ -100,6 +138,16 @@ const PublicDeliveryConference: React.FC = () => {
     if (isNaN(qty) || qty < 0) {
       setError('Informe uma quantidade válida.');
       return;
+    }
+    if ((item.lots || []).length > 0) {
+      const lotsTotal = (item.lots || []).reduce((acc: number, lot: any) => {
+        const lotQty = Number(form[item.id]?.lots?.[lot.id]?.received_quantity ?? lot.received_quantity ?? lot.planned_quantity ?? 0);
+        return acc + (Number.isFinite(lotQty) ? lotQty : 0);
+      }, 0);
+      if (Math.abs(lotsTotal - qty) > 0.0001) {
+        setError('A soma das quantidades por lote deve ser igual à quantidade recebida do item.');
+        return;
+      }
     }
 
     setForm((prev) => ({
@@ -152,6 +200,13 @@ const PublicDeliveryConference: React.FC = () => {
           item_id: item.id,
           received_quantity: Number(form[item.id]?.received_quantity || 0),
           note: form[item.id]?.note || '',
+          lots: (item.lots || []).length > 0
+            ? (item.lots || []).map((lot: any) => ({
+              delivery_item_lot: lot.id,
+              received_quantity: Number(form[item.id]?.lots?.[lot.id]?.received_quantity ?? lot.received_quantity ?? lot.planned_quantity ?? 0),
+              note: form[item.id]?.lots?.[lot.id]?.note || '',
+            }))
+            : undefined,
         })),
         sender_signature_data: senderSig,
         sender_signer_name: senderName.trim(),
@@ -165,8 +220,8 @@ const PublicDeliveryConference: React.FC = () => {
       setReceiverSignatureData(data.receiver_signature || receiverSig);
       setReceiverHasSignature(true);
       setSuccess('Conferência concluída com sucesso!');
-    } catch {
-      setError('Não foi possível enviar a conferência.');
+    } catch (err: any) {
+      setError(err?.message || 'Não foi possível enviar a conferência.');
     } finally {
       setSending(false);
     }
@@ -251,6 +306,16 @@ const PublicDeliveryConference: React.FC = () => {
   }
 
   const currentItem = items[currentStep];
+  const currentItemLotSum = currentItem
+    ? (currentItem.lots || []).reduce((acc: number, lot: any) => {
+      const lotQty = Number(form[currentItem.id]?.lots?.[lot.id]?.received_quantity ?? lot.received_quantity ?? lot.planned_quantity ?? 0);
+      return acc + (Number.isFinite(lotQty) ? lotQty : 0);
+    }, 0)
+    : 0;
+  const currentItemReceivedQty = currentItem ? Number(form[currentItem.id]?.received_quantity || 0) : 0;
+  const lotSumMatchesItem = !currentItem || !(currentItem.lots || []).length
+    ? true
+    : Math.abs(currentItemLotSum - currentItemReceivedQty) <= 0.0001;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-primary-900 to-secondary-900 flex flex-col">
@@ -533,6 +598,53 @@ const PublicDeliveryConference: React.FC = () => {
                           placeholder="Motivo da divergência (opcional)"
                         />
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {(currentItem.lots || []).length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-slate-700">Conferência por lote</label>
+                      <span className="text-xs text-slate-500">{(currentItem.lots || []).length} lote(s)</span>
+                    </div>
+                    <div className={`rounded-xl border px-3 py-2 text-xs ${lotSumMatchesItem ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
+                      Soma dos lotes: <span className="font-bold">{currentItemLotSum.toFixed(2)}</span> {currentItem.supply_unit}
+                      {' '}• Item: <span className="font-bold">{Number.isFinite(currentItemReceivedQty) ? currentItemReceivedQty.toFixed(2) : '0.00'}</span> {currentItem.supply_unit}
+                    </div>
+                    <div className="space-y-2">
+                      {(currentItem.lots || []).map((lot: any) => (
+                        <div key={lot.id} className="p-3 rounded-xl border border-slate-200 bg-slate-50/70">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="font-semibold text-sm text-slate-800">Lote {lot.lot_code || String(lot.lot).slice(0, 8)}</p>
+                              <p className="text-xs text-slate-500">
+                                {lot.expiry_date ? `Validade ${lot.expiry_date}` : 'Validade não informada'} • Previsto {lot.planned_quantity} {currentItem.supply_unit}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-1 gap-2 mt-2">
+                            <div className="relative">
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={form[currentItem.id]?.lots?.[lot.id]?.received_quantity ?? lot.received_quantity ?? lot.planned_quantity ?? ''}
+                                onChange={(e) => updateItemLot(currentItem.id, lot.id, 'received_quantity', e.target.value)}
+                                className="input"
+                                placeholder="Qtd recebida no lote"
+                              />
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">{currentItem.supply_unit}</span>
+                            </div>
+                            <input
+                              value={form[currentItem.id]?.lots?.[lot.id]?.note ?? ''}
+                              onChange={(e) => updateItemLot(currentItem.id, lot.id, 'note', e.target.value)}
+                              className="input text-sm"
+                              placeholder="Observação do lote (opcional)"
+                            />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}

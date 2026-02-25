@@ -7,6 +7,7 @@ import Inventory from './pages/Inventory';
 import Recipes from './pages/Recipes';
 import MenuEditor from './pages/MenuEditor';
 import Deliveries from './pages/Deliveries';
+import SupplierReceipts from './pages/SupplierReceipts';
 import Reports from './pages/Reports';
 import Audit from './pages/Audit';
 import PublicMenu from './pages/PublicMenu';
@@ -97,6 +98,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       '/admin/schools': 'Escolas',
       '/admin/inventory': 'Estoque',
       '/admin/deliveries': 'Entregas',
+      '/admin/supplier-receipts': 'Recebimentos',
       '/admin/recipes': 'Receitas',
       '/admin/editor': 'Editor de Cardápio',
       '/admin/reports': 'Relatórios',
@@ -113,6 +115,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       '/admin/schools': 'school',
       '/admin/inventory': 'inventory_2',
       '/admin/deliveries': 'local_shipping',
+      '/admin/supplier-receipts': 'receipt_long',
       '/admin/recipes': 'menu_book',
       '/admin/editor': 'edit_calendar',
       '/admin/reports': 'insert_chart',
@@ -159,6 +162,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           <NavItem icon="school" label="Escolas" path="/admin/schools" current={location.pathname} onClick={() => navigate('/admin/schools')} />
           <NavItem icon="inventory_2" label="Estoque" path="/admin/inventory" current={location.pathname} onClick={() => navigate('/admin/inventory')} />
           <NavItem icon="local_shipping" label="Entregas" path="/admin/deliveries" current={location.pathname} onClick={() => navigate('/admin/deliveries')} />
+          <NavItem icon="receipt_long" label="Recebimentos" path="/admin/supplier-receipts" current={location.pathname} onClick={() => navigate('/admin/supplier-receipts')} />
           <NavItem icon="menu_book" label="Receitas" path="/admin/recipes" current={location.pathname} onClick={() => navigate('/admin/recipes')} />
 
           <div className="pt-4 pb-2">
@@ -372,6 +376,7 @@ const App: React.FC = () => {
                 <Route path="/schools" element={<Schools />} />
                 <Route path="/inventory" element={<Inventory />} />
                 <Route path="/deliveries" element={<Deliveries />} />
+                <Route path="/supplier-receipts" element={<SupplierReceipts />} />
                 <Route path="/recipes" element={<Recipes />} />
                 <Route path="/editor" element={<MenuEditor />} />
                 <Route path="/production-calculator" element={<MenuProductionCalculator />} />

@@ -13,6 +13,7 @@ const navItems: NavItem[] = [
   { icon: 'school', label: 'Escolas', path: '/admin/schools' },
   { icon: 'inventory_2', label: 'Estoque', path: '/admin/inventory' },
   { icon: 'local_shipping', label: 'Entregas', path: '/admin/deliveries' },
+  { icon: 'receipt_long', label: 'Recebimentos', path: '/admin/supplier-receipts' },
 ];
 
 const moreNavItems: NavItem[] = [
