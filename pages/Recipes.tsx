@@ -39,6 +39,8 @@ type RecipeForm = {
   category: string;
   servings_base: string;
   instructions: string;
+  prepTimeMinutes: string;
+  prepSteps: string[];
   active: boolean;
   tagsText: string;
   ingredients: RecipeIngredient[];
@@ -65,6 +67,8 @@ const emptyForm = (): RecipeForm => ({
   category: '',
   servings_base: '100',
   instructions: '',
+  prepTimeMinutes: '',
+  prepSteps: [''],
   active: true,
   tagsText: '{}',
   ingredients: [emptyIngredient()],
@@ -90,11 +94,27 @@ const tagsObjectToInput = (tags?: Record<string, unknown>) => {
     .join(', ');
 };
 
+const parsePrepTimeFromTags = (tags?: Record<string, unknown>) => {
+  const raw = (tags as any)?.prep_time_minutes;
+  if (raw === null || raw === undefined || raw === '') return '';
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? String(value) : '';
+};
+
+const parsePrepStepsFromTags = (tags?: Record<string, unknown>) => {
+  const raw = (tags as any)?.prep_steps;
+  if (!Array.isArray(raw)) return [''];
+  const steps = raw.map((item) => String(item || '').trim()).filter(Boolean);
+  return steps.length ? steps : [''];
+};
+
 const normalizeRecipeToForm = (recipe: RecipeRecord): RecipeForm => ({
   name: recipe.name || '',
   category: recipe.category || '',
   servings_base: String(recipe.servings_base || 100),
   instructions: recipe.instructions || '',
+  prepTimeMinutes: parsePrepTimeFromTags(recipe.tags),
+  prepSteps: parsePrepStepsFromTags(recipe.tags),
   active: Boolean(recipe.active),
   tagsText: tagsObjectToInput(recipe.tags),
   ingredients: (recipe.ingredients || []).length
@@ -247,6 +267,24 @@ const Recipes: React.FC = () => {
     });
   };
 
+  const updatePrepStep = (index: number, value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      prepSteps: prev.prepSteps.map((step, i) => (i === index ? value : step)),
+    }));
+  };
+
+  const addPrepStep = () => {
+    setForm((prev) => ({ ...prev, prepSteps: [...prev.prepSteps, ''] }));
+  };
+
+  const removePrepStep = (index: number) => {
+    setForm((prev) => {
+      const next = prev.prepSteps.filter((_, i) => i !== index);
+      return { ...prev, prepSteps: next.length ? next : [''] };
+    });
+  };
+
   const handleIngredientSupplyChange = (index: number, supplyId: string) => {
     const selectedSupply = supplies.find((supply) => supply.id === supplyId);
     updateIngredient(index, {
@@ -260,12 +298,27 @@ const Recipes: React.FC = () => {
     setError('');
     setSuccess('');
 
+    const normalizedPrepSteps = (form.prepSteps || [])
+      .map((step) => step.trim())
+      .filter(Boolean);
+
     const parsedTags: Record<string, unknown> = {
       labels: (form.tagsText || '')
         .split(',')
         .map((tag) => tag.trim())
         .filter(Boolean),
     };
+    const prepTimeMinutes = Number(form.prepTimeMinutes);
+    if (form.prepTimeMinutes !== '') {
+      if (!Number.isFinite(prepTimeMinutes) || prepTimeMinutes < 0) {
+        setError('Tempo de preparo deve ser um número válido.');
+        return;
+      }
+      parsedTags.prep_time_minutes = prepTimeMinutes;
+    }
+    if (normalizedPrepSteps.length > 0) {
+      parsedTags.prep_steps = normalizedPrepSteps;
+    }
 
     const name = form.name.trim();
     if (!name) {
@@ -514,6 +567,60 @@ const Recipes: React.FC = () => {
                 onChange={(e) => setForm((prev) => ({ ...prev, instructions: e.target.value }))}
                 placeholder="Descreva etapas de preparo, tempo e observações."
               />
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 p-4 space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="font-semibold text-slate-900 dark:text-white">Modo de Preparo Estruturado</h3>
+                  <p className="text-xs text-slate-500">Configure tempo e etapas para exibição passo a passo na calculadora.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tempo de Preparo (minutos)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className="input"
+                    value={form.prepTimeMinutes}
+                    onChange={(e) => setForm((prev) => ({ ...prev, prepTimeMinutes: e.target.value }))}
+                    placeholder="Ex: 25"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button type="button" onClick={addPrepStep} className="btn-secondary text-sm">
+                    <span className="material-symbols-outlined text-lg">add</span>
+                    Adicionar Etapa
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {form.prepSteps.map((step, index) => (
+                  <div key={`prep-step-${index}`} className="flex items-start gap-3">
+                    <div className="w-8 h-8 shrink-0 rounded-full bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-300 border border-primary-200 dark:border-primary-800 flex items-center justify-center text-sm font-bold mt-1">
+                      {index + 1}
+                    </div>
+                    <textarea
+                      className="input min-h-[78px]"
+                      value={step}
+                      onChange={(e) => updatePrepStep(index, e.target.value)}
+                      placeholder={`Descreva a etapa ${index + 1}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removePrepStep(index)}
+                      className="btn-secondary text-danger-600 border-danger-200 mt-1"
+                      title="Remover etapa"
+                    >
+                      <span className="material-symbols-outlined text-lg">delete</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div>

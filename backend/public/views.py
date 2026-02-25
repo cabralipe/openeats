@@ -20,6 +20,8 @@ from inventory.serializers import (
 from menus.models import MealServiceEntry, MealServiceReport, Menu, MenuItem
 from menus.serializers import MenuSerializer
 from menus.utils import generate_menu_pdf
+from production.serializers import MenuProductionCalculateSerializer
+from production.services.production_calc import calculate_for_menu
 from schools.models import School
 from schools.serializers import SchoolPublicSerializer
 
@@ -64,17 +66,25 @@ class PublicMenuCurrentView(APIView):
 
     def get(self, request, slug):
         school = get_object_or_404(School, public_slug=slug, is_active=True)
-        today = date.today()
+        raw_date = request.query_params.get('date')
+        try:
+            reference_date = date.fromisoformat(raw_date) if raw_date else date.today()
+        except ValueError:
+            return Response({'detail': 'Data inválida. Use YYYY-MM-DD.'}, status=400)
         queryset = Menu.objects.prefetch_related('items').filter(
             school=school,
             status=Menu.Status.PUBLISHED,
         )
 
-        # Prefer the menu that matches today's date.
+        # Prefer the menu that matches the provided date (or today).
         menu = queryset.filter(
-            week_start__lte=today,
-            week_end__gte=today,
+            week_start__lte=reference_date,
+            week_end__gte=reference_date,
         ).order_by('-week_start').first()
+
+        # When a specific date is requested, do not fallback to another week.
+        if not menu and raw_date:
+            return Response({'detail': 'Nenhum cardápio publicado para a data informada.'}, status=404)
 
         # Fallback to latest published menu when no current-week menu exists
         # (e.g., weekends or gaps in publication calendar).
@@ -85,6 +95,42 @@ class PublicMenuCurrentView(APIView):
             return Response({'detail': 'Nenhum cardápio publicado para esta escola.'}, status=404)
         
         return Response(MenuSerializer(menu).data)
+
+
+class PublicProductionCalculatorView(APIView):
+    """Public production calculation by school slug using published menus only."""
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request, slug):
+        school = get_object_or_404(School, public_slug=slug, is_active=True)
+        serializer = MenuProductionCalculateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = serializer.validated_data
+
+        week_start = request.data.get('week_start')
+        if not week_start:
+            raise PermissionDenied('week_start obrigatorio.')
+
+        try:
+            week_start_date = date.fromisoformat(str(week_start))
+        except ValueError:
+            raise PermissionDenied('week_start invalido. Use YYYY-MM-DD.')
+
+        menu = get_object_or_404(
+            Menu.objects.prefetch_related('items'),
+            school=school,
+            status=Menu.Status.PUBLISHED,
+            week_start=week_start_date,
+        )
+
+        result = calculate_for_menu(
+            menu=menu,
+            students_by_meal_type=payload.get('students_by_meal_type') or {},
+            waste_percent=payload.get('waste_percent') or 0,
+            include_stock=payload.get('include_stock', True),
+            rounding=payload.get('rounding') or {'mode': 'NEAREST', 'decimals': 2},
+        )
+        return Response(result)
 
 
 

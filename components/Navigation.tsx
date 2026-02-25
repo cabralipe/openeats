@@ -18,6 +18,7 @@ const navItems: NavItem[] = [
 const moreNavItems: NavItem[] = [
   { icon: 'menu_book', label: 'Receitas', path: '/admin/recipes' },
   { icon: 'edit_calendar', label: 'Editor', path: '/admin/editor' },
+  { icon: 'calculate', label: 'Calculadora Produção', path: '/admin/production-calculator' },
   { icon: 'insert_chart', label: 'Relatórios', path: '/admin/reports' },
   { icon: 'history', label: 'Auditoria', path: '/admin/audit' },
 ];

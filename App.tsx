@@ -15,6 +15,7 @@ import PublicConsumption from './pages/PublicConsumption';
 import PublicMealService from './pages/PublicMealService';
 import MenuProductionCalculator from './pages/MenuProductionCalculator';
 import PublicCalculator from './pages/PublicCalculator';
+import PublicCalculatorWizard from './pages/PublicCalculatorWizard';
 import { BottomNav, Sidebar } from './components/Navigation';
 import { AUTH_EXPIRED_EVENT, getNotifications, getUnreadNotificationsCount, markAllNotificationsAsRead, markNotificationAsRead, tokenStore, getMe } from './api';
 import { ProfileModal } from './components/ProfileModal';
@@ -362,6 +363,7 @@ const App: React.FC = () => {
         <Route path="/public/consumption" element={<PublicConsumption />} />
         <Route path="/public/meal-service" element={<PublicMealService />} />
         <Route path="/public/calculator/:token" element={<PublicCalculator />} />
+        <Route path="/public/calculator" element={<PublicCalculatorWizard />} />
         <Route path="/admin/*" element={
           <RequireAuth>
             <Layout>

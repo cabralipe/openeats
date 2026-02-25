@@ -558,12 +558,28 @@ export async function getPublicSchools() {
   return apiFetch('/public/schools/', { skipAuth: true });
 }
 
-export async function getPublicMenuCurrent(slug: string, token?: string) {
+export async function getPublicMenuCurrent(slug: string, token?: string, menuDate?: string) {
   const encodedSlug = encodeURIComponent(slug);
-  const url = token
-    ? `/public/schools/${encodedSlug}/menu/current/?${new URLSearchParams({ token }).toString()}`
-    : `/public/schools/${encodedSlug}/menu/current/`;
+  const params = new URLSearchParams();
+  if (token) params.set('token', token);
+  if (menuDate) params.set('date', menuDate);
+  const url = `/public/schools/${encodedSlug}/menu/current/${params.toString() ? `?${params.toString()}` : ''}`;
   return apiFetch(url, { skipAuth: true });
+}
+
+export async function calculatePublicMenuProductionBySchool(slug: string, payload: {
+  week_start: string;
+  students_by_meal_type?: Record<string, number>;
+  waste_percent?: number;
+  include_stock?: boolean;
+  rounding?: { mode?: 'UP' | 'NEAREST' | 'NONE'; decimals?: number };
+}) {
+  const encodedSlug = encodeURIComponent(slug);
+  return apiFetch(`/public/schools/${encodedSlug}/production/calculate/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    skipAuth: true,
+  });
 }
 
 export async function getPublicDeliveryCurrent(slug: string, token: string, deliveryId: string) {

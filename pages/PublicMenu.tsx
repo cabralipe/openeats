@@ -240,6 +240,12 @@ const PublicMenu: React.FC = () => {
               <h1 className="text-white font-bold text-xl">Cardápio Escolar</h1>
               <p className="text-white/60 text-sm">Selecione uma escola</p>
             </div>
+            <button
+              onClick={() => navigate('/public/calculator')}
+              className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-sm font-medium"
+            >
+              Calculadora
+            </button>
           </div>
         </header>
 
@@ -320,14 +326,23 @@ const PublicMenu: React.FC = () => {
         <h2 className="text-slate-900 dark:text-white text-lg font-bold leading-tight tracking-tight flex-1 text-center font-display">
           NutriSemed
         </h2>
-        <button
-          onClick={handleDownloadPdf}
-          className="flex size-10 items-center justify-end cursor-pointer text-slate-900 dark:text-white"
-          disabled={!menu}
-          title="Baixar PDF"
-        >
-          <span className="material-symbols-outlined">calendar_month</span>
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => navigate('/public/calculator')}
+            className="flex size-10 items-center justify-center cursor-pointer text-slate-900 dark:text-white"
+            title="Calculadora pública"
+          >
+            <span className="material-symbols-outlined">calculate</span>
+          </button>
+          <button
+            onClick={handleDownloadPdf}
+            className="flex size-10 items-center justify-end cursor-pointer text-slate-900 dark:text-white"
+            disabled={!menu}
+            title="Baixar PDF"
+          >
+            <span className="material-symbols-outlined">calendar_month</span>
+          </button>
+        </div>
       </header>
 
       <main className="flex-1 overflow-y-auto px-6 py-8 flex flex-col items-center">

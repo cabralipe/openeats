@@ -179,12 +179,21 @@ const Login: React.FC = () => {
 
           {/* Public Links */}
           <div className="mt-8 text-center space-y-4">
-            <button
-              onClick={() => navigate('/public/menu')}
-              className="text-sm text-primary-500 hover:text-primary-600 font-medium transition-colors"
-            >
-              Ver Cardápio Público
-            </button>
+            <div className="flex items-center justify-center gap-3 flex-wrap">
+              <button
+                onClick={() => navigate('/public/menu')}
+                className="text-sm text-primary-500 hover:text-primary-600 font-medium transition-colors"
+              >
+                Ver Cardápio Público
+              </button>
+              <span className="text-slate-300">•</span>
+              <button
+                onClick={() => navigate('/public/calculator')}
+                className="text-sm text-primary-500 hover:text-primary-600 font-medium transition-colors"
+              >
+                Calculadora Pública
+              </button>
+            </div>
 
             <div className="flex items-center justify-center gap-2 text-slate-400 text-xs">
               <span>Central de Administração SEMED</span>
