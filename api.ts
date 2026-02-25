@@ -300,6 +300,14 @@ export async function getSupplies(params?: { q?: string; category?: string; is_a
   return apiFetch(`/api/supplies/${search ? `?${search}` : ''}`);
 }
 
+export async function getSupplyLots(supplyId: string, params?: { only_available?: boolean }) {
+  const cleanParams = params
+    ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
+    : undefined;
+  const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
+  return apiFetch(`/api/supplies/${supplyId}/lots/${search ? `?${search}` : ''}`);
+}
+
 export async function createSupply(payload: {
   name: string;
   category: string;

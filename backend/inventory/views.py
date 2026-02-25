@@ -1,5 +1,6 @@
 from django.db import models
 from django.db import transaction
+from django.db.models.deletion import ProtectedError
 from django.http import HttpResponse
 from django.utils import timezone
 import csv
@@ -28,6 +29,7 @@ from .models import (
     Supplier,
     SupplierReceipt,
     Supply,
+    SupplyLot,
     StockBalance,
     StockMovement,
 )
@@ -50,6 +52,7 @@ from .serializers import (
     SupplierReceiptSerializer,
     SupplierSerializer,
     SupplySerializer,
+    SupplyLotSerializer,
     StockBalanceSerializer,
     StockMovementSerializer,
 )
@@ -131,6 +134,24 @@ class SupplyViewSet(viewsets.ModelViewSet):
         supply = serializer.save()
         StockBalance.objects.get_or_create(supply=supply)
 
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        try:
+            self.perform_destroy(instance)
+            return Response(status=204)
+        except ProtectedError:
+            # Keep referential integrity and fall back to soft-disable when the supply
+            # is already referenced by deliveries, lot allocations or other history.
+            if instance.is_active:
+                instance.is_active = False
+                instance.save(update_fields=['is_active', 'updated_at'])
+            return Response(
+                {
+                    'detail': 'Insumo possui histórico e não pode ser excluído. Foi desativado para novos usos.'
+                },
+                status=200,
+            )
+
     @action(detail=False, methods=['get'])
     def categories(self, request):
         """Return distinct category values used across all supplies."""
@@ -141,6 +162,20 @@ class SupplyViewSet(viewsets.ModelViewSet):
             .order_by('category')
         )
         return Response(list(cats))
+
+    @action(detail=True, methods=['get'])
+    def lots(self, request, pk=None):
+        queryset = (
+            SupplyLot.objects
+            .filter(supply_id=pk)
+            .select_related('supplier', 'central_balance')
+            .order_by('expiry_date', 'lot_code')
+        )
+        only_available = request.query_params.get('only_available')
+        if only_available in ['true', '1', 'yes']:
+            queryset = queryset.filter(central_balance__quantity__gt=0)
+        serializer = SupplyLotSerializer(queryset, many=True)
+        return Response(serializer.data)
 
 
 class StockViewSet(viewsets.ReadOnlyModelViewSet):

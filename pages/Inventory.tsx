@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { createStockMovement, createSupply, deleteSupply, exportStockCsv, getStock, getSupplies, getSupplyCategories, updateSupply } from '../api';
+import { createStockMovement, createSupply, deleteSupply, exportStockCsv, getStock, getSupplies, getSupplyCategories, getSupplyLots, updateSupply } from '../api';
 import { InventoryItem } from '../types';
 
 const NOVA_OPTIONS = [
@@ -61,6 +61,8 @@ const Inventory: React.FC = () => {
   const [dynamicCategories, setDynamicCategories] = useState<string[]>([]);
   const [showCustomCategory, setShowCustomCategory] = useState(false);
   const [customCategoryInput, setCustomCategoryInput] = useState('');
+  const [lotsModal, setLotsModal] = useState<{ item: InventoryItem; lots: any[] } | null>(null);
+  const [lotsLoading, setLotsLoading] = useState(false);
 
   // Merge preset + dynamic categories (deduplicated)
   const allCategories = useMemo(() => {
@@ -291,6 +293,40 @@ const Inventory: React.FC = () => {
     }
   };
 
+  const handleOpenLots = async (item: InventoryItem) => {
+    setError('');
+    setLotsLoading(true);
+    try {
+      const lots = await getSupplyLots(item.id, { only_available: true });
+      setLotsModal({ item, lots: Array.isArray(lots) ? lots : [] });
+    } catch (err: any) {
+      setError(err?.message || 'Não foi possível carregar os lotes do insumo.');
+    } finally {
+      setLotsLoading(false);
+    }
+  };
+
+  const formatDateBr = (value?: string) => {
+    if (!value) return '-';
+    const [y, m, d] = String(value).split('-');
+    return y && m && d ? `${d}/${m}/${y}` : value;
+  };
+
+  const lotStatusLabel = (status?: string) => {
+    if (status === 'ACTIVE') return 'Ativo';
+    if (status === 'EXPIRED') return 'Vencido';
+    if (status === 'BLOCKED') return 'Bloqueado';
+    if (status === 'DISCARDED') return 'Descartado';
+    return status || '-';
+  };
+
+  const lotStatusClass = (status?: string) => {
+    if (status === 'EXPIRED') return 'bg-danger-100 dark:bg-danger-900/30 text-danger-600';
+    if (status === 'BLOCKED') return 'bg-warning-100 dark:bg-warning-900/30 text-warning-600';
+    if (status === 'DISCARDED') return 'bg-slate-100 dark:bg-slate-800 text-slate-500';
+    return 'bg-success-100 dark:bg-success-900/30 text-success-600';
+  };
+
   const getCategoryIcon = (category: string) => {
     const icons: Record<string, string> = {
       'Grãos': 'grain',
@@ -484,6 +520,13 @@ const Inventory: React.FC = () => {
                 </p>
                 <div className="flex gap-1 mt-2">
                   <button
+                    onClick={() => handleOpenLots(item)}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-primary-50 dark:hover:bg-primary-900/20"
+                    title="Ver lotes e validades"
+                  >
+                    <span className="material-symbols-outlined text-primary-500 text-lg">inventory</span>
+                  </button>
+                  <button
                     onClick={() => openModal('edit', item)}
                     className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
                   >
@@ -662,6 +705,74 @@ const Inventory: React.FC = () => {
                   Registrar {mode === 'in' ? 'Entrada' : 'Saída'}
                 </button>
               </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Lots Details Modal */}
+      {(lotsModal || lotsLoading) && (
+        <div className="modal-overlay" onClick={() => !lotsLoading && setLotsModal(null)}>
+          <div className="modal-content max-w-3xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Informações de Lotes</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {lotsModal?.item.name || 'Carregando...'} {lotsModal?.item.unit ? `• ${lotsModal.item.unit}` : ''}
+                </p>
+              </div>
+              <button
+                onClick={() => setLotsModal(null)}
+                className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                disabled={lotsLoading}
+              >
+                <span className="material-symbols-outlined text-slate-400">close</span>
+              </button>
+            </div>
+
+            {lotsLoading ? (
+              <div className="p-6 text-sm text-slate-500 flex items-center gap-2">
+                <span className="material-symbols-outlined animate-spin">progress_activity</span>
+                Carregando lotes...
+              </div>
+            ) : !lotsModal || lotsModal.lots.length === 0 ? (
+              <div className="p-6 rounded-xl bg-slate-50 dark:bg-slate-800/50 text-sm text-slate-500">
+                Nenhum lote disponível no estoque central para este insumo.
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+                {lotsModal.lots.map((lot: any) => (
+                  <div key={lot.id} className="rounded-xl border border-slate-200 dark:border-slate-800 p-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-semibold text-slate-900 dark:text-white">Lote {lot.lot_code}</p>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${lotStatusClass(lot.status)}`}>
+                            {lotStatusLabel(lot.status)}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                          Validade: <span className="font-medium">{formatDateBr(lot.expiry_date)}</span>
+                          {' • '}
+                          Fabricação: <span className="font-medium">{formatDateBr(lot.manufacture_date)}</span>
+                        </p>
+                        {(lot.supplier_name || lot.supplier) && (
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                            Fornecedor: <span className="font-medium">{lot.supplier_name || 'Cadastrado'}</span>
+                          </p>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Saldo Central</p>
+                        <p className="text-xl font-bold text-primary-600 dark:text-primary-400">
+                          {Number(lot.central_quantity || 0).toFixed(2)}
+                          <span className="text-sm font-normal text-slate-500 ml-1">{lotsModal.item.unit}</span>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </div>

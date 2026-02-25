@@ -11,6 +11,9 @@ from auditlog.models import AuditLog
 from inventory.models import (
     Delivery,
     DeliveryItem,
+    DeliveryItemLot,
+    LotBalanceCentral,
+    LotBalanceSchool,
     Notification,
     Responsible,
     SchoolStockBalance,
@@ -19,9 +22,13 @@ from inventory.models import (
     Supplier,
     SupplierReceipt,
     SupplierReceiptItem,
+    SupplierReceiptItemLot,
     Supply,
+    SupplyLot,
 )
+from inventory.services.lots import credit_lot_central, credit_lot_school, get_or_create_supply_lot, regenerate_delivery_item_lot_plan_fefo
 from menus.models import MealServiceEntry, MealServiceReport, Menu, MenuItem
+from recipes.models import Recipe, RecipeIngredient
 from schools.models import School
 
 
@@ -51,10 +58,13 @@ class Command(BaseCommand):
 
             self._ensure_central_stock(users["admin"], supplies)
             self._ensure_school_stock(users["admin"], schools, supplies)
+            recipes = self._ensure_recipes(supplies)
             self._ensure_menus(users["admin"], schools)
+            self._attach_recipes_to_menus(recipes)
             self._ensure_meal_service_reports(schools)
             deliveries = self._ensure_deliveries(users["admin"], schools, supplies, responsibles)
-            self._ensure_suppliers_and_receipts(users["admin"], schools, supplies)
+            suppliers = self._ensure_suppliers_and_receipts(users["admin"], schools, supplies)
+            self._ensure_lot_tracking_data(schools, supplies, suppliers, deliveries)
             self._ensure_notifications(schools, deliveries)
             self._ensure_audit_logs(users)
 
@@ -407,6 +417,88 @@ class Command(BaseCommand):
         MenuItem.objects.bulk_create(items)
         return menu
 
+    def _ensure_recipes(self, supplies):
+        recipes_spec = [
+            {
+                "name": "Arroz com Frango e Legumes",
+                "category": "Almoço",
+                "servings_base": 100,
+                "instructions": "1. Higienizar insumos.\n2. Refogar frango.\n3. Cozinhar arroz.\n4. Finalizar com cenoura.",
+                "ingredients": [
+                    ("Arroz Agulhinha", "10", Supply.Units.KG),
+                    ("Frango Congelado", "5", Supply.Units.KG),
+                    ("Cenoura", "2", Supply.Units.KG),
+                    ("Oleo de Soja", "0.6", Supply.Units.L),
+                ],
+            },
+            {
+                "name": "Leite com Biscoito",
+                "category": "Lanche",
+                "servings_base": 100,
+                "instructions": "1. Aquecer leite.\n2. Porcionar biscoito.\n3. Servir.",
+                "ingredients": [
+                    ("Leite Integral", "8", Supply.Units.L),
+                    ("Biscoito Integral", "3", Supply.Units.KG),
+                ],
+            },
+            {
+                "name": "Suco de Caju com Banana",
+                "category": "Lanche",
+                "servings_base": 100,
+                "instructions": "1. Preparar suco.\n2. Higienizar e porcionar banana.",
+                "ingredients": [
+                    ("Suco de Caju", "10", Supply.Units.L),
+                    ("Banana Prata", "8", Supply.Units.KG),
+                ],
+            },
+        ]
+        result = {}
+        for spec in recipes_spec:
+            recipe, _ = Recipe.objects.get_or_create(
+                name=spec["name"],
+                defaults={
+                    "category": spec["category"],
+                    "servings_base": spec["servings_base"],
+                    "instructions": spec["instructions"],
+                    "active": True,
+                    "tags": {"demo_marker": DEMO_MARKER, "steps_enabled": True},
+                },
+            )
+            recipe.category = spec["category"]
+            recipe.servings_base = spec["servings_base"]
+            recipe.instructions = spec["instructions"]
+            recipe.active = True
+            tags = dict(recipe.tags or {})
+            tags.update({"demo_marker": DEMO_MARKER, "steps_enabled": True})
+            recipe.tags = tags
+            recipe.save()
+
+            RecipeIngredient.objects.filter(recipe=recipe).delete()
+            RecipeIngredient.objects.bulk_create([
+                RecipeIngredient(
+                    recipe=recipe,
+                    supply=supplies[supply_name],
+                    qty_base=Decimal(qty),
+                    unit=unit,
+                )
+                for supply_name, qty, unit in spec["ingredients"]
+            ])
+            result[spec["name"]] = recipe
+        return result
+
+    def _attach_recipes_to_menus(self, recipes):
+        recipe_by_meal = {
+            "Almoco": recipes.get("Arroz com Frango e Legumes"),
+            "Desjejum": recipes.get("Leite com Biscoito"),
+            "Lanche da tarde": recipes.get("Suco de Caju com Banana"),
+        }
+        for item in MenuItem.objects.select_related("menu").filter(menu__notes__icontains=DEMO_MARKER):
+            recipe = recipe_by_meal.get(item.meal_name or "")
+            if recipe:
+                item.recipe = recipe
+                item.calc_mode = MenuItem.CalcMode.RECIPE
+                item.save(update_fields=["recipe", "calc_mode"])
+
     def _ensure_meal_service_reports(self, schools):
         today = date.today()
         target_schools = [
@@ -737,6 +829,101 @@ class Command(BaseCommand):
                     )
                 )
             SupplierReceiptItem.objects.bulk_create(created_items)
+        return suppliers
+
+    def _ensure_lot_tracking_data(self, schools, supplies, suppliers, deliveries):
+        today = date.today()
+        lot_specs = [
+            # Central lots used by delivery FEFO suggestions
+            ("Arroz Agulhinha", "ARZ-2401", today - timedelta(days=40), today + timedelta(days=120), "120", None, "HortiVida Fornecimentos"),
+            ("Arroz Agulhinha", "ARZ-2402", today - timedelta(days=15), today + timedelta(days=210), "160", None, "Distribuidora Nordeste Escolar"),
+            ("Frango Congelado", "FRG-110", today - timedelta(days=25), today + timedelta(days=60), "80", None, "Cooperativa Alimentos do Agreste"),
+            ("Frango Congelado", "FRG-111", today - timedelta(days=10), today + timedelta(days=120), "90", None, "Cooperativa Alimentos do Agreste"),
+            ("Banana Prata", "BAN-LOT1", today - timedelta(days=3), today + timedelta(days=6), "25", None, "HortiVida Fornecimentos"),
+            ("Banana Prata", "BAN-LOT2", today - timedelta(days=1), today + timedelta(days=10), "40", None, "HortiVida Fornecimentos"),
+            ("Suco de Caju", "SCJ-01", today - timedelta(days=30), today + timedelta(days=150), "40", None, "Distribuidora Nordeste Escolar"),
+            ("Leite Integral", "LEI-01", today - timedelta(days=5), today + timedelta(days=20), "35", None, "Distribuidora Nordeste Escolar"),
+            ("Leite Integral", "LEI-02", today - timedelta(days=2), today + timedelta(days=45), "55", None, "Distribuidora Nordeste Escolar"),
+            # School lots for stock details/consumption FEFO
+            ("Feijao Carioca", "FEJ-JC-01", today - timedelta(days=20), today + timedelta(days=90), "0", "Escola Municipal Joao Cordeiro", "Cooperativa Alimentos do Agreste"),
+            ("Feijao Carioca", "FEJ-JC-02", today - timedelta(days=8), today + timedelta(days=130), "0", "Escola Municipal Joao Cordeiro", "Cooperativa Alimentos do Agreste"),
+        ]
+
+        for supply_name, lot_code, mfg, exp, central_qty, school_name, supplier_name in lot_specs:
+            lot = get_or_create_supply_lot(
+                supply=supplies[supply_name],
+                lot_code=lot_code,
+                expiry_date=exp,
+                manufacture_date=mfg,
+                supplier=suppliers.get(supplier_name),
+                invoice_ref=f"{DEMO_MARKER}-{lot_code}",
+            )
+            if central_qty and Decimal(central_qty) > 0:
+                balance = LotBalanceCentral.objects.filter(lot=lot).first()
+                if not balance or balance.quantity != Decimal(central_qty):
+                    LotBalanceCentral.objects.update_or_create(lot=lot, defaults={"quantity": Decimal(central_qty)})
+            if school_name:
+                school = schools[school_name]
+                # Split school stock lots from aggregate school quantity (demo only)
+                qty = Decimal("10") if lot_code.endswith("01") else Decimal("9")
+                LotBalanceSchool.objects.update_or_create(school=school, lot=lot, defaults={"quantity": qty})
+
+        # Link lot lines to conferred supplier receipts (demo traceability)
+        for receipt in SupplierReceipt.objects.filter(status=SupplierReceipt.Status.CONFERRED, notes__icontains=DEMO_MARKER).prefetch_related("items"):
+            for item in receipt.items.all():
+                supply = item.supply or item.supply_created
+                if not supply or item.received_quantity is None or item.received_quantity <= 0:
+                    continue
+                if SupplierReceiptItemLot.objects.filter(receipt_item=item).exists():
+                    continue
+                first_qty = (item.received_quantity / 2).quantize(Decimal("0.01"))
+                second_qty = item.received_quantity - first_qty
+                specs = [
+                    (f"RCV-{str(item.id)[:4]}A", first_qty, today + timedelta(days=45)),
+                    (f"RCV-{str(item.id)[:4]}B", second_qty, today + timedelta(days=90)),
+                ]
+                for code, qty, expiry in specs:
+                    SupplierReceiptItemLot.objects.create(
+                        receipt_item=item,
+                        supply=supply,
+                        lot_code=code,
+                        expiry_date=expiry,
+                        manufacture_date=today - timedelta(days=5),
+                        received_quantity=qty,
+                        divergence_note="",
+                    )
+                    lot = get_or_create_supply_lot(
+                        supply=supply,
+                        lot_code=code,
+                        expiry_date=expiry,
+                        manufacture_date=today - timedelta(days=5),
+                        supplier=receipt.supplier,
+                        invoice_ref=f"{DEMO_MARKER}-RCV",
+                    )
+                    if receipt.school_id:
+                        credit_lot_school(school=receipt.school, lot=lot, quantity=qty)
+                    else:
+                        credit_lot_central(lot, qty)
+
+        # Ensure lot plan exists for draft/sent deliveries to demonstrate FEFO on UI.
+        for delivery in Delivery.objects.filter(notes__icontains=DEMO_MARKER).prefetch_related("items__supply"):
+            if delivery.status == Delivery.Status.DRAFT:
+                DeliveryItemLot.objects.filter(delivery_item__delivery=delivery).delete()
+                for item in delivery.items.all():
+                    try:
+                        regenerate_delivery_item_lot_plan_fefo(item)
+                    except Exception:
+                        # Demo data should not fail the whole seed when one item lacks lot stock.
+                        continue
+            elif delivery.status in [Delivery.Status.SENT, Delivery.Status.CONFERRED]:
+                # Keep or regenerate planned lots for visibility in details.
+                for item in delivery.items.all():
+                    if item.lots.exists():
+                        continue
+                    try:
+                        regenerate_delivery_item_lot_plan_fefo(item)
+                    except Exception:
+                        continue
 
     def _ensure_notifications(self, schools, deliveries):
         notifications = [
