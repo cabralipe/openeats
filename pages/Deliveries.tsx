@@ -30,6 +30,7 @@ const Deliveries: React.FC = () => {
   const [items, setItems] = useState<DraftItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [lotSuggestionLoadingByItem, setLotSuggestionLoadingByItem] = useState<Record<string, boolean>>({});
+  const [suggestingAllLots, setSuggestingAllLots] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -317,6 +318,30 @@ const Deliveries: React.FC = () => {
       setError(err?.message || 'Não foi possível gerar sugestão FEFO.');
     } finally {
       setLotSuggestionLoadingByItem((prev) => ({ ...prev, [itemId]: false }));
+    }
+  };
+
+  const handleSuggestLotsForAllItems = async (delivery: any) => {
+    const draftItems = (delivery?.items || []).filter((item: any) => Number(item.planned_quantity || 0) > 0);
+    if (!draftItems.length) return;
+    setError('');
+    setSuccess('');
+    setSuggestingAllLots(true);
+    try {
+      for (const item of draftItems) {
+        setLotSuggestionLoadingByItem((prev) => ({ ...prev, [item.id]: true }));
+        try {
+          await suggestDeliveryItemLots(delivery.id, item.id);
+        } finally {
+          setLotSuggestionLoadingByItem((prev) => ({ ...prev, [item.id]: false }));
+        }
+      }
+      await loadData();
+      setSuccess('Sugestão FEFO atualizada para todos os itens da entrega.');
+    } catch (err: any) {
+      setError(err?.message || 'Não foi possível gerar as sugestões FEFO.');
+    } finally {
+      setSuggestingAllLots(false);
     }
   };
 
@@ -906,6 +931,7 @@ const Deliveries: React.FC = () => {
                   {lot.lot_code ? `Lote ${lot.lot_code}` : `Lote ${String(lot.lot || '').slice(0, 8)}`}
                 </span>
                 {lot.expiry_date && <span className="text-slate-400">Val. {lot.expiry_date}</span>}
+                {lot.supplier_name && <span className="text-slate-500">Fornecedor: {lot.supplier_name}</span>}
                 {lot.lot_status && (
                   <span className={`px-1.5 py-0.5 rounded font-bold uppercase ${getLotStatusChip(lot.lot_status)}`}>
                     {getLotStatusLabel(lot.lot_status)}
@@ -1211,12 +1237,23 @@ const Deliveries: React.FC = () => {
           )}
 
           <div className="mb-8">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-lg text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                Itens da Entrega
-                <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded text-[10px] font-bold">{itemCount} ITENS</span>
-              </h3>
-            </div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-lg text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                  Itens da Entrega
+                  <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded text-[10px] font-bold">{itemCount} ITENS</span>
+                </h3>
+                {isDraft && (
+                  <button
+                    type="button"
+                    onClick={() => handleSuggestLotsForAllItems(delivery)}
+                    disabled={suggestingAllLots}
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border border-primary-200 dark:border-primary-900/50 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 disabled:opacity-50"
+                  >
+                    <span className="material-symbols-outlined text-sm">auto_fix_high</span>
+                    {suggestingAllLots ? 'Sugerindo FEFO...' : 'Sugerir lotes FEFO (todos)'}
+                  </button>
+                )}
+              </div>
             <div className="overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm">
               <table className="w-full text-left border-collapse">
                 <thead>

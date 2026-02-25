@@ -332,14 +332,15 @@ class DeliveryItemLotSerializer(serializers.ModelSerializer):
     lot_code = serializers.CharField(source='lot.lot_code', read_only=True)
     expiry_date = serializers.DateField(source='lot.expiry_date', read_only=True)
     lot_status = serializers.CharField(source='lot.status', read_only=True)
+    supplier_name = serializers.CharField(source='lot.supplier.name', read_only=True, allow_null=True)
 
     class Meta:
         model = DeliveryItemLot
         fields = [
-            'id', 'delivery_item', 'lot', 'lot_code', 'expiry_date', 'lot_status',
+            'id', 'delivery_item', 'lot', 'lot_code', 'expiry_date', 'lot_status', 'supplier_name',
             'planned_quantity', 'received_quantity', 'divergence_note',
         ]
-        read_only_fields = ['id', 'delivery_item', 'lot_code', 'expiry_date', 'lot_status']
+        read_only_fields = ['id', 'delivery_item', 'lot_code', 'expiry_date', 'lot_status', 'supplier_name']
 
 
 class DeliveryItemLotInputSerializer(serializers.Serializer):
@@ -476,10 +477,11 @@ class PublicDeliveryItemSerializer(serializers.ModelSerializer):
 class PublicDeliveryItemLotSerializer(serializers.ModelSerializer):
     lot_code = serializers.CharField(source='lot.lot_code', read_only=True)
     expiry_date = serializers.DateField(source='lot.expiry_date', read_only=True)
+    supplier_name = serializers.CharField(source='lot.supplier.name', read_only=True, allow_null=True)
 
     class Meta:
         model = DeliveryItemLot
-        fields = ['id', 'lot', 'lot_code', 'expiry_date', 'planned_quantity', 'received_quantity', 'divergence_note']
+        fields = ['id', 'lot', 'lot_code', 'expiry_date', 'supplier_name', 'planned_quantity', 'received_quantity', 'divergence_note']
 
 
 class PublicDeliverySerializer(serializers.ModelSerializer):
