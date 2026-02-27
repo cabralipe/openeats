@@ -811,6 +811,7 @@ export async function getNutritionists(params?: {
 export async function createNutritionist(payload: {
   name?: string;
   crn?: string;
+  function_role?: string;
   email?: string;
   password?: string;
 }) {
@@ -824,6 +825,7 @@ export async function updateNutritionist(id: string, payload: Partial<{
   name: string;
   email: string;
   crn: string;
+  function_role: string;
   password: string;
   is_active: boolean;
 }>) {

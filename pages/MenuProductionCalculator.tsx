@@ -33,6 +33,21 @@ const mealTypeIcons: Record<string, string> = {
   DINNER_COFFEE: 'coffee',
 };
 
+const menuStatusLabels: Record<string, string> = {
+  DRAFT: 'Rascunho',
+  PUBLISHED: 'Publicado',
+};
+
+const sourceLabels: Record<string, string> = {
+  RECIPE: 'Receita',
+  RULE: 'Regra',
+};
+
+const calcModeLabels: Record<string, string> = {
+  RECIPE: 'Receita',
+  FREE_TEXT: 'Texto livre',
+};
+
 function parseDateSafe(value?: string) {
   if (!value) return null;
   const d = new Date(`${value}T00:00:00`);
@@ -316,7 +331,7 @@ const MenuProductionCalculator: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Semana de Referência (week_start)</label>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Semana de referência (início)</label>
                   <input
                     type="date"
                     value={weekStart}
@@ -333,12 +348,12 @@ const MenuProductionCalculator: React.FC = () => {
                     className="block w-full rounded-xl border-slate-200 dark:border-slate-700 dark:bg-slate-800 py-3 px-4"
                   >
                     <option value="">Selecione</option>
-                    {menus.map((m) => <option key={m.id} value={m.id}>{m.name || m.school_name} • {m.week_start} • {m.status}</option>)}
+                    {menus.map((m) => <option key={m.id} value={m.id}>{m.name || m.school_name} • {m.week_start} • {menuStatusLabels[m.status] || m.status}</option>)}
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Alunos DEFAULT (Total)</label>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Alunos padrão (total)</label>
                   <div className="relative">
                     <input
                       value={studentsDefault}
@@ -395,6 +410,7 @@ const MenuProductionCalculator: React.FC = () => {
                 {mealTypes.map((meal) => {
                   const customValue = studentsByMeal[meal] || '';
                   const usingDefault = customValue === '';
+                  const defaultStudentsLabel = studentsDefault !== '' ? `${studentsDefault} alunos` : '0 alunos';
                   return (
                     <div
                       key={meal}
@@ -411,15 +427,15 @@ const MenuProductionCalculator: React.FC = () => {
                             </span>
                           </div>
                           <div>
-                            <h5 className="font-bold text-sm">{meal}</h5>
-                            <p className="text-[10px] text-slate-500 font-bold uppercase">{mealTypeLabels[meal] || meal}</p>
+                            <h5 className="font-bold text-sm">{mealTypeLabels[meal] || meal}</h5>
+                            <p className="text-[10px] text-slate-500 font-bold uppercase">Refeição</p>
                           </div>
                         </div>
                         <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${usingDefault
                           ? 'bg-primary/10 text-primary'
                           : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-200'
                           }`}>
-                          {usingDefault ? 'usa DEFAULT' : 'custom'}
+                          {usingDefault ? `usa ${defaultStudentsLabel}` : 'personalizado'}
                         </span>
                       </div>
 
@@ -428,7 +444,7 @@ const MenuProductionCalculator: React.FC = () => {
                         <input
                           value={customValue}
                           onChange={(e) => setStudentsByMeal((prev) => ({ ...prev, [meal]: e.target.value }))}
-                          placeholder="usa DEFAULT"
+                          placeholder={`usa ${defaultStudentsLabel}`}
                           className="w-full text-sm border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-800/50 rounded-lg h-10 px-3"
                         />
                       </div>
@@ -579,7 +595,7 @@ const MenuProductionCalculator: React.FC = () => {
                                   ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400'
                                   : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
                                 }`}>
-                                {row.source}
+                                {sourceLabels[row.source] || row.source}
                               </span>
                             </td>
                             <td className="px-6 py-4 text-right font-medium">{formatQty(row.qty_needed, row.unit)}</td>
@@ -618,7 +634,7 @@ const MenuProductionCalculator: React.FC = () => {
                             {meal.meal_name ? ` • ${meal.meal_name}` : ''}
                           </p>
                           <p className="text-xs text-slate-500">
-                            Modo: {meal.mode}
+                            Modo: {calcModeLabels[meal.mode] || meal.mode}
                             {getMealRecipeId(meal) ? ` • Receita ${String(getMealRecipeId(meal)).slice(0, 8)}` : ' • Sem receita'}
                           </p>
                         </div>
@@ -773,7 +789,7 @@ const MenuProductionCalculator: React.FC = () => {
                 <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800">
                   <h3 className="font-bold mb-3 flex items-center gap-2">
                     <span className="material-symbols-outlined text-amber-500">warning</span>
-                    Warnings
+                    Avisos
                   </h3>
                   <ul className="text-sm text-slate-600 dark:text-slate-300 list-disc pl-5 space-y-2 max-h-56 overflow-y-auto">
                     {result.warnings.map((w: string) => <li key={w}>{w}</li>)}

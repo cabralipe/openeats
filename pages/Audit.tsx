@@ -34,6 +34,7 @@ type Nutritionist = {
   id: string;
   name: string;
   email: string;
+  function_role?: string;
   role: string;
   is_active: boolean;
   date_joined: string;
@@ -81,6 +82,7 @@ const Audit: React.FC = () => {
   const [nutForm, setNutForm] = useState({
     name: '',
     email: '',
+    function_role: '',
     password: '',
     is_active: true,
   });
@@ -144,7 +146,7 @@ const Audit: React.FC = () => {
 
   const openCreateNutritionist = () => {
     setEditingNutritionist(null);
-    setNutForm({ name: '', email: '', password: '', is_active: true });
+    setNutForm({ name: '', email: '', function_role: '', password: '', is_active: true });
     setShowNutModal(true);
   };
 
@@ -153,6 +155,7 @@ const Audit: React.FC = () => {
     setNutForm({
       name: nutritionist.name || '',
       email: nutritionist.email || '',
+      function_role: nutritionist.function_role || '',
       password: '',
       is_active: nutritionist.is_active,
     });
@@ -166,9 +169,10 @@ const Audit: React.FC = () => {
     setSuccess('');
     try {
       if (editingNutritionist) {
-        const payload: { name?: string; email?: string; password?: string; is_active?: boolean } = {
+        const payload: { name?: string; email?: string; function_role?: string; password?: string; is_active?: boolean } = {
           name: nutForm.name.trim(),
           email: nutForm.email.trim().toLowerCase(),
+          function_role: nutForm.function_role.trim(),
           is_active: nutForm.is_active,
         };
         if (nutForm.password.trim()) payload.password = nutForm.password;
@@ -180,6 +184,7 @@ const Audit: React.FC = () => {
         }
         await createNutritionist({
           name: nutForm.name.trim() || 'Nutricionista',
+          function_role: nutForm.function_role.trim(),
           email: nutForm.email.trim().toLowerCase(),
           password: nutForm.password,
         });
@@ -535,6 +540,9 @@ const Audit: React.FC = () => {
                           </span>
                         </div>
                         <p className="text-sm text-slate-500 break-all">{nutritionist.email}</p>
+                        {nutritionist.function_role && (
+                          <p className="text-xs text-slate-500 mt-1">Função: {nutritionist.function_role}</p>
+                        )}
                         <p className="text-xs text-slate-400 mt-1">
                           Cadastro: {new Date(nutritionist.date_joined).toLocaleString('pt-BR')}
                         </p>
@@ -605,6 +613,16 @@ const Audit: React.FC = () => {
                   value={nutForm.email}
                   onChange={(e) => setNutForm((prev) => ({ ...prev, email: e.target.value }))}
                   placeholder="maria@semed.gov.br"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Função</label>
+                <input
+                  className="input"
+                  value={nutForm.function_role}
+                  onChange={(e) => setNutForm((prev) => ({ ...prev, function_role: e.target.value }))}
+                  placeholder="Ex.: Responsável técnica, Supervisora de cardápio..."
                 />
               </div>
 

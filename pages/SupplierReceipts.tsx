@@ -92,6 +92,7 @@ const dateBRToISO = (value?: string) => {
 
 const statusLabel = (status?: string) => {
   if (status === 'DRAFT') return 'Rascunho';
+  if (status === 'EXPECTED') return 'Aguardando entrega';
   if (status === 'IN_CONFERENCE') return 'Em conferência';
   if (status === 'CONFERRED') return 'Conferido';
   if (status === 'CANCELLED') return 'Cancelado';
@@ -100,6 +101,7 @@ const statusLabel = (status?: string) => {
 
 const statusChip = (status?: string) => {
   if (status === 'CONFERRED') return 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800';
+  if (status === 'EXPECTED') return 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800';
   if (status === 'IN_CONFERENCE') return 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800';
   if (status === 'CANCELLED') return 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800';
   return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800';
@@ -224,6 +226,19 @@ const SupplierReceipts: React.FC = () => {
     [draftItems],
   );
 
+  const normalizeSupplyName = (value: string) =>
+    String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .toLowerCase();
+
+  const findExistingSupplyByName = (rawName: string) => {
+    const normalized = normalizeSupplyName(rawName);
+    if (!normalized) return null;
+    return supplies.find((supply) => normalizeSupplyName(supply.name) === normalized) || null;
+  };
+
   const filteredReceipts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return receipts;
@@ -272,10 +287,12 @@ const SupplierReceipts: React.FC = () => {
         expected_date: expectedDate,
         notes,
         items: validItems.map((item) => ({
-          supply: item.supply || null,
-          raw_name: item.supply ? undefined : item.raw_name.trim(),
-          category: item.supply ? undefined : (item.category || 'Outros'),
-          unit: item.unit,
+          supply: (item.supply || findExistingSupplyByName(item.raw_name)?.id) || null,
+          raw_name: (item.supply || findExistingSupplyByName(item.raw_name)?.id) ? undefined : item.raw_name.trim(),
+          category: (item.supply || findExistingSupplyByName(item.raw_name)?.id) ? undefined : (item.category || 'Outros'),
+          unit: item.supply
+            ? (supplies.find((s) => s.id === item.supply)?.unit || item.unit)
+            : (findExistingSupplyByName(item.raw_name)?.unit || item.unit),
           expected_quantity: decimalInputToNumber(item.expected_quantity),
         })),
       });
@@ -677,7 +694,20 @@ const SupplierReceipts: React.FC = () => {
                       </select>
                       {!item.supply && (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <input className="input rounded-lg bg-white dark:bg-slate-900 text-sm" placeholder="Nome do item" value={item.raw_name} onChange={(e) => updateDraftItem(index, { raw_name: e.target.value })} />
+                          <input
+                            className="input rounded-lg bg-white dark:bg-slate-900 text-sm"
+                            placeholder="Nome do item"
+                            value={item.raw_name}
+                            onChange={(e) => {
+                              const rawName = e.target.value;
+                              const matched = findExistingSupplyByName(rawName);
+                              updateDraftItem(index, {
+                                raw_name: rawName,
+                                unit: matched?.unit || item.unit,
+                                category: matched?.category || item.category,
+                              });
+                            }}
+                          />
                           <input className="input rounded-lg bg-white dark:bg-slate-900 text-sm" placeholder="Categoria" value={item.category} onChange={(e) => updateDraftItem(index, { category: e.target.value })} />
                         </div>
                       )}

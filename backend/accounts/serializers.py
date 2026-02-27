@@ -10,7 +10,7 @@ User = get_user_model()
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'name', 'email', 'crn', 'role', 'is_active', 'date_joined']
+        fields = ['id', 'name', 'email', 'crn', 'function_role', 'role', 'is_active', 'date_joined']
 
 
 class MeUpdateSerializer(serializers.ModelSerializer):
@@ -25,16 +25,18 @@ class NutritionistCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'name', 'email', 'crn', 'password', 'role', 'is_active', 'date_joined']
+        fields = ['id', 'name', 'email', 'crn', 'function_role', 'password', 'role', 'is_active', 'date_joined']
         read_only_fields = ['id', 'role', 'is_active', 'date_joined']
         extra_kwargs = {
             'name': {'required': False, 'allow_blank': True},
             'crn': {'required': False, 'allow_blank': True},
+            'function_role': {'required': False, 'allow_blank': True},
         }
 
     def create(self, validated_data):
         name = (validated_data.get('name') or '').strip() or 'Nutricionista'
         crn = (validated_data.get('crn') or '').strip()
+        function_role = (validated_data.get('function_role') or '').strip()
         provided_email = (validated_data.get('email') or '').strip().lower()
         base_slug = slugify(name) or 'nutricionista'
         email = provided_email or f'{base_slug}@nutri.local'
@@ -45,6 +47,7 @@ class NutritionistCreateSerializer(serializers.ModelSerializer):
             name=name,
             email=email,
             crn=crn,
+            function_role=function_role,
             role=User.Roles.NUTRITIONIST,
             is_active=True,
             is_staff=False,
@@ -60,9 +63,10 @@ class NutritionistUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['name', 'email', 'crn', 'password', 'is_active']
+        fields = ['name', 'email', 'crn', 'function_role', 'password', 'is_active']
         extra_kwargs = {
             'crn': {'required': False, 'allow_blank': True},
+            'function_role': {'required': False, 'allow_blank': True},
         }
 
     def validate_email(self, value):

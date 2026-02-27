@@ -144,6 +144,16 @@ class SupplierReceiptItemSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Informe um insumo existente ou o nome do item recebido.')
         if not supply and not (attrs.get('category') or '').strip():
             raise serializers.ValidationError('Categoria obrigatoria para item novo sem insumo cadastrado.')
+
+        # Keep units consistent with existing catalog item whenever possible.
+        if supply:
+            attrs['unit'] = supply.unit
+            return attrs
+
+        matched_supply = Supply.objects.filter(name__iexact=raw_name).first() if raw_name else None
+        if matched_supply:
+            attrs['supply'] = matched_supply
+            attrs['unit'] = matched_supply.unit
         return attrs
 
 

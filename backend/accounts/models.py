@@ -12,6 +12,7 @@ class User(AbstractUser):
     name = models.CharField(max_length=255)
     email = models.EmailField(unique=True)
     crn = models.CharField(max_length=64, blank=True, default='')
+    function_role = models.CharField(max_length=160, blank=True, default='')
     role = models.CharField(max_length=32, choices=Roles.choices, default=Roles.SEMED_ADMIN)
 
     username = None

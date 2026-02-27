@@ -117,10 +117,11 @@ const MenuEditor: React.FC = () => {
 
   // Nutritionist authorship modal state
   const [showPublishModal, setShowPublishModal] = useState(false);
-  const [savedNutritionists, setSavedNutritionists] = useState<Array<{ id: string; name: string; crn: string }>>([]);
+  const [savedNutritionists, setSavedNutritionists] = useState<Array<{ id: string; name: string; crn: string; function_role?: string }>>([]);
   const [selectedNutritionist, setSelectedNutritionist] = useState<string | 'new'>('new');
   const [newNutName, setNewNutName] = useState('');
   const [newNutCrn, setNewNutCrn] = useState('');
+  const [newNutFunction, setNewNutFunction] = useState('');
 
   const deepLinkParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
 
@@ -450,6 +451,7 @@ const MenuEditor: React.FC = () => {
           id: String(item.id),
           name: String(item.name || '').trim() || 'Nutricionista',
           crn: String(item.crn || '').trim(),
+          function_role: String(item.function_role || '').trim(),
         }));
         setSavedNutritionists(mapped);
       })
@@ -457,6 +459,7 @@ const MenuEditor: React.FC = () => {
     setSelectedNutritionist('new');
     setNewNutName('');
     setNewNutCrn('');
+    setNewNutFunction('');
     setShowPublishModal(true);
   };
 
@@ -475,6 +478,7 @@ const MenuEditor: React.FC = () => {
         await createNutritionist({
           name: authorName,
           crn: authorCrn,
+          function_role: newNutFunction.trim(),
         });
       } catch {
         // Publishing should still proceed with explicit authorship text.
@@ -1016,6 +1020,7 @@ const MenuEditor: React.FC = () => {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{nut.name}</p>
                           {nut.crn && <p className="text-xs text-slate-500">CRN: {nut.crn}</p>}
+                          {nut.function_role && <p className="text-xs text-slate-500">Função: {nut.function_role}</p>}
                         </div>
                         <button
                           onClick={async (e) => {
@@ -1079,6 +1084,15 @@ const MenuEditor: React.FC = () => {
                         onChange={(e) => setNewNutCrn(e.target.value)}
                         className="w-full h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-sm"
                         placeholder="Ex: CRN-2 12345"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">Função</label>
+                      <input
+                        value={newNutFunction}
+                        onChange={(e) => setNewNutFunction(e.target.value)}
+                        className="w-full h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-sm"
+                        placeholder="Ex: Responsável técnica"
                       />
                     </div>
                   </div>
