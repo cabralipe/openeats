@@ -37,7 +37,7 @@ const Reports: React.FC = () => {
       const [dashboardRes, schoolsRes, suppliesRes] = await Promise.allSettled([
         getDashboard(),
         getSchools(),
-        getSupplies(),
+        getSupplies({ is_active: true }),
       ]);
 
       if (cancelled) return;

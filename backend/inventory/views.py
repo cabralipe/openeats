@@ -204,7 +204,7 @@ class StockViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class StockMovementViewSet(viewsets.ModelViewSet):
-    queryset = StockMovement.objects.select_related('supply').all().order_by('-created_at')
+    queryset = StockMovement.objects.select_related('supply').filter(supply__is_active=True).order_by('-created_at')
     serializer_class = StockMovementSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -454,7 +454,7 @@ class StockExportCsvView(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def list(self, request):
-        queryset = StockBalance.objects.select_related('supply').all().order_by('supply__name')
+        queryset = StockBalance.objects.select_related('supply').filter(supply__is_active=True).order_by('supply__name')
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename=\"stock.csv\"'
         writer = csv.writer(response)
@@ -484,7 +484,7 @@ class StockExportPdfView(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def list(self, request):
-        queryset = StockBalance.objects.select_related('supply').all().order_by('supply__category', 'supply__name')
+        queryset = StockBalance.objects.select_related('supply').filter(supply__is_active=True).order_by('supply__category', 'supply__name')
 
         items = []
         for balance in queryset:
@@ -613,7 +613,7 @@ class StockExportXlsxView(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def list(self, request):
-        queryset = StockBalance.objects.select_related('supply').all().order_by('supply__category', 'supply__name')
+        queryset = StockBalance.objects.select_related('supply').filter(supply__is_active=True).order_by('supply__category', 'supply__name')
 
         workbook = Workbook()
         
@@ -929,7 +929,10 @@ class ConsumptionExportPdfView(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def list(self, request):
-        queryset = StockMovement.objects.select_related('supply', 'school').filter(type=StockMovement.Types.OUT).order_by('-movement_date')
+        queryset = StockMovement.objects.select_related('supply', 'school').filter(
+            type=StockMovement.Types.OUT,
+            supply__is_active=True,
+        ).order_by('-movement_date')
         supply = request.query_params.get('supply')
         school = request.query_params.get('school')
         date_from = request.query_params.get('date_from')
@@ -1035,7 +1038,10 @@ class ConsumptionExportXlsxView(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def list(self, request):
-        queryset = StockMovement.objects.select_related('supply').filter(type=StockMovement.Types.OUT).order_by('-movement_date')
+        queryset = StockMovement.objects.select_related('supply').filter(
+            type=StockMovement.Types.OUT,
+            supply__is_active=True,
+        ).order_by('-movement_date')
         supply = request.query_params.get('supply')
         school = request.query_params.get('school')
         date_from = request.query_params.get('date_from')

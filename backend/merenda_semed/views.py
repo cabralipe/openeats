@@ -37,7 +37,8 @@ class DashboardView(APIView):
         try:
             low_stock_school = SchoolStockBalance.objects.filter(
                 quantity__lt=models.F('min_stock'),
-                min_stock__gt=0
+                min_stock__gt=0,
+                supply__is_active=True,
             ).count()
         except DatabaseError:
             pass
@@ -93,7 +94,8 @@ class DashboardView(APIView):
             recent_low_stock = list(
                 SchoolStockBalance.objects.filter(
                     quantity__lt=models.F('min_stock'),
-                    min_stock__gt=0
+                    min_stock__gt=0,
+                    supply__is_active=True,
                 ).select_related('school', 'supply').order_by('-last_updated')[:5]
             )
         except DatabaseError:
