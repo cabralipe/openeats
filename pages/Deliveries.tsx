@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  createResponsible,
   copyDelivery,
   createDelivery,
+  deleteResponsible,
   deleteDelivery,
   getDeliveries,
   getDeliveryConferenceLink,
   getPublicLink,
+  getResponsibles,
   getSchools,
   getSupplies,
   sendDelivery,
@@ -14,7 +17,6 @@ import {
 } from '../api';
 
 const today = new Date().toISOString().slice(0, 10);
-const RESPONSIBLES_STORAGE_KEY = 'semed_delivery_responsibles';
 
 type DraftItem = { supply: string; planned_quantity: string };
 type Responsible = { id: string; name: string; phone: string };
@@ -64,11 +66,6 @@ const Deliveries: React.FC = () => {
     return `${window.location.origin}/#${normalized}`;
   };
 
-  const persistResponsibles = (next: Responsible[]) => {
-    setResponsibles(next);
-    localStorage.setItem(RESPONSIBLES_STORAGE_KEY, JSON.stringify(next));
-  };
-
   const resetForm = () => {
     setSchoolId(schools[0]?.id || '');
     setDeliveryDate(today);
@@ -83,23 +80,13 @@ const Deliveries: React.FC = () => {
     setEditingDeliveryId(null);
   };
 
-  useEffect(() => {
-    const saved = localStorage.getItem(RESPONSIBLES_STORAGE_KEY);
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) setResponsibles(parsed);
-    } catch {
-      setResponsibles([]);
-    }
-  }, []);
-
   const loadData = async () => {
     setError('');
-    const [schoolsRes, suppliesRes, deliveriesRes] = await Promise.allSettled([
+    const [schoolsRes, suppliesRes, deliveriesRes, responsiblesRes] = await Promise.allSettled([
       getSchools(),
       getSupplies({ is_active: true }),
       getDeliveries(statusFilter ? { status: statusFilter } : undefined),
+      getResponsibles({ is_active: true }),
     ]);
 
     if (schoolsRes.status === 'fulfilled') {
@@ -118,11 +105,15 @@ const Deliveries: React.FC = () => {
         if (updated) setSelectedDelivery(updated);
       }
     }
+    if (responsiblesRes.status === 'fulfilled') {
+      setResponsibles(responsiblesRes.value as Responsible[]);
+    }
 
     const failed: string[] = [];
     if (schoolsRes.status === 'rejected') failed.push('escolas');
     if (suppliesRes.status === 'rejected') failed.push('insumos');
     if (deliveriesRes.status === 'rejected') failed.push('entregas');
+    if (responsiblesRes.status === 'rejected') failed.push('entregadores');
     if (failed.length) {
       setError(`Não foi possível carregar: ${failed.join(', ')}.`);
     }
@@ -177,23 +168,38 @@ const Deliveries: React.FC = () => {
 
   const getSupplyById = (supplyId: string) => supplies.find((s) => s.id === supplyId);
 
-  const handleAddResponsible = () => {
+  const handleAddResponsible = async () => {
     const name = newResponsibleName.trim();
     const phone = newResponsiblePhone.trim();
     if (!name) {
       setError('Informe o nome do responsável.');
       return;
     }
-    const next: Responsible[] = [
-      { id: crypto.randomUUID(), name, phone },
-      ...responsibles.filter((item) => !(item.name === name && item.phone === phone)),
-    ];
-    persistResponsibles(next);
-    setSelectedResponsibleIds((prev) => Array.from(new Set([next[0].id, ...prev])));
-    setNewResponsibleName('');
-    setNewResponsiblePhone('');
     setError('');
-    setSuccess('Responsável cadastrado.');
+    setSuccess('');
+    const existing = responsibles.find(
+      (item) => item.name.trim().toLowerCase() === name.toLowerCase() && (item.phone || '').trim() === phone,
+    );
+    if (existing) {
+      setSelectedResponsibleIds((prev) => Array.from(new Set([existing.id, ...prev])));
+      setNewResponsibleName('');
+      setNewResponsiblePhone('');
+      setSuccess('Entregador já existente, selecionado na lista.');
+      return;
+    }
+    try {
+      const created = await createResponsible({ name, phone, is_active: true });
+      const createdId = String((created as any)?.id || '');
+      await loadData();
+      if (createdId) {
+        setSelectedResponsibleIds((prev) => Array.from(new Set([createdId, ...prev])));
+      }
+      setNewResponsibleName('');
+      setNewResponsiblePhone('');
+      setSuccess('Entregador cadastrado.');
+    } catch (err: any) {
+      setError(err?.message || 'Não foi possível cadastrar entregador.');
+    }
   };
 
   const handleToggleResponsible = (id: string) => {
@@ -202,12 +208,19 @@ const Deliveries: React.FC = () => {
     ));
   };
 
-  const handleDeleteResponsible = (id: string) => {
+  const handleDeleteResponsible = async (id: string) => {
     const confirmed = window.confirm('Excluir este entregador salvo?');
     if (!confirmed) return;
-    const next = responsibles.filter((item) => item.id !== id);
-    persistResponsibles(next);
-    setSelectedResponsibleIds((prev) => prev.filter((current) => current !== id));
+    setError('');
+    setSuccess('');
+    try {
+      await deleteResponsible(id);
+      setSelectedResponsibleIds((prev) => prev.filter((current) => current !== id));
+      await loadData();
+      setSuccess('Entregador excluído.');
+    } catch (err: any) {
+      setError(err?.message || 'Não foi possível excluir entregador.');
+    }
   };
 
   const handleAddItem = () => {

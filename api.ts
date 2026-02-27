@@ -810,8 +810,9 @@ export async function getNutritionists(params?: {
 
 export async function createNutritionist(payload: {
   name?: string;
-  email: string;
-  password: string;
+  crn?: string;
+  email?: string;
+  password?: string;
 }) {
   return apiFetch('/api/users/nutritionists/', {
     method: 'POST',
@@ -822,6 +823,7 @@ export async function createNutritionist(payload: {
 export async function updateNutritionist(id: string, payload: Partial<{
   name: string;
   email: string;
+  crn: string;
   password: string;
   is_active: boolean;
 }>) {

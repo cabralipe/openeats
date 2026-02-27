@@ -2,11 +2,14 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   bulkMenuItems,
+  createNutritionist,
+  deactivateNutritionist,
   copyMenu,
   createMenu,
   exportMenuPdf,
   exportMenusCsv,
   getRecipes,
+  getNutritionists,
   getMenus,
   getPublicLink,
   getSchools,
@@ -113,10 +116,9 @@ const MenuEditor: React.FC = () => {
   const [copyResult, setCopyResult] = useState<{ count: number } | null>(null);
 
   // Nutritionist authorship modal state
-  const NUTRITIONISTS_KEY = 'openeats_nutritionists';
   const [showPublishModal, setShowPublishModal] = useState(false);
-  const [savedNutritionists, setSavedNutritionists] = useState<Array<{ name: string; crn: string }>>([]);
-  const [selectedNutritionist, setSelectedNutritionist] = useState<number | 'new'>('new');
+  const [savedNutritionists, setSavedNutritionists] = useState<Array<{ id: string; name: string; crn: string }>>([]);
+  const [selectedNutritionist, setSelectedNutritionist] = useState<string | 'new'>('new');
   const [newNutName, setNewNutName] = useState('');
   const [newNutCrn, setNewNutCrn] = useState('');
 
@@ -442,13 +444,16 @@ const MenuEditor: React.FC = () => {
       setError('Selecione escola e semana.');
       return;
     }
-    // Load saved nutritionists from localStorage
-    try {
-      const stored = JSON.parse(localStorage.getItem(NUTRITIONISTS_KEY) || '[]');
-      setSavedNutritionists(Array.isArray(stored) ? stored : []);
-    } catch {
-      setSavedNutritionists([]);
-    }
+    getNutritionists({ is_active: true })
+      .then((data: any) => {
+        const mapped = (Array.isArray(data) ? data : []).map((item: any) => ({
+          id: String(item.id),
+          name: String(item.name || '').trim() || 'Nutricionista',
+          crn: String(item.crn || '').trim(),
+        }));
+        setSavedNutritionists(mapped);
+      })
+      .catch(() => setSavedNutritionists([]));
     setSelectedNutritionist('new');
     setNewNutName('');
     setNewNutCrn('');
@@ -466,12 +471,16 @@ const MenuEditor: React.FC = () => {
       }
       authorName = newNutName.trim();
       authorCrn = newNutCrn.trim();
-      // Save to localStorage
-      const updated = [...savedNutritionists, { name: authorName, crn: authorCrn }];
-      localStorage.setItem(NUTRITIONISTS_KEY, JSON.stringify(updated));
-      setSavedNutritionists(updated);
+      try {
+        await createNutritionist({
+          name: authorName,
+          crn: authorCrn,
+        });
+      } catch {
+        // Publishing should still proceed with explicit authorship text.
+      }
     } else {
-      const nut = savedNutritionists[selectedNutritionist];
+      const nut = savedNutritionists.find((item) => item.id === selectedNutritionist);
       if (nut) {
         authorName = nut.name;
         authorCrn = nut.crn;
@@ -989,10 +998,10 @@ const MenuEditor: React.FC = () => {
                 <div>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Nutricionistas salvas</p>
                   <div className="space-y-2">
-                    {savedNutritionists.map((nut, idx) => (
+                    {savedNutritionists.map((nut) => (
                       <label
-                        key={idx}
-                        className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${selectedNutritionist === idx
+                        key={nut.id}
+                        className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${selectedNutritionist === nut.id
                             ? 'border-green-500 bg-green-50 dark:bg-green-900/10'
                             : 'border-slate-200 dark:border-slate-700 hover:border-green-300'
                           }`}
@@ -1000,8 +1009,8 @@ const MenuEditor: React.FC = () => {
                         <input
                           type="radio"
                           name="nutritionist"
-                          checked={selectedNutritionist === idx}
-                          onChange={() => setSelectedNutritionist(idx)}
+                          checked={selectedNutritionist === nut.id}
+                          onChange={() => setSelectedNutritionist(nut.id)}
                           className="w-5 h-5 accent-green-600"
                         />
                         <div className="flex-1 min-w-0">
@@ -1009,13 +1018,17 @@ const MenuEditor: React.FC = () => {
                           {nut.crn && <p className="text-xs text-slate-500">CRN: {nut.crn}</p>}
                         </div>
                         <button
-                          onClick={(e) => {
+                          onClick={async (e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            const updated = savedNutritionists.filter((_, i) => i !== idx);
-                            setSavedNutritionists(updated);
-                            localStorage.setItem(NUTRITIONISTS_KEY, JSON.stringify(updated));
-                            if (selectedNutritionist === idx) setSelectedNutritionist('new');
+                            try {
+                              await deactivateNutritionist(nut.id);
+                              const updated = savedNutritionists.filter((item) => item.id !== nut.id);
+                              setSavedNutritionists(updated);
+                              if (selectedNutritionist === nut.id) setSelectedNutritionist('new');
+                            } catch (err: any) {
+                              setError(getErrorMessage(err, 'Não foi possível remover a nutricionista.'));
+                            }
                           }}
                           className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors"
                           title="Remover"
