@@ -117,7 +117,7 @@ async function apiFetch<T>(path: string, options: RetryableFetchOptions = {}): P
   if (!response.ok) {
     const message = await response.text();
 
-    if (response.status === 401 && !options.skipAuth) {
+    if ((response.status === 401 || response.status === 403) && !options.skipAuth) {
       const refreshedToken = options._retry ? null : await tryRefreshAccessToken();
       if (refreshedToken) {
         return apiFetch<T>(path, { ...options, _retry: true });
