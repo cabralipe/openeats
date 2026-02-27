@@ -1,5 +1,6 @@
 import os
 import importlib.util
+import hashlib
 from pathlib import Path
 
 import environ
@@ -181,6 +182,15 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ),
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+# Avoid weak HMAC key warnings in JWT when SECRET_KEY is short in some environments.
+jwt_signing_key = env('JWT_SIGNING_KEY', default='').strip()
+if not jwt_signing_key:
+    jwt_signing_key = hashlib.sha256(SECRET_KEY.encode('utf-8')).hexdigest()
+
+SIMPLE_JWT = {
+    'SIGNING_KEY': jwt_signing_key,
 }
 
 SPECTACULAR_SETTINGS = {

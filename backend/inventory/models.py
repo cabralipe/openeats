@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
@@ -84,7 +85,7 @@ class StockMovement(models.Model):
     supply = models.ForeignKey(Supply, on_delete=models.CASCADE, related_name='movements')
     school = models.ForeignKey(School, on_delete=models.SET_NULL, related_name='stock_movements', null=True, blank=True)
     type = models.CharField(max_length=3, choices=Types.choices)
-    quantity = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0.01)])
+    quantity = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
     movement_date = models.DateField()
     note = models.TextField(blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
@@ -147,7 +148,7 @@ class DeliveryItem(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     delivery = models.ForeignKey(Delivery, on_delete=models.CASCADE, related_name='items')
     supply = models.ForeignKey(Supply, on_delete=models.PROTECT, related_name='delivery_items')
-    planned_quantity = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0.01)])
+    planned_quantity = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
     received_quantity = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
     divergence_note = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -244,8 +245,8 @@ class SupplierReceiptItem(models.Model):
     raw_name = models.CharField(max_length=255, blank=True)
     category = models.CharField(max_length=100, blank=True)
     unit = models.CharField(max_length=10, choices=Supply.Units.choices)
-    expected_quantity = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
-    received_quantity = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True, validators=[MinValueValidator(0)])
+    expected_quantity = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0'))])
+    received_quantity = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True, validators=[MinValueValidator(Decimal('0'))])
     divergence_note = models.TextField(blank=True)
     supply_created = models.ForeignKey(Supply, on_delete=models.SET_NULL, related_name='created_from_supplier_receipt_items', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -320,7 +321,7 @@ class SupplierReceiptItemLot(models.Model):
     lot_code = models.CharField(max_length=120)
     expiry_date = models.DateField()
     manufacture_date = models.DateField(null=True, blank=True)
-    received_quantity = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
+    received_quantity = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0'))])
     divergence_note = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -335,8 +336,8 @@ class DeliveryItemLot(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     delivery_item = models.ForeignKey(DeliveryItem, on_delete=models.CASCADE, related_name='lots')
     lot = models.ForeignKey(SupplyLot, on_delete=models.PROTECT, related_name='delivery_item_lots')
-    planned_quantity = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
-    received_quantity = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)])
+    planned_quantity = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0'))])
+    received_quantity = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(Decimal('0'))])
     divergence_note = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
