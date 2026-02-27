@@ -19,4 +19,4 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY backend/ /app/
 COPY --from=frontend-builder /frontend/dist /app/frontend_dist
 
-CMD ["/bin/sh", "-c", "python manage.py collectstatic --noinput && python manage.py migrate && python manage.py seed && if [ \"${RENDER_SUPER_POPULATE_DEMO:-}\" = \"true\" ] || [ \"${RENDER_SUPER_POPULATE_DEMO:-}\" = \"1\" ]; then python manage.py super_populate_demo; fi && gunicorn merenda_semed.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 3 --timeout 120"]
+CMD ["/bin/sh", "-c", "python manage.py collectstatic --noinput && python manage.py migrate && gunicorn merenda_semed.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 3 --timeout 120"]

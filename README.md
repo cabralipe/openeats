@@ -56,7 +56,8 @@ Passos:
 4. Aguarde o deploy finalizar. Nao e necessario executar nenhum comando manual no shell.
 
 Observações:
-- O backend executa `collectstatic`, `migrate` e `seed` automaticamente no deploy/start.
-- O `seed` padrao cria apenas o usuario administrador (sem dados de exemplo).
+- O backend executa `collectstatic` e `migrate` automaticamente no deploy/start.
+- O `seed` nao roda automaticamente no deploy.
+- Para criar usuario admin inicial manualmente, rode: `python manage.py seed`
 - Para popular dados de exemplo manualmente, rode: `python manage.py seed --with-sample-data`
 - `SECRET_KEY` é gerada automaticamente no Render.

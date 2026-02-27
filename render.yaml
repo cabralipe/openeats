@@ -33,7 +33,3 @@ services:
         value: "admin@semed.local"
       - key: SEED_ADMIN_PASSWORD
         value: "Admin123!"
-      - key: SEED_SAMPLE_DATA
-        value: "true"
-      - key: RENDER_SUPER_POPULATE_DEMO
-        value: "true"
