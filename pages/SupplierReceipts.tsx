@@ -3,6 +3,7 @@ import {
   createSupplier,
   createSupplierReceipt,
   deleteSupplier,
+  deleteSupplierReceipt,
   getSchools,
   getSupplies,
   getSupplierReceipts,
@@ -337,6 +338,27 @@ const SupplierReceipts: React.FC = () => {
       setSuccess(response?.detail || 'Fornecedor excluído com sucesso.');
     } catch (err: any) {
       setError(err?.message || 'Não foi possível excluir o fornecedor.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteReceipt = async (receipt: any) => {
+    const confirmed = window.confirm(`Excluir o recebimento de ${receipt.supplier_name} em ${formatDate(receipt.expected_date)}?`);
+    if (!confirmed) return;
+
+    setError('');
+    setSuccess('');
+    setSubmitting(true);
+    try {
+      await deleteSupplierReceipt(receipt.id);
+      if (selectedReceipt?.id === receipt.id) {
+        setSelectedReceipt(null);
+      }
+      await loadData();
+      setSuccess('Recebimento excluído com sucesso.');
+    } catch (err: any) {
+      setError(err?.message || 'Não foi possível excluir o recebimento.');
     } finally {
       setSubmitting(false);
     }
@@ -709,7 +731,7 @@ const SupplierReceipts: React.FC = () => {
                   <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Data Prevista</th>
                   <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest text-center">Itens</th>
                   <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Status</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest"></th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -740,7 +762,21 @@ const SupplierReceipts: React.FC = () => {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <span className="material-symbols-outlined text-slate-300 group-hover:text-primary transition-colors">chevron_right</span>
+                        <div className="inline-flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteReceipt(receipt);
+                            }}
+                            disabled={submitting}
+                            className="text-red-500 hover:text-red-600 disabled:opacity-50"
+                            title="Excluir recebimento"
+                          >
+                            <span className="material-symbols-outlined text-[20px]">delete_outline</span>
+                          </button>
+                          <span className="material-symbols-outlined text-slate-300 group-hover:text-primary transition-colors">chevron_right</span>
+                        </div>
                       </td>
                     </tr>
                   ))

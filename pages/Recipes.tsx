@@ -41,6 +41,7 @@ type RecipeForm = {
   instructions: string;
   prepTimeMinutes: string;
   prepSteps: string[];
+  imageUrl: string;
   active: boolean;
   tagsText: string;
   ingredients: RecipeIngredient[];
@@ -69,6 +70,7 @@ const emptyForm = (): RecipeForm => ({
   instructions: '',
   prepTimeMinutes: '',
   prepSteps: [''],
+  imageUrl: '',
   active: true,
   tagsText: '{}',
   ingredients: [emptyIngredient()],
@@ -81,17 +83,25 @@ const parseError = (error: unknown) => {
 
 const tagsObjectToInput = (tags?: Record<string, unknown>) => {
   if (!tags || typeof tags !== 'object') return '';
+  const ignoredKeys = new Set(['prep_time_minutes', 'prep_steps', 'image_url']);
   const labels = (tags as { labels?: unknown }).labels;
   if (Array.isArray(labels)) {
     return labels.map((item) => String(item).trim()).filter(Boolean).join(', ');
   }
   return Object.entries(tags)
+    .filter(([key]) => !ignoredKeys.has(key))
     .flatMap(([key, value]) => {
       if (Array.isArray(value)) return value.map((item) => `${key}:${String(item)}`);
       if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return [`${key}:${String(value)}`];
       return [];
     })
     .join(', ');
+};
+
+const parseImageFromTags = (tags?: Record<string, unknown>) => {
+  const raw = (tags as any)?.image_url;
+  if (!raw) return '';
+  return String(raw);
 };
 
 const parsePrepTimeFromTags = (tags?: Record<string, unknown>) => {
@@ -115,6 +125,7 @@ const normalizeRecipeToForm = (recipe: RecipeRecord): RecipeForm => ({
   instructions: recipe.instructions || '',
   prepTimeMinutes: parsePrepTimeFromTags(recipe.tags),
   prepSteps: parsePrepStepsFromTags(recipe.tags),
+  imageUrl: parseImageFromTags(recipe.tags),
   active: Boolean(recipe.active),
   tagsText: tagsObjectToInput(recipe.tags),
   ingredients: (recipe.ingredients || []).length
@@ -320,6 +331,9 @@ const Recipes: React.FC = () => {
     if (normalizedPrepSteps.length > 0) {
       parsedTags.prep_steps = normalizedPrepSteps;
     }
+    if (form.imageUrl.trim()) {
+      parsedTags.image_url = form.imageUrl.trim();
+    }
 
     const name = form.name.trim();
     if (!name) {
@@ -408,6 +422,17 @@ const Recipes: React.FC = () => {
   const handleDelete = async () => {
     if (!selectedRecipe) return;
     await handleDeleteRecipe(selectedRecipe);
+  };
+
+  const handleRecipeImageFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setForm((prev) => ({ ...prev, imageUrl: String(reader.result || '') }));
+    };
+    reader.readAsDataURL(file);
+    event.target.value = '';
   };
 
   const previewIngredients = useMemo(() => (
@@ -739,6 +764,19 @@ const Recipes: React.FC = () => {
                     <h3 className="font-semibold text-slate-800 dark:text-slate-200">4. Tags</h3>
                   </div>
                   <div className="p-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                      <input
+                        className="input"
+                        value={form.imageUrl}
+                        onChange={(e) => setForm((prev) => ({ ...prev, imageUrl: e.target.value }))}
+                        placeholder="URL da imagem da receita"
+                      />
+                      <label className="input cursor-pointer flex items-center justify-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                        <span className="material-symbols-outlined text-base">upload</span>
+                        Enviar imagem
+                        <input type="file" accept="image/*" onChange={handleRecipeImageFile} className="hidden" />
+                      </label>
+                    </div>
                     <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Palavras-chave</label>
                     <textarea className="input min-h-[90px] font-mono text-xs" value={form.tagsText} onChange={(e) => setForm((prev) => ({ ...prev, tagsText: e.target.value }))} placeholder="Ex: assado, sem leite, integral" />
                     <p className="text-xs text-slate-500 mt-2">Digite palavras separadas por vírgula. O sistema converte automaticamente.</p>
@@ -767,8 +805,13 @@ const Recipes: React.FC = () => {
                   </div>
 
                   <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl overflow-hidden">
-                    <div className="h-36 bg-slate-100 dark:bg-slate-800 relative flex items-center justify-center">
-                      <span className="material-symbols-outlined text-slate-300 text-5xl">restaurant</span>
+                    <div className="h-36 bg-slate-100 dark:bg-slate-800 relative flex items-center justify-center overflow-hidden">
+                      {form.imageUrl ? (
+                        <img src={form.imageUrl} alt={form.name || 'Imagem da receita'} className="absolute inset-0 w-full h-full object-cover" />
+                      ) : (
+                        <span className="material-symbols-outlined text-slate-300 text-5xl">restaurant</span>
+                      )}
+                      {form.imageUrl && <div className="absolute inset-0 bg-black/20" />}
                       <div className="absolute top-4 right-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm px-3 py-1 rounded-full flex items-center gap-1.5 shadow-sm">
                         <span className="material-symbols-outlined text-primary text-sm">timer</span>
                         <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{form.prepTimeMinutes || '--'} min</span>

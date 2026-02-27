@@ -63,6 +63,7 @@ const Inventory: React.FC = () => {
   const [customCategoryInput, setCustomCategoryInput] = useState('');
   const [lotsModal, setLotsModal] = useState<{ item: InventoryItem; lots: any[] } | null>(null);
   const [lotsLoading, setLotsLoading] = useState(false);
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
 
   // Merge preset + dynamic categories (deduplicated)
   const allCategories = useMemo(() => {
@@ -82,7 +83,7 @@ const Inventory: React.FC = () => {
   }, [dynamicCategories]);
 
   const loadStock = (
-    filters?: { q?: string; category?: string; low_stock?: boolean },
+    filters?: { q?: string; category?: string; low_stock?: boolean; is_active?: boolean },
     suppressError = false,
   ) => {
     return getStock(filters)
@@ -112,7 +113,7 @@ const Inventory: React.FC = () => {
       });
   };
 
-  const loadSupplies = (filters?: { q?: string; category?: string }, suppressError = false) => {
+  const loadSupplies = (filters?: { q?: string; category?: string; is_active?: boolean }, suppressError = false) => {
     return getSupplies(filters)
       .then((data) => setSupplies(data))
       .catch(() => {
@@ -132,8 +133,8 @@ const Inventory: React.FC = () => {
       setIsLoading(true);
       setError('');
       const [stockRes, suppliesRes] = await Promise.allSettled([
-        loadStock(undefined, true),
-        loadSupplies(undefined, true),
+        loadStock({ is_active: true }, true),
+        loadSupplies({ is_active: true }, true),
       ]);
       await loadCategories();
       if (cancelled) return;
@@ -155,11 +156,15 @@ const Inventory: React.FC = () => {
     const timeout = setTimeout(() => {
       const category = categoryFilter === 'Todos' ? undefined : categoryFilter;
       const low_stock = stockFilter === 'all' ? undefined : stockFilter === 'low';
-      loadStock({ q: search, category, low_stock });
-      loadSupplies({ q: search, category });
+      loadStock({ q: search, category, low_stock, is_active: true });
+      loadSupplies({ q: search, category, is_active: true });
     }, 300);
     return () => clearTimeout(timeout);
   }, [search, categoryFilter, stockFilter]);
+
+  useEffect(() => {
+    setSelectedItemIds((prev) => prev.filter((id) => items.some((item) => item.id === id)));
+  }, [items]);
 
   const stats = useMemo(() => {
     const total = items.length;
@@ -250,8 +255,8 @@ const Inventory: React.FC = () => {
       }
       const category = categoryFilter === 'Todos' ? undefined : categoryFilter;
       const low_stock = stockFilter === 'all' ? undefined : stockFilter === 'low';
-      await loadSupplies({ q: search, category });
-      await loadStock({ q: search, category, low_stock });
+      await loadSupplies({ q: search, category, is_active: true });
+      await loadStock({ q: search, category, low_stock, is_active: true });
       await loadCategories();
       setShowModal(false);
     } catch {
@@ -272,7 +277,7 @@ const Inventory: React.FC = () => {
       });
       const category = categoryFilter === 'Todos' ? undefined : categoryFilter;
       const low_stock = stockFilter === 'all' ? undefined : stockFilter === 'low';
-      await loadStock({ q: search, category, low_stock });
+      await loadStock({ q: search, category, low_stock, is_active: true });
       setShowModal(false);
     } catch {
       setError('Não foi possível registrar a movimentação.');
@@ -285,11 +290,47 @@ const Inventory: React.FC = () => {
       await deleteSupply(item.id);
       const category = categoryFilter === 'Todos' ? undefined : categoryFilter;
       const low_stock = stockFilter === 'all' ? undefined : stockFilter === 'low';
-      await loadSupplies({ q: search, category });
-      await loadStock({ q: search, category, low_stock });
+      setSelectedItemIds((prev) => prev.filter((id) => id !== item.id));
+      await loadSupplies({ q: search, category, is_active: true });
+      await loadStock({ q: search, category, low_stock, is_active: true });
       await loadCategories();
     } catch {
       setError('Não foi possível excluir o insumo.');
+    }
+  };
+
+  const toggleItemSelection = (itemId: string) => {
+    setSelectedItemIds((prev) => (
+      prev.includes(itemId) ? prev.filter((id) => id !== itemId) : [...prev, itemId]
+    ));
+  };
+
+  const isAllSelected = items.length > 0 && selectedItemIds.length === items.length;
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedItemIds([]);
+      return;
+    }
+    setSelectedItemIds(items.map((item) => item.id));
+  };
+
+  const handleBulkDelete = async () => {
+    if (!selectedItemIds.length) return;
+    const confirmed = window.confirm(`Excluir ${selectedItemIds.length} item(ns) selecionado(s)?`);
+    if (!confirmed) return;
+
+    setError('');
+    const results = await Promise.allSettled(selectedItemIds.map((itemId) => deleteSupply(itemId)));
+    const failed = results.filter((result) => result.status === 'rejected').length;
+    const category = categoryFilter === 'Todos' ? undefined : categoryFilter;
+    const low_stock = stockFilter === 'all' ? undefined : stockFilter === 'low';
+    await loadSupplies({ q: search, category, is_active: true });
+    await loadStock({ q: search, category, low_stock, is_active: true });
+    await loadCategories();
+    setSelectedItemIds([]);
+    if (failed > 0) {
+      setError(`${failed} item(ns) não puderam ser excluídos.`);
     }
   };
 
@@ -434,6 +475,18 @@ const Inventory: React.FC = () => {
             <span className="material-symbols-outlined text-sm">filter_list</span>
             {stockFilter === 'all' ? 'Todos' : stockFilter === 'low' ? 'Crítico' : 'Adequado'}
           </button>
+          <button onClick={toggleSelectAll} className="chip">
+            <span className="material-symbols-outlined text-sm">{isAllSelected ? 'check_box' : 'check_box_outline_blank'}</span>
+            {isAllSelected ? 'Desmarcar Todos' : 'Selecionar Todos'}
+          </button>
+          <button
+            onClick={handleBulkDelete}
+            disabled={selectedItemIds.length === 0}
+            className="chip text-danger-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <span className="material-symbols-outlined text-sm">delete</span>
+            Excluir ({selectedItemIds.length})
+          </button>
         </div>
       </div>
 
@@ -477,6 +530,12 @@ const Inventory: React.FC = () => {
                 }`}
               style={{ animationDelay: `${index * 30}ms` }}
             >
+              <input
+                type="checkbox"
+                checked={selectedItemIds.includes(item.id)}
+                onChange={() => toggleItemSelection(item.id)}
+                className="w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500 shrink-0"
+              />
               {/* Icon */}
               <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${item.status === 'critical'
                 ? 'bg-danger-100 dark:bg-danger-900/30 text-danger-600'

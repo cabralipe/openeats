@@ -47,6 +47,7 @@ function useChartContainerReady(enabled: boolean) {
 }
 
 const Dashboard: React.FC = () => {
+  const RECENT_ACTIVITY_DISMISS_KEY = 'dashboard_recent_activity_dismissed';
   const navigate = useNavigate();
   const [metrics, setMetrics] = useState({
     schools_total: 0,
@@ -80,12 +81,24 @@ const Dashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [chartsReady, setChartsReady] = useState(false);
   const [isClearingConsumption, setIsClearingConsumption] = useState(false);
+  const [dismissedActivities, setDismissedActivities] = useState<string[]>([]);
   const consumptionChartContainer = useChartContainerReady(chartsReady);
   const servedChartContainer = useChartContainerReady(chartsReady);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => setChartsReady(true));
     return () => cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(RECENT_ACTIVITY_DISMISS_KEY);
+      if (!saved) return;
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) setDismissedActivities(parsed.map((item) => String(item)));
+    } catch {
+      setDismissedActivities([]);
+    }
   }, []);
 
   const loadDashboardSeries = async () => {
@@ -110,6 +123,22 @@ const Dashboard: React.FC = () => {
     const timer = window.setTimeout(() => setSuccess(''), 3000);
     return () => window.clearTimeout(timer);
   }, [success]);
+
+  const visibleRecentActivities = useMemo(
+    () => (metrics.recent_activities || []).filter(
+      (activity) => !dismissedActivities.includes(`${activity.title}::${activity.subtitle}`),
+    ),
+    [dismissedActivities, metrics.recent_activities],
+  );
+
+  const handleClearRecentActivities = () => {
+    if (!visibleRecentActivities.length) return;
+    const keys = visibleRecentActivities.map((activity) => `${activity.title}::${activity.subtitle}`);
+    const next = Array.from(new Set([...dismissedActivities, ...keys]));
+    setDismissedActivities(next);
+    localStorage.setItem(RECENT_ACTIVITY_DISMISS_KEY, JSON.stringify(next));
+    setSuccess('Atividade recente limpa nesta visualização.');
+  };
 
   const handleClearConsumption = async () => {
     const confirmed = window.confirm('Limpar apenas consumos órfãos do gráfico mensal (saídas de estoque sem escola, geralmente após excluir escolas)? Esta ação não pode ser desfeita.');
@@ -416,10 +445,20 @@ const Dashboard: React.FC = () => {
 
         {/* Right Column - Activity */}
         <div>
-          <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-3">Atividade Recente</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Atividade Recente</h3>
+            <button
+              type="button"
+              onClick={handleClearRecentActivities}
+              disabled={!visibleRecentActivities.length}
+              className="text-xs font-semibold text-danger-600 hover:text-danger-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Limpar
+            </button>
+          </div>
           <div className="card divide-y divide-slate-100 dark:divide-slate-700">
-            {metrics.recent_activities?.length > 0 ? (
-              metrics.recent_activities.map((activity, index) => (
+            {visibleRecentActivities.length > 0 ? (
+              visibleRecentActivities.map((activity, index) => (
                 <div
                   key={index}
                   className="flex items-center gap-4 p-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"

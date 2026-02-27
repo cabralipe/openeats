@@ -290,7 +290,7 @@ export async function deleteSupplier(id: string) {
 }
 
 
-export async function getStock(params?: { q?: string; category?: string; low_stock?: boolean }) {
+export async function getStock(params?: { q?: string; category?: string; low_stock?: boolean; is_active?: boolean }) {
   const cleanParams = params
     ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
     : undefined;
@@ -414,6 +414,12 @@ export async function createSupplierReceipt(payload: {
   return apiFetch('/api/supplier-receipts/', {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteSupplierReceipt(receiptId: string) {
+  return apiFetch(`/api/supplier-receipts/${receiptId}/`, {
+    method: 'DELETE',
   });
 }
 

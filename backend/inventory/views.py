@@ -188,6 +188,7 @@ class StockViewSet(viewsets.ReadOnlyModelViewSet):
         query = self.request.query_params.get('q')
         category = self.request.query_params.get('category')
         low_stock = self.request.query_params.get('low_stock')
+        is_active = self.request.query_params.get('is_active')
         if query:
             queryset = queryset.filter(supply__name__icontains=query)
         if category:
@@ -197,6 +198,8 @@ class StockViewSet(viewsets.ReadOnlyModelViewSet):
                 queryset = queryset.filter(quantity__lt=models.F('supply__min_stock'))
             else:
                 queryset = queryset.filter(quantity__gte=models.F('supply__min_stock'))
+        if is_active in ['true', 'false']:
+            queryset = queryset.filter(supply__is_active=is_active == 'true')
         return queryset
 
 
