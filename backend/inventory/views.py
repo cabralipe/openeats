@@ -1276,8 +1276,14 @@ class DeliveryViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             for item in items:
-                item_lots = ensure_delivery_item_lot_plan(item)
                 balance, _ = StockBalance.objects.select_for_update().get_or_create(supply=item.supply)
+                # Backward-compatibility:
+                # old/manual stock entries may not have lot balances yet. In this case,
+                # allow sending when aggregate central stock is sufficient.
+                try:
+                    item_lots = ensure_delivery_item_lot_plan(item)
+                except ValidationError:
+                    item_lots = []
                 if balance.quantity < item.planned_quantity:
                     raise ValidationError(
                         f"Saldo insuficiente para {item.supply.name}. Disponivel: {balance.quantity}"

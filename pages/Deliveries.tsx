@@ -301,8 +301,8 @@ const Deliveries: React.FC = () => {
       setSuccess('Entrega enviada! Link de conferência habilitado.');
       await loadData();
       if (!keepDetailOpen) setSelectedDelivery(null);
-    } catch {
-      setError('Não foi possível enviar. Verifique o saldo.');
+    } catch (err: any) {
+      setError(err?.message || 'Não foi possível enviar. Verifique o saldo.');
     }
   };
 
