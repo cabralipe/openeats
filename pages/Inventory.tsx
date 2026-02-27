@@ -259,8 +259,8 @@ const Inventory: React.FC = () => {
       await loadStock({ q: search, category, low_stock, is_active: true });
       await loadCategories();
       setShowModal(false);
-    } catch {
-      setError('Não foi possível salvar o insumo.');
+    } catch (err: any) {
+      setError(err?.message || 'Não foi possível salvar o insumo.');
     }
   };
 
@@ -677,7 +677,7 @@ const Inventory: React.FC = () => {
                       <option value="g">g</option>
                       <option value="l">l</option>
                       <option value="ml">ml</option>
-                      <option value="unid">unid</option>
+                      <option value="unit">unid</option>
                     </select>
                   </div>
                   <div className="space-y-2">

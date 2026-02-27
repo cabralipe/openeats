@@ -25,6 +25,7 @@ from .services.lots import regenerate_delivery_item_lot_plan_fefo
 
 
 class SupplySerializer(serializers.ModelSerializer):
+    unit = serializers.CharField()
     nova_classification_display = serializers.CharField(
         source='get_nova_classification_display', read_only=True,
     )
@@ -40,6 +41,15 @@ class SupplySerializer(serializers.ModelSerializer):
             'nutritional_function', 'nutritional_function_display',
             'min_stock', 'storage_instructions', 'is_active', 'created_at', 'updated_at',
         ]
+
+    def validate_unit(self, value):
+        normalized = (value or '').strip().lower()
+        if normalized in {'unid', 'unidade', 'unidades'}:
+            normalized = Supply.Units.UNIT
+        allowed_units = {choice[0] for choice in Supply.Units.choices}
+        if normalized not in allowed_units:
+            raise serializers.ValidationError('Unidade inválida.')
+        return normalized
 
 
 class StockBalanceSerializer(serializers.ModelSerializer):

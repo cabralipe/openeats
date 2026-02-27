@@ -574,7 +574,7 @@ const Deliveries: React.FC = () => {
           </div>
         </div>
 
-        <div className="px-5 pb-6 space-y-6">
+        <div className="px-5 pb-6 space-y-6 min-h-[420px]">
           {creationStep === 1 && (
             <>
               <section className="space-y-2">
@@ -757,6 +757,38 @@ const Deliveries: React.FC = () => {
                   </div>
                 </div>
               </section>
+
+              <section>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Itens ({items.length})</h3>
+                  <button type="button" onClick={() => setCreationStep(2)} className="text-primary-600 text-sm font-medium">Editar</button>
+                </div>
+                <div className="space-y-2">
+                  {items.map((item, index) => {
+                    const supply = getSupplyById(item.supply);
+                    return (
+                      <div key={`${item.supply}-${index}`} className="flex items-center justify-between bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-10 h-10 bg-blue-50 dark:bg-blue-900/30 rounded-lg flex items-center justify-center text-primary-600 dark:text-primary-300">
+                            <span className="material-symbols-outlined">inventory_2</span>
+                          </div>
+                          <div>
+                            <p className="font-semibold text-sm text-slate-900 dark:text-slate-100">{supply?.name || 'Insumo removido'}</p>
+                            <p className="text-xs text-slate-500">{Number(item.planned_quantity).toFixed(2)} {supply?.unit || ''}</p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+
+              {notes && (
+                <section>
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">Observações</h3>
+                  <p className="text-sm text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">{notes}</p>
+                </section>
+              )}
             </>
           )}
         </div>
@@ -1237,23 +1269,23 @@ const Deliveries: React.FC = () => {
           )}
 
           <div className="mb-8">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold text-lg text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                  Itens da Entrega
-                  <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded text-[10px] font-bold">{itemCount} ITENS</span>
-                </h3>
-                {isDraft && (
-                  <button
-                    type="button"
-                    onClick={() => handleSuggestLotsForAllItems(delivery)}
-                    disabled={suggestingAllLots}
-                    className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border border-primary-200 dark:border-primary-900/50 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 disabled:opacity-50"
-                  >
-                    <span className="material-symbols-outlined text-sm">auto_fix_high</span>
-                    {suggestingAllLots ? 'Sugerindo FEFO...' : 'Sugerir lotes FEFO (todos)'}
-                  </button>
-                )}
-              </div>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                Itens da Entrega
+                <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded text-[10px] font-bold">{itemCount} ITENS</span>
+              </h3>
+              {isDraft && (
+                <button
+                  type="button"
+                  onClick={() => handleSuggestLotsForAllItems(delivery)}
+                  disabled={suggestingAllLots}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border border-primary-200 dark:border-primary-900/50 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-sm">auto_fix_high</span>
+                  {suggestingAllLots ? 'Sugerindo FEFO...' : 'Sugerir lotes FEFO (todos)'}
+                </button>
+              )}
+            </div>
             <div className="overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm">
               <table className="w-full text-left border-collapse">
                 <thead>
