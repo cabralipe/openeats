@@ -47,7 +47,7 @@ const Deliveries: React.FC = () => {
   const [copyingDelivery, setCopyingDelivery] = useState(false);
 
   const [responsibles, setResponsibles] = useState<Responsible[]>([]);
-  const [selectedResponsibleId, setSelectedResponsibleId] = useState('');
+  const [selectedResponsibleIds, setSelectedResponsibleIds] = useState<string[]>([]);
   const [responsibleName, setResponsibleName] = useState('');
   const [responsiblePhone, setResponsiblePhone] = useState('');
   const [newResponsibleName, setNewResponsibleName] = useState('');
@@ -79,7 +79,7 @@ const Deliveries: React.FC = () => {
     setDraftQuantity('');
     setResponsibleName('');
     setResponsiblePhone('');
-    setSelectedResponsibleId('');
+    setSelectedResponsibleIds([]);
     setEditingDeliveryId(null);
   };
 
@@ -93,14 +93,6 @@ const Deliveries: React.FC = () => {
       setResponsibles([]);
     }
   }, []);
-
-  useEffect(() => {
-    if (!selectedResponsibleId) return;
-    const selected = responsibles.find((r) => r.id === selectedResponsibleId);
-    if (!selected) return;
-    setResponsibleName(selected.name);
-    setResponsiblePhone(selected.phone);
-  }, [selectedResponsibleId, responsibles]);
 
   const loadData = async () => {
     setError('');
@@ -154,7 +146,17 @@ const Deliveries: React.FC = () => {
       });
   }, [selectedDelivery, linkByDelivery]);
 
+  const selectedResponsibles = useMemo(
+    () => responsibles.filter((item) => selectedResponsibleIds.includes(item.id)),
+    [responsibles, selectedResponsibleIds],
+  );
   const selectedSchoolName = useMemo(() => schools.find((school) => school.id === schoolId)?.name || 'Não selecionada', [schools, schoolId]);
+  const deliveryResponsibleSummary = useMemo(() => {
+    const names = selectedResponsibles.map((item) => item.name.trim()).filter(Boolean);
+    const manual = responsibleName.trim();
+    if (manual) names.push(manual);
+    return names.length ? names.join(' | ') : 'Não informado';
+  }, [selectedResponsibles, responsibleName]);
 
   const filteredDeliveries = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -187,13 +189,25 @@ const Deliveries: React.FC = () => {
       ...responsibles.filter((item) => !(item.name === name && item.phone === phone)),
     ];
     persistResponsibles(next);
-    setSelectedResponsibleId(next[0].id);
-    setResponsibleName(name);
-    setResponsiblePhone(phone);
+    setSelectedResponsibleIds((prev) => Array.from(new Set([next[0].id, ...prev])));
     setNewResponsibleName('');
     setNewResponsiblePhone('');
     setError('');
     setSuccess('Responsável cadastrado.');
+  };
+
+  const handleToggleResponsible = (id: string) => {
+    setSelectedResponsibleIds((prev) => (
+      prev.includes(id) ? prev.filter((current) => current !== id) : [...prev, id]
+    ));
+  };
+
+  const handleDeleteResponsible = (id: string) => {
+    const confirmed = window.confirm('Excluir este entregador salvo?');
+    if (!confirmed) return;
+    const next = responsibles.filter((item) => item.id !== id);
+    persistResponsibles(next);
+    setSelectedResponsibleIds((prev) => prev.filter((current) => current !== id));
   };
 
   const handleAddItem = () => {
@@ -238,11 +252,18 @@ const Deliveries: React.FC = () => {
       return;
     }
 
+    const selectedNames = selectedResponsibles.map((item) => item.name.trim()).filter(Boolean);
+    const selectedPhones = selectedResponsibles.map((item) => item.phone.trim()).filter(Boolean);
+    const manualName = responsibleName.trim();
+    const manualPhone = responsiblePhone.trim();
+    if (manualName) selectedNames.push(manualName);
+    if (manualPhone) selectedPhones.push(manualPhone);
+
     const payload = {
       school: schoolId,
       delivery_date: deliveryDate,
-      responsible_name: responsibleName.trim() || undefined,
-      responsible_phone: responsiblePhone.trim() || undefined,
+      responsible_name: selectedNames.length ? selectedNames.join(' | ') : undefined,
+      responsible_phone: selectedPhones.length ? selectedPhones.join(' | ') : undefined,
       notes,
       items: items.map((item) => ({
         supply: item.supply,
@@ -282,6 +303,14 @@ const Deliveries: React.FC = () => {
     setNotes(delivery.notes || '');
     setResponsibleName(delivery.responsible_name || '');
     setResponsiblePhone(delivery.responsible_phone || '');
+    const existingNames = String(delivery.responsible_name || '')
+      .split('|')
+      .map((name: string) => name.trim().toLowerCase())
+      .filter(Boolean);
+    const matchedIds = responsibles
+      .filter((item) => existingNames.includes(item.name.trim().toLowerCase()))
+      .map((item) => item.id);
+    setSelectedResponsibleIds(matchedIds);
     setItems((delivery.items || []).map((item: any) => ({
       supply: item.supply,
       planned_quantity: String(item.planned_quantity),
@@ -541,7 +570,7 @@ const Deliveries: React.FC = () => {
   };
 
   const renderWizard = () => (
-    <div className="max-w-3xl mx-auto pb-24">
+    <div className="w-full max-w-3xl mx-auto pb-24 min-h-[calc(100vh-4rem)]">
       <div className="bg-slate-50 dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <button
@@ -600,24 +629,46 @@ const Deliveries: React.FC = () => {
 
               <section className="space-y-4 pt-2">
                 <div className="flex items-center justify-between px-1">
-                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Responsável pela Entrega</h3>
+                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Entregadores</h3>
                 </div>
 
-                <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-                  {responsibles.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => setSelectedResponsibleId(item.id)}
-                      className={`flex-shrink-0 flex items-center gap-2 px-3 py-2 rounded-full text-sm font-medium border ${selectedResponsibleId === item.id
-                        ? 'bg-blue-50 dark:bg-primary-900/20 border-primary-300 text-primary-700 dark:text-primary-300'
-                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                <div className="space-y-2">
+                  {responsibles.map((item) => {
+                    const checked = selectedResponsibleIds.includes(item.id);
+                    return (
+                      <div
+                        key={item.id}
+                        className={`flex items-center justify-between px-3 py-2 rounded-xl border ${
+                          checked
+                            ? 'bg-blue-50 dark:bg-primary-900/20 border-primary-300'
+                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'
                         }`}
-                    >
-                      <span className="material-symbols-outlined text-sm">person</span>
-                      {item.name} {item.phone && `• ${item.phone}`}
-                    </button>
-                  ))}
+                      >
+                        <label className="flex items-center gap-3 cursor-pointer flex-1 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => handleToggleResponsible(item.id)}
+                            className="w-4 h-4"
+                          />
+                          <span className="text-sm text-slate-700 dark:text-slate-300 truncate">
+                            {item.name} {item.phone && `• ${item.phone}`}
+                          </span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteResponsible(item.id)}
+                          className="p-1 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg"
+                          title="Excluir entregador"
+                        >
+                          <span className="material-symbols-outlined text-base">delete</span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {responsibles.length === 0 && (
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Nenhum entregador salvo.</p>
+                  )}
                 </div>
 
                 <div className="bg-slate-100/80 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-4">
@@ -646,7 +697,7 @@ const Deliveries: React.FC = () => {
                       value={newResponsibleName}
                       onChange={(e) => setNewResponsibleName(e.target.value)}
                       className="input rounded-xl text-sm"
-                      placeholder="Salvar novo responsável (nome)"
+                      placeholder="Salvar novo entregador (nome)"
                     />
                     <input
                       value={newResponsiblePhone}
@@ -752,7 +803,7 @@ const Deliveries: React.FC = () => {
                     </div>
                     <div>
                       <p className="text-xs text-slate-500 dark:text-slate-400">Responsável</p>
-                      <p className="font-medium text-slate-900 dark:text-white">{responsibleName || 'Não informado'}</p>
+                      <p className="font-medium text-slate-900 dark:text-white">{deliveryResponsibleSummary}</p>
                     </div>
                   </div>
                 </div>
@@ -1427,7 +1478,7 @@ const Deliveries: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col flex-1">
+    <div className="flex flex-col flex-1 w-full">
       {error && (
         <div className="mx-4 lg:mx-6 mt-4 p-4 rounded-xl bg-danger-50 dark:bg-danger-900/20 text-danger-600 text-sm flex items-center gap-2 animate-fade-in z-50">
           <span className="material-symbols-outlined">error</span>
