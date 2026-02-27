@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   createSupplier,
   createSupplierReceipt,
+  deleteSupplier,
   getSchools,
   getSupplies,
   getSupplierReceipts,
@@ -169,7 +170,12 @@ const SupplierReceipts: React.FC = () => {
     if (suppliersRes.status === 'fulfilled') {
       const data = suppliersRes.value as any[];
       setSuppliers(data);
-      if (!supplierId && data.length) setSupplierId(data[0].id);
+      if (data.length) {
+        const stillExists = data.some((item) => item.id === supplierId);
+        if (!supplierId || !stillExists) setSupplierId(data[0].id);
+      } else {
+        setSupplierId('');
+      }
     }
     if (schoolsRes.status === 'fulfilled') setSchools(schoolsRes.value as any[]);
     if (suppliesRes.status === 'fulfilled') setSupplies(suppliesRes.value as any[]);
@@ -307,6 +313,30 @@ const SupplierReceipts: React.FC = () => {
       setSuccess('Fornecedor cadastrado com sucesso.');
     } catch (err: any) {
       setError(err?.message || 'Não foi possível cadastrar o fornecedor.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteSupplier = async () => {
+    if (!supplierId) {
+      setError('Selecione um fornecedor para excluir.');
+      return;
+    }
+    const supplier = suppliers.find((item) => item.id === supplierId);
+    const supplierName = supplier?.name || 'este fornecedor';
+    const confirmed = window.confirm(`Excluir ${supplierName}?`);
+    if (!confirmed) return;
+
+    setError('');
+    setSuccess('');
+    setSubmitting(true);
+    try {
+      const response = await deleteSupplier(supplierId) as { detail?: string } | undefined;
+      await loadData();
+      setSuccess(response?.detail || 'Fornecedor excluído com sucesso.');
+    } catch (err: any) {
+      setError(err?.message || 'Não foi possível excluir o fornecedor.');
     } finally {
       setSubmitting(false);
     }
@@ -500,14 +530,27 @@ const SupplierReceipts: React.FC = () => {
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Fornecedor</label>
-                  <button
-                    type="button"
-                    onClick={() => setShowSupplierForm((prev) => !prev)}
-                    className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1"
-                  >
-                    <span className="material-symbols-outlined text-sm">{showSupplierForm ? 'close' : 'add'}</span>
-                    {showSupplierForm ? 'Fechar' : 'Novo fornecedor'}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {supplierId && (
+                      <button
+                        type="button"
+                        onClick={handleDeleteSupplier}
+                        disabled={submitting}
+                        className="text-[11px] font-bold text-red-600 hover:underline disabled:opacity-60 flex items-center gap-1"
+                      >
+                        <span className="material-symbols-outlined text-sm">delete</span>
+                        Excluir
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowSupplierForm((prev) => !prev)}
+                      className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1"
+                    >
+                      <span className="material-symbols-outlined text-sm">{showSupplierForm ? 'close' : 'add'}</span>
+                      {showSupplierForm ? 'Fechar' : 'Novo fornecedor'}
+                    </button>
+                  </div>
                 </div>
                 <select className="input rounded-lg py-2.5 text-sm" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
                   <option value="">Selecione</option>

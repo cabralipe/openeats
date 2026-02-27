@@ -4,7 +4,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
-from inventory.models import SchoolStockBalance, StockBalance, StockMovement, SupplierReceipt, SupplierReceiptItem, Supply
+from inventory.models import SchoolStockBalance, StockBalance, StockMovement, Supplier, SupplierReceipt, SupplierReceiptItem, Supply
 from schools.models import School
 
 pytestmark = pytest.mark.django_db
@@ -112,6 +112,36 @@ def test_filter_supplier_receipts(api_client, admin_user):
     response = api_client.get(f'/api/supplier-receipts/?supplier={supplier_id}&status={SupplierReceipt.Status.EXPECTED}')
     assert response.status_code == 200
     assert len(response.data) == 1
+
+
+def test_delete_supplier_without_history_removes_record(api_client, admin_user):
+    api_client.force_authenticate(user=admin_user)
+    supplier_response = api_client.post('/api/suppliers/', {'name': 'Fornecedor Sem Historico'}, format='json')
+    supplier_id = supplier_response.data['id']
+
+    response = api_client.delete(f'/api/suppliers/{supplier_id}/')
+    assert response.status_code == 204
+    assert not Supplier.objects.filter(id=supplier_id).exists()
+
+
+def test_delete_supplier_with_history_soft_deactivates(api_client, admin_user):
+    api_client.force_authenticate(user=admin_user)
+    supplier_response = api_client.post('/api/suppliers/', {'name': 'Fornecedor Com Historico'}, format='json')
+    supplier_id = supplier_response.data['id']
+
+    SupplierReceipt.objects.create(
+        supplier_id=supplier_id,
+        expected_date=date.today(),
+        status=SupplierReceipt.Status.DRAFT,
+        created_by=admin_user,
+    )
+
+    response = api_client.delete(f'/api/suppliers/{supplier_id}/')
+    assert response.status_code == 200
+    assert 'detail' in response.data
+
+    supplier = Supplier.objects.get(id=supplier_id)
+    assert supplier.is_active is False
 
 
 def test_supplier_receipt_submit_conference_updates_school_stock(api_client, admin_user):

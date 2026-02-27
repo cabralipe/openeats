@@ -384,15 +384,16 @@ const Recipes: React.FC = () => {
     }
   };
 
-  const handleDelete = async () => {
-    if (!selectedRecipe) return;
-    if (!confirm(`Excluir a receita "${selectedRecipe.name}"?`)) return;
+  const handleDeleteRecipe = async (recipe: RecipeRecord) => {
+    if (!confirm(`Excluir a receita "${recipe.name}"?`)) return;
     setError('');
     setSuccess('');
     try {
-      await deleteRecipe(selectedRecipe.id);
-      setSelectedId(null);
-      setForm(emptyForm());
+      await deleteRecipe(recipe.id);
+      if (selectedId === recipe.id) {
+        setSelectedId(null);
+        setForm(emptyForm());
+      }
       setSuccess('Receita excluída com sucesso.');
       await loadRecipes({
         search: search.trim() || undefined,
@@ -402,6 +403,11 @@ const Recipes: React.FC = () => {
     } catch (err) {
       setError(parseError(err));
     }
+  };
+
+  const handleDelete = async () => {
+    if (!selectedRecipe) return;
+    await handleDeleteRecipe(selectedRecipe);
   };
 
   const previewIngredients = useMemo(() => (
@@ -526,15 +532,19 @@ const Recipes: React.FC = () => {
                 recipes.map((recipe) => {
                   const isSelected = recipe.id === selectedId;
                   return (
-                    <button
+                    <div
                       key={recipe.id}
-                      type="button"
-                      onClick={() => handleSelectRecipe(recipe)}
-                      className={`w-full text-left px-4 py-4 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors ${isSelected ? 'bg-primary-50/60 dark:bg-primary-900/10' : ''}`}
+                      className={`px-4 py-4 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors ${isSelected ? 'bg-primary-50/60 dark:bg-primary-900/10' : ''}`}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <p className="font-semibold text-slate-900 dark:text-white">{recipe.name}</p>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectRecipe(recipe)}
+                            className="text-left"
+                          >
+                            <p className="font-semibold text-slate-900 dark:text-white">{recipe.name}</p>
+                          </button>
                           <p className="text-xs text-slate-500 mt-1">
                             {recipe.category || 'Sem categoria'} • Base {recipe.servings_base} porções
                           </p>
@@ -542,11 +552,21 @@ const Recipes: React.FC = () => {
                             {recipe.ingredients?.length || 0} ingrediente(s)
                           </p>
                         </div>
-                        <span className={`text-[10px] px-2 py-1 rounded-full font-semibold ${recipe.active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                          {recipe.active ? 'Ativa' : 'Inativa'}
-                        </span>
+                        <div className="flex items-start gap-2">
+                          <span className={`text-[10px] px-2 py-1 rounded-full font-semibold ${recipe.active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                            {recipe.active ? 'Ativa' : 'Inativa'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteRecipe(recipe)}
+                            className="text-slate-400 hover:text-red-500 transition-colors"
+                            title="Excluir receita"
+                          >
+                            <span className="material-symbols-outlined text-base">delete</span>
+                          </button>
+                        </div>
                       </div>
-                    </button>
+                    </div>
                   );
                 })
               )}

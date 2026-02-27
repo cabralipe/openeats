@@ -283,6 +283,12 @@ export async function createSupplier(payload: {
   });
 }
 
+export async function deleteSupplier(id: string) {
+  return apiFetch(`/api/suppliers/${id}/`, {
+    method: 'DELETE',
+  });
+}
+
 
 export async function getStock(params?: { q?: string; category?: string; low_stock?: boolean }) {
   const cleanParams = params

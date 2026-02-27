@@ -15,6 +15,15 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
+  /* Prevent iOS Safari auto-zoom on small form controls. */
+  @media (hover: none) and (pointer: coarse) {
+    input,
+    select,
+    textarea {
+      font-size: 16px;
+    }
+  }
+
   /* Custom scrollbar */
   ::-webkit-scrollbar {
     width: 6px;

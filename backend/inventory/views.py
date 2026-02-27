@@ -259,6 +259,24 @@ class SupplierViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(is_active=is_active == 'true')
         return queryset
 
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        try:
+            self.perform_destroy(instance)
+            return Response(status=204)
+        except ProtectedError:
+            # Supplier with receipt history cannot be hard-deleted due to PROTECT.
+            # Keep history and deactivate from active selections.
+            if instance.is_active:
+                instance.is_active = False
+                instance.save(update_fields=['is_active', 'updated_at'])
+            return Response(
+                {
+                    'detail': 'Fornecedor possui histórico e não pode ser excluído. Foi desativado para novos usos.'
+                },
+                status=200,
+            )
+
 
 class SupplierReceiptViewSet(viewsets.ModelViewSet):
     queryset = SupplierReceipt.objects.select_related('supplier', 'school', 'created_by').prefetch_related('items__supply').all().order_by('-expected_date', '-created_at')
