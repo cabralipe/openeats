@@ -1,5 +1,4 @@
 from datetime import date, timedelta
-import os
 
 from django.utils import timezone
 
@@ -23,9 +22,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         User = get_user_model()
-        with_sample_data = options.get('with_sample_data', False) or os.getenv('SEED_SAMPLE_DATA', '').lower() in {
-            '1', 'true', 'yes', 'on'
-        }
+        with_sample_data = options.get('with_sample_data', False)
 
         admin_email = os.getenv('SEED_ADMIN_EMAIL', 'admin@semed.local')
         admin_password = os.getenv('SEED_ADMIN_PASSWORD', 'Admin123!')
