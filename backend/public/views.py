@@ -49,8 +49,22 @@ class PublicSchoolListView(APIView):
             menus__status=Menu.Status.PUBLISHED,
         ).distinct().order_by('name')
         
-        # Return minimal public info (name and slug only)
-        data = [{'id': str(s.id), 'name': s.name, 'slug': s.public_slug, 'city': s.city} for s in schools_with_menu]
+        today = date.today()
+        data = []
+        for s in schools_with_menu:
+            menus = s.menus.filter(status=Menu.Status.PUBLISHED)
+            current_menu = menus.filter(week_start__lte=today, week_end__gte=today).order_by('-week_start').first()
+            if not current_menu:
+                current_menu = menus.order_by('-week_start').first()
+            
+            data.append({
+                'id': str(s.id), 
+                'name': s.name, 
+                'slug': s.public_slug, 
+                'city': s.city,
+                'author_name': current_menu.author_name if current_menu else ''
+            })
+            
         return Response(data)
 
 
@@ -60,6 +74,20 @@ class PublicSchoolDetailView(PublicBaseView):
         token = request.query_params.get('token')
         self._validate_token(school, token)
         return Response(SchoolPublicSerializer(school).data)
+
+
+from recipes.models import Recipe
+from recipes.serializers import RecipeSerializer
+
+class PublicRecipeView(APIView):
+    """Get recipe details for public viewing."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, id):
+        recipe = get_object_or_404(Recipe, id=id)
+        if not recipe.active:
+            return Response({'detail': 'Receita inativa.'}, status=403)
+        return Response(RecipeSerializer(recipe).data)
 
 
 class PublicMenuCurrentView(APIView):

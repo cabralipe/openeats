@@ -113,5 +113,25 @@ def generate_menu_pdf(menu, buffer):
         pdf.line(36, y - 3, 556, y - 3)
         y -= 8
 
+    if menu.author_name:
+        y -= 10
+        if y < 84:
+            _draw_pdf_footer(pdf, page_number)
+            pdf.showPage()
+            page_number += 1
+            y = _start_pdf_page(pdf, 'Relatorio de Cardapio Semanal', generated_at, filters, page_number)
+            y -= 10
+        
+        pdf.setFont('Helvetica-Bold', 9)
+        pdf.setFillColor(colors.HexColor('#1b2a41'))
+        pdf.drawString(32, y, _pdf_text("Material elaborado por:"))
+        y -= 12
+        pdf.setFont('Helvetica', 9)
+        author_text = menu.author_name
+        if menu.author_crn:
+            author_text += f" (CRN: {menu.author_crn})"
+        pdf.drawString(32, y, _pdf_text(author_text))
+        y -= 12
+
     _draw_pdf_footer(pdf, page_number)
     pdf.save()

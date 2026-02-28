@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getPublicMenuCurrent, getPublicSchools, exportPublicMenuPdf } from '../api';
+import { getPublicRecipe } from '../api';
 import { IMAGES } from '../constants';
 
 interface School {
@@ -8,6 +9,7 @@ interface School {
   name: string;
   slug: string;
   city: string;
+  author_name?: string;
 }
 
 const dayNames: Record<string, string> = {
@@ -30,6 +32,10 @@ const PublicMenu: React.FC = () => {
   const [search, setSearch] = useState('');
   const [currentDayIndex, setCurrentDayIndex] = useState(0);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [viewingRecipeId, setViewingRecipeId] = useState<string | null>(null);
+  const [recipeData, setRecipeData] = useState<any>(null);
+  const [loadingRecipe, setLoadingRecipe] = useState(false);
+  const [recipeStep, setRecipeStep] = useState(1);
 
   const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const slugFromUrl = params.get('slug') || '';
@@ -70,6 +76,21 @@ const PublicMenu: React.FC = () => {
       setError('Nenhum cardápio disponível para esta escola nesta semana.');
     } finally {
       setLoadingMenu(false);
+    }
+  };
+
+
+  const handleViewRecipe = async (recipeId: string) => {
+    setViewingRecipeId(recipeId);
+    setLoadingRecipe(true);
+    setRecipeStep(1);
+    try {
+      const data = await getPublicRecipe(recipeId);
+      setRecipeData(data);
+    } catch {
+      // ignore
+    } finally {
+      setLoadingRecipe(false);
     }
   };
 
@@ -117,6 +138,8 @@ const PublicMenu: React.FC = () => {
         portionText: item.portion_text || '',
         description: item.description || '',
         image: item.image_data || item.image_url || '',
+        recipe: item.recipe || null,
+        recipeName: item.recipe_name || '',
       });
     }
 
@@ -175,7 +198,7 @@ const PublicMenu: React.FC = () => {
       SNACK: 'bakery_dining',
       DINNER_COFFEE: 'coffee',
     };
-    const grouped: Record<string, { key: string; label: string; icon: string; items: string[] }> = {};
+    const grouped: Record<string, { key: string; label: string; icon: string; items: Array<{text: string, recipe: string | null, recipeName: string}> }> = {};
     for (const meal of currentDay.meals) {
       const key = meal.mealType || meal.mealLabel;
       if (!grouped[key]) {
@@ -187,7 +210,11 @@ const PublicMenu: React.FC = () => {
         };
       }
       const text = [meal.mealName, meal.description].filter(Boolean).join(' - ') || meal.description || meal.mealName || 'Item sem descrição';
-      grouped[key].items.push(meal.portionText ? `${text} (${meal.portionText})` : text);
+      grouped[key].items.push({
+        text: meal.portionText ? `${text} (${meal.portionText})` : text,
+        recipe: meal.recipe,
+        recipeName: meal.recipeName
+      });
     }
     return Object.values(grouped);
   }, [currentDay]);
@@ -294,7 +321,15 @@ const PublicMenu: React.FC = () => {
                       </div>
                       <div className="flex-1 min-w-0">
                         <h3 className="text-white font-medium truncate">{school.name}</h3>
-                        {school.city && <p className="text-white/60 text-sm">{school.city}</p>}
+                        <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                          {school.city && <span className="text-white/60 text-xs">{school.city}</span>}
+                          {school.city && school.author_name && <span className="text-white/30 text-[10px]">•</span>}
+                          {school.author_name && (
+                            <span className="text-primary-300 text-xs truncate" title={school.author_name}>
+                              Nutricionista: {school.author_name}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <span className="material-symbols-outlined text-white/40 group-hover:text-white/80 transition-colors">chevron_right</span>
                     </div>
@@ -393,9 +428,21 @@ const PublicMenu: React.FC = () => {
                     </div>
                     <ul className="space-y-4">
                       {mealSection.items.map((desc, idx) => (
-                        <li key={`${mealSection.key}-${idx}`} className="flex items-start gap-3">
-                          <span className="material-symbols-outlined text-slate-400 text-sm mt-1">fiber_manual_record</span>
-                          <p className="text-slate-700 dark:text-slate-300">{desc}</p>
+                        <li key={`${mealSection.key}-${idx}`} className="flex items-start gap-3 justify-between">
+                          <div className="flex items-start gap-3">
+                            <span className="material-symbols-outlined text-slate-400 text-sm mt-1">fiber_manual_record</span>
+                            <p className="text-slate-700 dark:text-slate-300">{desc.text}</p>
+                          </div>
+                          {desc.recipe && (
+                            <button 
+                              onClick={() => handleViewRecipe(desc.recipe as string)}
+                              className="shrink-0 flex items-center gap-1.5 px-3 py-1 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold rounded-full transition-colors"
+                              title={`Ver receita: ${desc.recipeName}`}
+                            >
+                              <span className="material-symbols-outlined text-[14px]">menu_book</span>
+                              Ver Receita
+                            </button>
+                          )}
                         </li>
                       ))}
                     </ul>
@@ -483,6 +530,99 @@ const PublicMenu: React.FC = () => {
           </>
         )}
       </main>
+
+      {/* Recipe Modal */}
+      {viewingRecipeId && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-200 relative my-auto">
+            
+            <div className="flex items-center justify-between p-4 md:p-6 border-b border-slate-100 dark:border-slate-800 shrink-0">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary">menu_book</span>
+                Cartão de Receita
+              </h2>
+              <button onClick={() => setViewingRecipeId(null)} className="w-10 h-10 flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-white rounded-xl transition-colors shrink-0">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 md:p-6">
+              {loadingRecipe ? (
+                 <div className="flex justify-center p-10"><div className="w-8 h-8 border-3 border-primary/30 border-t-primary rounded-full animate-spin"></div></div>
+              ) : !recipeData ? (
+                 <div className="text-center p-10 text-slate-500">Falha ao carregar a receita.</div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="text-center mb-6">
+                    <h3 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">{recipeData.name}</h3>
+                    {recipeData.category && <span className="text-xs font-bold text-primary bg-primary/10 px-3 py-1 rounded-full">{recipeData.category}</span>}
+                  </div>
+
+                  <div className="flex flex-col gap-4">
+                    {/* Render Step by Step Instructions if available inside instruction parsed via newlines maybe? Or from backend text */}
+                    
+                    {recipeData.instructions && (
+                      <div className="space-y-3">
+                        <h4 className="font-bold text-slate-700 dark:text-slate-200">Orientações Gerais</h4>
+                        <p className="text-slate-600 dark:text-slate-300 text-sm whitespace-pre-wrap leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
+                          {recipeData.instructions}
+                        </p>
+                      </div>
+                    )}
+
+                    {recipeData.tags?.prep_steps && Array.isArray(recipeData.tags.prep_steps) && recipeData.tags.prep_steps.length > 0 && (
+                      <div className="space-y-4 pt-2">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-bold text-slate-700 dark:text-slate-200">Modo de Preparo</h4>
+                          {recipeData.tags?.prep_time_minutes && (
+                            <span className="flex items-center gap-1.5 text-xs font-bold text-primary bg-primary/10 px-3 py-1 rounded-full">
+                              <span className="material-symbols-outlined text-[14px]">timer</span>
+                              {recipeData.tags.prep_time_minutes} min
+                            </span>
+                          )}
+                        </div>
+                        <div className="bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-4">
+                          {recipeData.tags.prep_steps.map((stepText: string, index: number) => (
+                            <div key={index} className="flex gap-4 items-start">
+                              <div className="w-8 h-8 rounded-full bg-primary/20 text-primary font-bold text-sm flex items-center justify-center shrink-0 mt-0.5">
+                                {index + 1}
+                              </div>
+                              <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-sm pt-1">
+                                {stepText}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {(!recipeData.instructions && (!recipeData.tags?.prep_steps || recipeData.tags.prep_steps.length === 0)) && (
+                      <div className="text-center py-6 text-slate-500 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-slate-800">Nenhuma instrução cadastrada.</div>
+                    )}
+                    
+                    {recipeData.ingredients && recipeData.ingredients.length > 0 && (
+                      <div className="mt-6 border border-slate-100 dark:border-slate-800 rounded-xl overflow-hidden">
+                        <div className="bg-slate-50 dark:bg-slate-800 px-4 py-3 font-bold text-slate-700 dark:text-slate-200 text-sm flex gap-2 items-center">
+                          <span className="material-symbols-outlined text-lg">kitchen</span>
+                          Ingredientes ({recipeData.servings_base} porções base)
+                        </div>
+                        <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+                          {recipeData.ingredients.map((ing: any, idx: number) => (
+                            <li key={idx} className="px-4 py-2.5 text-sm flex justify-between items-center hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                              <span className="text-slate-700 dark:text-slate-300">{ing.supply_name} {ing.optional ? '(Opcional)':''}</span>
+                              <span className="font-medium text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-xs">{ing.qty_base} {ing.unit}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

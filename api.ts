@@ -699,6 +699,10 @@ export async function calculatePublicMenuProductionBySchool(slug: string, payloa
   });
 }
 
+export async function getPublicRecipe(recipeId: string) {
+  return apiFetch(`/public/recipes/${recipeId}/`, { skipAuth: true });
+}
+
 export async function getPublicDeliveryCurrent(slug: string, token: string, deliveryId: string) {
   const encodedSlug = encodeURIComponent(slug);
   const search = new URLSearchParams({ token, delivery_id: deliveryId }).toString();

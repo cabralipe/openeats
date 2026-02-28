@@ -142,9 +142,10 @@ const SupplierReceipts: React.FC = () => {
   const [schoolId, setSchoolId] = useState('');
   const [expectedDate, setExpectedDate] = useState(today);
   const [notes, setNotes] = useState('');
-  const [draftItems, setDraftItems] = useState<DraftReceiptItem[]>([
-    { supply: '', raw_name: '', category: 'Outros', unit: 'kg', expected_quantity: '' },
-  ]);
+  const [draftItems, setDraftItems] = useState<DraftReceiptItem[]>([]);
+  const [isItemModalOpen, setIsItemModalOpen] = useState(false);
+  const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
+  const [itemForm, setItemForm] = useState<DraftReceiptItem>({ supply: '', raw_name: '', category: 'Outros', unit: 'kg', expected_quantity: '' });
 
   const [conferenceForm, setConferenceForm] = useState<Record<string, ConferenceItemForm>>({});
   const [senderName, setSenderName] = useState('');
@@ -254,16 +255,27 @@ const SupplierReceipts: React.FC = () => {
     return isoToDateBR(value) || value;
   };
 
-  const addDraftItem = () => {
-    setDraftItems((prev) => [...prev, { supply: '', raw_name: '', category: 'Outros', unit: 'kg', expected_quantity: '' }]);
+  const openAddItemModal = () => {
+    setEditingItemIndex(null);
+    setItemForm({ supply: '', raw_name: '', category: 'Outros', unit: 'kg', expected_quantity: '' });
+    setIsItemModalOpen(true);
   };
 
-  const updateDraftItem = (index: number, patch: Partial<DraftReceiptItem>) => {
-    setDraftItems((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+  const handleSaveItemForm = () => {
+    if (!itemForm.supply && !itemForm.raw_name.trim()) {
+      alert('Informe o insumo ou o nome do novo item.');
+      return;
+    }
+    if (editingItemIndex !== null) {
+      setDraftItems((prev) => prev.map((item, i) => (i === editingItemIndex ? itemForm : item)));
+    } else {
+      setDraftItems((prev) => [...prev, itemForm]);
+    }
+    setIsItemModalOpen(false);
   };
 
   const removeDraftItem = (index: number) => {
-    setDraftItems((prev) => (prev.length === 1 ? prev : prev.filter((_, i) => i !== index)));
+    setDraftItems((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleCreateReceipt = async () => {
@@ -298,7 +310,7 @@ const SupplierReceipts: React.FC = () => {
       });
       setSuccess('Recebimento criado.');
       setNotes('');
-      setDraftItems([{ supply: '', raw_name: '', category: 'Outros', unit: 'kg', expected_quantity: '' }]);
+      setDraftItems([]);
       await loadData();
     } catch (err: any) {
       setError(err?.message || 'Não foi possível criar o recebimento.');
@@ -595,54 +607,6 @@ const SupplierReceipts: React.FC = () => {
                   <option value="">Selecione</option>
                   {suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
                 </select>
-                {showSupplierForm && (
-                  <div className="mt-2 rounded-xl border border-primary/20 bg-primary/5 dark:bg-primary/10 p-3 space-y-2">
-                    <input
-                      className="input rounded-lg bg-white dark:bg-slate-900 text-sm"
-                      placeholder="Nome do fornecedor *"
-                      value={supplierForm.name}
-                      onChange={(e) => setSupplierForm((prev) => ({ ...prev, name: e.target.value }))}
-                    />
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <input
-                        className="input rounded-lg bg-white dark:bg-slate-900 text-sm"
-                        placeholder="Documento (CNPJ)"
-                        value={supplierForm.document}
-                        onChange={(e) => setSupplierForm((prev) => ({ ...prev, document: e.target.value }))}
-                      />
-                      <input
-                        className="input rounded-lg bg-white dark:bg-slate-900 text-sm"
-                        placeholder="Contato responsável"
-                        value={supplierForm.contact_name}
-                        onChange={(e) => setSupplierForm((prev) => ({ ...prev, contact_name: e.target.value }))}
-                      />
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <input
-                        className="input rounded-lg bg-white dark:bg-slate-900 text-sm"
-                        placeholder="Telefone"
-                        value={supplierForm.phone}
-                        onChange={(e) => setSupplierForm((prev) => ({ ...prev, phone: e.target.value }))}
-                      />
-                      <input
-                        className="input rounded-lg bg-white dark:bg-slate-900 text-sm"
-                        placeholder="E-mail"
-                        value={supplierForm.email}
-                        onChange={(e) => setSupplierForm((prev) => ({ ...prev, email: e.target.value }))}
-                      />
-                    </div>
-                    <div className="flex justify-end pt-1">
-                      <button
-                        type="button"
-                        onClick={handleCreateSupplier}
-                        disabled={submitting}
-                        className="px-4 py-2 rounded-lg bg-primary text-white text-xs font-bold hover:bg-blue-700 disabled:opacity-60"
-                      >
-                        {submitting ? 'Salvando...' : 'Salvar fornecedor'}
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Destino (Opcional)</label>
@@ -671,60 +635,37 @@ const SupplierReceipts: React.FC = () => {
             <div className="border-t border-slate-100 dark:border-slate-800 pt-6">
               <div className="flex justify-between items-center mb-4">
                 <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">Itens do Recebimento</h4>
-                <button type="button" onClick={addDraftItem} className="text-primary hover:underline text-xs font-bold flex items-center gap-1">
+                <button type="button" onClick={openAddItemModal} className="text-primary hover:underline text-xs font-bold flex items-center gap-1">
                   <span className="material-symbols-outlined text-sm">add</span> Adicionar Item
                 </button>
               </div>
               <div className="space-y-3">
-                {draftItems.map((item, index) => (
-                  <div key={index} className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 grid grid-cols-12 gap-3 items-start">
-                    <div className="col-span-12 md:col-span-6 space-y-2">
-                      <select
-                        className="input rounded-lg bg-white dark:bg-slate-900 text-sm"
-                        value={item.supply}
-                        onChange={(e) => {
-                          const selected = supplies.find((s) => s.id === e.target.value);
-                          updateDraftItem(index, { supply: e.target.value, unit: selected?.unit || item.unit, raw_name: e.target.value ? '' : item.raw_name });
-                        }}
-                      >
-                        <option value="">Item novo (digitar abaixo)</option>
-                        {supplies.map((supply) => (
-                          <option key={supply.id} value={supply.id}>{supply.name}</option>
-                        ))}
-                      </select>
-                      {!item.supply && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <input
-                            className="input rounded-lg bg-white dark:bg-slate-900 text-sm"
-                            placeholder="Nome do item"
-                            value={item.raw_name}
-                            onChange={(e) => {
-                              const rawName = e.target.value;
-                              const matched = findExistingSupplyByName(rawName);
-                              updateDraftItem(index, {
-                                raw_name: rawName,
-                                unit: matched?.unit || item.unit,
-                                category: matched?.category || item.category,
-                              });
-                            }}
-                          />
-                          <input className="input rounded-lg bg-white dark:bg-slate-900 text-sm" placeholder="Categoria" value={item.category} onChange={(e) => updateDraftItem(index, { category: e.target.value })} />
+                {draftItems.length === 0 ? (
+                  <div className="text-xs text-slate-500 italic p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 text-center">Nenhum item adicionado.</div>
+                ) : (
+                  draftItems.map((item, index) => (
+                    <div key={index} className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex justify-between items-center transition-colors hover:border-primary/30 group">
+                      <div>
+                        <div className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                          {item.supply ? supplies.find((s) => s.id === item.supply)?.name : item.raw_name || 'Item não identificado'}
+                          {!item.supply && <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded uppercase tracking-widest font-bold">Novo</span>}
                         </div>
-                      )}
+                        <div className="text-xs text-slate-500 mt-1 font-medium">
+                          {item.expected_quantity} <span className="uppercase">{item.unit}</span>
+                          {!item.supply && item.category && ` • ${item.category}`}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button type="button" className="text-slate-400 hover:text-primary transition-colors p-2" onClick={() => { setEditingItemIndex(index); setItemForm(item); setIsItemModalOpen(true); }} title="Editar item">
+                          <span className="material-symbols-outlined text-[20px]">edit</span>
+                        </button>
+                        <button type="button" className="text-slate-400 hover:text-red-500 transition-colors p-2" onClick={() => removeDraftItem(index)} title="Excluir item">
+                          <span className="material-symbols-outlined text-[20px]">delete_outline</span>
+                        </button>
+                      </div>
                     </div>
-                    <div className="col-span-6 md:col-span-2">
-                      <input className="input rounded-lg bg-white dark:bg-slate-900 text-sm" placeholder="Qtd" type="text" inputMode="decimal" value={item.expected_quantity} onChange={(e) => updateDraftItem(index, { expected_quantity: maskDecimalBR(e.target.value) })} />
-                    </div>
-                    <div className="col-span-4 md:col-span-3">
-                      <input className="input rounded-lg bg-white dark:bg-slate-900 text-sm" placeholder="Unidade" type="text" value={item.unit} onChange={(e) => updateDraftItem(index, { unit: e.target.value })} />
-                    </div>
-                    <div className="col-span-2 md:col-span-1 flex justify-center pt-1">
-                      <button type="button" className="text-slate-400 hover:text-red-500 transition-colors" onClick={() => removeDraftItem(index)}>
-                        <span className="material-symbols-outlined">delete_outline</span>
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -840,8 +781,8 @@ const SupplierReceipts: React.FC = () => {
             <div className="p-6 space-y-8">
               {(selectedReceipt.items || []).map((item: any) => {
                 const entry = conferenceForm[item.id] || { received_quantity: '', note: '', lots: [] };
-                  const lotSum = (entry.lots || []).reduce((sum, lot) => sum + decimalInputToNumber(lot.received_quantity), 0);
-                  const lotMatches = Math.abs(lotSum - decimalInputToNumber(entry.received_quantity || '')) <= 0.0001;
+                const lotSum = (entry.lots || []).reduce((sum, lot) => sum + decimalInputToNumber(lot.received_quantity), 0);
+                const lotMatches = Math.abs(lotSum - decimalInputToNumber(entry.received_quantity || '')) <= 0.0001;
                 return (
                   <div key={item.id} className="p-6 border border-slate-200 dark:border-slate-800 rounded-2xl bg-slate-50/30 dark:bg-slate-800/10">
                     <div className="flex flex-col lg:flex-row justify-between items-start mb-6 gap-4">
@@ -943,6 +884,169 @@ const SupplierReceipts: React.FC = () => {
           </section>
         )}
       </div>
+
+      {isItemModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
+              <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary">{editingItemIndex !== null ? 'edit_square' : 'add_box'}</span>
+                {editingItemIndex !== null ? 'Editar Item' : 'Adicionar Item'}
+              </h3>
+              <button type="button" onClick={() => setIsItemModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto space-y-5 flex-1">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Insumo</label>
+                <select
+                  className="input rounded-lg w-full bg-white dark:bg-slate-900 text-sm py-2.5 focus:ring-2 focus:ring-primary/50"
+                  value={itemForm.supply}
+                  onChange={(e) => {
+                    const selected = supplies.find((s) => s.id === e.target.value);
+                    setItemForm((prev) => ({ ...prev, supply: e.target.value, unit: selected?.unit || prev.unit, raw_name: e.target.value ? '' : prev.raw_name }));
+                  }}
+                >
+                  <option value="">+ Cadastrar Novo Insumo</option>
+                  {supplies.map((supply) => (
+                    <option key={supply.id} value={supply.id}>{supply.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {!itemForm.supply && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-5 bg-primary/5 dark:bg-primary/10 rounded-xl border border-primary/20">
+                  <div className="space-y-2 col-span-1 sm:col-span-2">
+                    <label className="text-xs font-bold text-primary uppercase tracking-wider">Nome do Novo Item</label>
+                    <input
+                      className="input rounded-lg w-full bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-primary/50"
+                      placeholder="Ex: Alface Crespa"
+                      value={itemForm.raw_name}
+                      onChange={(e) => {
+                        const rawName = e.target.value;
+                        const matched = findExistingSupplyByName(rawName);
+                        setItemForm((prev) => ({
+                          ...prev,
+                          raw_name: rawName,
+                          unit: matched?.unit || prev.unit,
+                          category: matched?.category || prev.category,
+                        }));
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-primary uppercase tracking-wider">Categoria</label>
+                    <input className="input rounded-lg w-full bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-primary/50" placeholder="Ex: Hortifruti" value={itemForm.category} onChange={(e) => setItemForm((prev) => ({ ...prev, category: e.target.value }))} />
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-5">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Quantidade</label>
+                  <input className="input rounded-lg w-full bg-white dark:bg-slate-900 text-sm py-2 focus:ring-2 focus:ring-primary/50" placeholder="0.00" type="text" inputMode="decimal" value={itemForm.expected_quantity} onChange={(e) => setItemForm((prev) => ({ ...prev, expected_quantity: maskDecimalBR(e.target.value) }))} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Unidade</label>
+                  <select
+                    className="input rounded-lg w-full bg-white dark:bg-slate-900 text-sm py-2 focus:ring-2 focus:ring-primary/50"
+                    value={itemForm.unit}
+                    onChange={(e) => setItemForm((prev) => ({ ...prev, unit: e.target.value }))}
+                  >
+                    <option value="kg">Kg</option>
+                    <option value="g">g</option>
+                    <option value="l">L</option>
+                    <option value="ml">ml</option>
+                    <option value="unit">Unidade</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3 bg-slate-50 dark:bg-slate-800/50">
+              <button type="button" onClick={() => setIsItemModalOpen(false)} className="px-5 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Cancelar</button>
+              <button type="button" onClick={handleSaveItemForm} className="px-6 py-2 bg-primary text-white rounded-lg text-sm font-bold shadow-md shadow-primary/20 hover:bg-blue-700 transition-colors flex items-center gap-2">
+                <span className="material-symbols-outlined text-sm">save</span>
+                Salvar Item
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSupplierForm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
+              <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary">add_business</span>
+                Adicionar Fornecedor
+              </h3>
+              <button type="button" onClick={() => setShowSupplierForm(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto space-y-5 flex-1">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Nome do fornecedor *</label>
+                  <input
+                    className="input rounded-lg w-full bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-primary/50"
+                    placeholder="Ex: Frutas Frescas Ltda"
+                    value={supplierForm.name}
+                    onChange={(e) => setSupplierForm((prev) => ({ ...prev, name: e.target.value }))}
+                  />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Documento (CNPJ/CPF)</label>
+                    <input
+                      className="input rounded-lg w-full bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-primary/50"
+                      placeholder="00.000.000/0000-00"
+                      value={supplierForm.document}
+                      onChange={(e) => setSupplierForm((prev) => ({ ...prev, document: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Contato responsável</label>
+                    <input
+                      className="input rounded-lg w-full bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-primary/50"
+                      placeholder="Nome do contato"
+                      value={supplierForm.contact_name}
+                      onChange={(e) => setSupplierForm((prev) => ({ ...prev, contact_name: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Telefone</label>
+                    <input
+                      className="input rounded-lg w-full bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-primary/50"
+                      placeholder="(00) 00000-0000"
+                      value={supplierForm.phone}
+                      onChange={(e) => setSupplierForm((prev) => ({ ...prev, phone: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">E-mail</label>
+                    <input
+                      className="input rounded-lg w-full bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-primary/50"
+                      placeholder="email@exemplo.com"
+                      value={supplierForm.email}
+                      onChange={(e) => setSupplierForm((prev) => ({ ...prev, email: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3 bg-slate-50 dark:bg-slate-800/50">
+              <button type="button" onClick={() => setShowSupplierForm(false)} className="px-5 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Cancelar</button>
+              <button type="button" onClick={handleCreateSupplier} disabled={submitting} className="px-6 py-2 bg-primary text-white rounded-lg text-sm font-bold shadow-md shadow-primary/20 hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-60">
+                <span className="material-symbols-outlined text-sm">save</span>
+                {submitting ? 'Salvando...' : 'Salvar Fornecedor'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <footer className="px-4 lg:px-8 py-6 text-center text-slate-400 dark:text-slate-500 text-xs border-t border-slate-200 dark:border-slate-800 mt-auto">
         © 2026 NutriSemed - Sistema de Gestão Nutricional Escolar. Todos os direitos reservados.
