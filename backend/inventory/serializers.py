@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.db.utils import DatabaseError
 from decimal import Decimal
 
 from rest_framework import serializers
@@ -380,7 +381,7 @@ class DeliverySerializer(serializers.ModelSerializer):
     school_name = serializers.CharField(source='school.name', read_only=True)
     sender_name = serializers.CharField(source='sender.name', read_only=True, allow_null=True)
     sender_position = serializers.CharField(source='sender.position', read_only=True, allow_null=True)
-    nutritionist_signatures = DeliveryNutritionistSignatureSerializer(many=True, read_only=True)
+    nutritionist_signatures = serializers.SerializerMethodField()
     items = DeliveryItemSerializer(many=True)
 
     class Meta:
@@ -444,6 +445,14 @@ class DeliverySerializer(serializers.ModelSerializer):
         if len(supply_ids) != len(set(supply_ids)):
             raise serializers.ValidationError('Nao e permitido repetir insumos na mesma entrega.')
         return items
+
+    def get_nutritionist_signatures(self, obj):
+        try:
+            signatures = obj.nutritionist_signatures.all()
+        except DatabaseError:
+            # Keep deliveries endpoint available even when signature schema is temporarily out of sync.
+            return []
+        return DeliveryNutritionistSignatureSerializer(signatures, many=True).data
 
     def create(self, validated_data):
         items_data = validated_data.pop('items', [])

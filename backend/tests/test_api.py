@@ -324,6 +324,29 @@ def test_public_delivery_conference_submission(api_client, admin_user):
     assert float(balance.quantity) == 32.0
 
 
+def test_deliveries_list_filters_by_conferred_status(api_client, admin_user):
+    api_client.force_authenticate(user=admin_user)
+    school = School.objects.create(name='Escola Filtro')
+    draft_delivery = Delivery.objects.create(
+        school=school,
+        delivery_date=date.today(),
+        created_by=admin_user,
+        status=Delivery.Status.DRAFT,
+    )
+    conferred_delivery = Delivery.objects.create(
+        school=school,
+        delivery_date=date.today(),
+        created_by=admin_user,
+        status=Delivery.Status.CONFERRED,
+    )
+
+    response = api_client.get('/api/deliveries/?status=CONFERRED')
+    assert response.status_code == 200
+    returned_ids = {entry['id'] for entry in response.data}
+    assert str(conferred_delivery.id) in returned_ids
+    assert str(draft_delivery.id) not in returned_ids
+
+
 def test_copy_delivery_to_multiple_schools_creates_drafts(api_client, admin_user):
     api_client.force_authenticate(user=admin_user)
     source_school = School.objects.create(name='Escola Origem')
