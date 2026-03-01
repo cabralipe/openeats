@@ -553,6 +553,7 @@ const Deliveries: React.FC = () => {
       case 'DRAFT': return 'Rascunho';
       case 'SENT': return 'Enviada';
       case 'CONFERRED': return 'Conferida';
+      case 'FINALIZED': return 'Finalizada';
       default: return status;
     }
   };
@@ -573,6 +574,11 @@ const Deliveries: React.FC = () => {
         return {
           stripe: 'bg-emerald-500',
           chip: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400',
+        };
+      case 'FINALIZED':
+        return {
+          stripe: 'bg-violet-500',
+          chip: 'bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400',
         };
       default:
         return {
@@ -918,7 +924,7 @@ const Deliveries: React.FC = () => {
         </div>
 
         <div className="flex gap-2 mt-4 overflow-x-auto no-scrollbar pb-1">
-          {['', 'DRAFT', 'SENT', 'CONFERRED'].map((status) => (
+          {['', 'DRAFT', 'SENT', 'CONFERRED', 'FINALIZED'].map((status) => (
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
@@ -994,7 +1000,9 @@ const Deliveries: React.FC = () => {
     const conferenceLink = linkByDelivery[delivery.id] ? buildAbsoluteHashUrl(linkByDelivery[delivery.id]) : '';
     const detailDate = formatDateShort(delivery.delivery_date);
     const itemCount = delivery.items?.length || 0;
-    const statusChip = delivery.status === 'CONFERRED'
+    const statusChip = delivery.status === 'FINALIZED'
+      ? 'bg-violet-50 text-violet-600 border-violet-200 dark:bg-violet-900/20 dark:text-violet-400 dark:border-violet-800'
+      : delivery.status === 'CONFERRED'
       ? 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800'
       : delivery.status === 'SENT'
         ? 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800'
@@ -1177,7 +1185,7 @@ const Deliveries: React.FC = () => {
               </div>
             </section>
 
-            {isConferred && (
+            {(isConferred || delivery.status === 'FINALIZED') && (
               <section className="space-y-3">
                 <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 px-1">Autenticação</h2>
                 <button
@@ -1395,7 +1403,7 @@ const Deliveries: React.FC = () => {
             </div>
           </div>
 
-          {isConferred && (
+          {(isConferred || delivery.status === 'FINALIZED') && (
             <div className="mb-8">
               <h3 className="font-bold text-lg text-slate-800 dark:text-slate-100 mb-4">Autenticação</h3>
               <button
@@ -1483,6 +1491,23 @@ const Deliveries: React.FC = () => {
                   Compartilhar
                 </button>
               </div>
+              
+              {(isConferred || delivery.status === 'FINALIZED') && (
+                <div className="grid grid-cols-2 gap-4 mt-4">
+                  <button
+                    onClick={() => setShowSignModal(true)}
+                    className="flex items-center justify-center gap-2 bg-emerald-50 text-emerald-600 font-bold py-3.5 rounded-2xl border border-emerald-200 transition-all hover:bg-emerald-100"
+                  >
+                     <span className="material-symbols-outlined">draw</span> Assinar 
+                  </button>
+                  <button
+                    onClick={() => handleDownloadReceiptPdf(delivery.id)}
+                    className="flex items-center justify-center gap-2 bg-rose-50 text-rose-600 font-bold py-3.5 rounded-2xl border border-rose-200 transition-all hover:bg-rose-100"
+                  >
+                     <span className="material-symbols-outlined">picture_as_pdf</span> Baixar PDF
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1557,6 +1582,53 @@ const Deliveries: React.FC = () => {
               >
                 {copyingDelivery ? 'Copiando...' : `Copiar para ${copyTargetSchools.length || 0} escola(s)`}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      
+      {showSignModal && (
+        <div className="modal-overlay" onClick={() => setShowSignModal(false)}>
+          <div className="modal-content max-w-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold dark:text-white">Assinar Entrega</h3>
+              <button onClick={() => setShowSignModal(false)} className="btn-ghost">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <p className="text-sm text-slate-500 mb-2">Seus dados de nutricionista (Nome e CRN) serão registrados automaticamente com base na sua conta atual.</p>
+              
+              <div className="space-y-2 mt-4">
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Desenhe sua assinatura</label>
+                <div className="border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 dark:bg-slate-800 overflow-hidden relative touch-none">
+                    <canvas 
+                        ref={nutriCanvasRef}
+                        width={500}
+                        height={200}
+                        className="w-full h-40 cursor-crosshair bg-white"
+                        onMouseDown={startDrawingNutri}
+                        onMouseMove={drawNutri}
+                        onMouseUp={stopDrawingNutri}
+                        onMouseLeave={stopDrawingNutri}
+                        onTouchStart={startDrawingNutri}
+                        onTouchMove={drawNutri}
+                        onTouchEnd={stopDrawingNutri}
+                    />
+                </div>
+                <button type="button" onClick={clearNutriSignature} className="text-xs text-primary-600 font-semibold items-center gap-1 inline-flex hover:underline">
+                    <span className="material-symbols-outlined text-[14px]">refresh</span> Limpar
+                </button>
+              </div>
+              
+              <div className="flex gap-3 mt-6">
+                <button onClick={() => setShowSignModal(false)} className="flex-1 btn-secondary py-3">Cancelar</button>
+                <button onClick={handleSignDelivery} disabled={signing || !nutriHasSignature} className="flex-1 btn-primary py-3 disabled:opacity-50">
+                    {signing ? 'Assinando...' : 'Assinar Entrega'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

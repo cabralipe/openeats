@@ -339,6 +339,15 @@ const Recipes: React.FC = () => {
     if (form.imageUrl.trim()) {
       parsedTags.image_url = form.imageUrl.trim();
     }
+    
+    // Add nutrition info
+    if (form.kcal || form.protein || form.carbs) {
+      parsedTags.nutrition = {
+        kcal: form.kcal.trim(),
+        protein: form.protein.trim(),
+        carbs: form.carbs.trim()
+      };
+    }
 
     const name = form.name.trim();
     if (!name) {

@@ -114,6 +114,7 @@ class Delivery(models.Model):
         DRAFT = 'DRAFT', 'Rascunho'
         SENT = 'SENT', 'Enviado'
         CONFERRED = 'CONFERRED', 'Conferido'
+        FINALIZED = 'FINALIZED', 'Finalizada'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='deliveries')
@@ -142,6 +143,19 @@ class Delivery(models.Model):
 
     def __str__(self) -> str:
         return f"Entrega {self.school.name} - {self.delivery_date}"
+
+
+class DeliveryNutritionistSignature(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    delivery = models.ForeignKey(Delivery, on_delete=models.CASCADE, related_name='nutritionist_signatures')
+    name = models.CharField(max_length=255)
+    crn = models.CharField(max_length=80, blank=True)
+    function_role = models.CharField(max_length=100, blank=True)
+    signature_data = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.delivery.id} - {self.name}"
 
 
 class DeliveryItem(models.Model):

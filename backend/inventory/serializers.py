@@ -7,6 +7,7 @@ from .models import (
     Delivery,
     DeliveryItem,
     DeliveryItemLot,
+    DeliveryNutritionistSignature,
     Notification,
     Responsible,
     SchoolStockBalance,
@@ -368,10 +369,18 @@ class DeliveryItemLotInputSerializer(serializers.Serializer):
     planned_quantity = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0)
 
 
+class DeliveryNutritionistSignatureSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeliveryNutritionistSignature
+        fields = ['id', 'delivery', 'name', 'crn', 'function_role', 'signature_data', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+
 class DeliverySerializer(serializers.ModelSerializer):
     school_name = serializers.CharField(source='school.name', read_only=True)
     sender_name = serializers.CharField(source='sender.name', read_only=True, allow_null=True)
     sender_position = serializers.CharField(source='sender.position', read_only=True, allow_null=True)
+    nutritionist_signatures = DeliveryNutritionistSignatureSerializer(many=True, read_only=True)
     items = DeliveryItemSerializer(many=True)
 
     class Meta:
@@ -397,6 +406,7 @@ class DeliverySerializer(serializers.ModelSerializer):
             'receiver_signed_by',
             'conference_signature',
             'conference_signed_by',
+            'nutritionist_signatures',
             'created_by',
             'created_at',
             'updated_at',
@@ -417,6 +427,7 @@ class DeliverySerializer(serializers.ModelSerializer):
             'receiver_signed_by',
             'conference_signature',
             'conference_signed_by',
+            'nutritionist_signatures',
             'created_by',
             'created_at',
             'updated_at',

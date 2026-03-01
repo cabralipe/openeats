@@ -19,6 +19,7 @@ class Menu(models.Model):
     notes = models.TextField(blank=True)
     author_name = models.CharField(max_length=255, blank=True, default='')
     author_crn = models.CharField(max_length=80, blank=True, default='')
+    nutritional_info = models.JSONField(blank=True, default=dict)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     published_at = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -527,6 +527,7 @@ export async function createMenu(payload: {
   week_end: string;
   status?: string;
   notes?: string;
+  nutritional_info?: Record<string, { kcal: string; protein: string; carbs: string }>;
 }) {
   return apiFetch('/api/menus/', {
     method: 'POST',
@@ -542,6 +543,7 @@ export async function updateMenu(id: string, payload: Partial<{
   notes: string;
   author_name: string;
   author_crn: string;
+  nutritional_info: Record<string, { kcal: string; protein: string; carbs: string }>;
 }>) {
   return apiFetch(`/api/menus/${id}/`, {
     method: 'PATCH',
@@ -621,6 +623,38 @@ export async function deleteRecipe(id: string) {
     method: 'DELETE',
   });
 }
+
+// ----------------------
+// ENTRADAS / DELIVERIES
+// ----------------------
+
+export function signDelivery(id: string, signatureData: string, name: string, crn: string, role: string) {
+  return apiFetch(`/api/deliveries/${id}/sign/`, {
+    method: 'POST',
+    body: JSON.stringify({
+      signature_data: signatureData,
+      name,
+      crn,
+      function_role: role,
+    }),
+  });
+}
+
+export function getDeliveryReceiptPdf(id: string) {
+  const token = localStorage.getItem('token');
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  return fetch(`/api/deliveries/${id}/receipt_pdf/`, {
+    method: 'GET',
+    headers,
+  }).then(res => {
+    if (!res.ok) throw new Error('Não foi possível gerar o PDF.');
+    return res.blob();
+  });
+}
+
+
 
 export async function calculateMenuProduction(menuId: string, payload: {
   students_by_meal_type?: Record<string, number>;

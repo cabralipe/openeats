@@ -461,15 +461,21 @@ const PublicMenu: React.FC = () => {
                 <div className="flex flex-wrap gap-3">
                   <div className="bg-white dark:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm flex items-center gap-2">
                     <span className="text-xs font-bold text-primary">Kcal</span>
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200">-</span>
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                      {menu?.nutritional_info?.[currentDay?.dayCode]?.kcal || '-'}
+                    </span>
                   </div>
                   <div className="bg-white dark:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm flex items-center gap-2">
                     <span className="text-xs font-bold text-primary">Prot</span>
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200">-</span>
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                      {menu?.nutritional_info?.[currentDay?.dayCode]?.protein ? `${menu.nutritional_info[currentDay.dayCode].protein}g` : '-'}
+                    </span>
                   </div>
                   <div className="bg-white dark:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm flex items-center gap-2">
                     <span className="text-xs font-bold text-primary">Carbs</span>
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200">-</span>
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                      {menu?.nutritional_info?.[currentDay?.dayCode]?.carbs ? `${menu.nutritional_info[currentDay.dayCode].carbs}g` : '-'}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -598,6 +604,29 @@ const PublicMenu: React.FC = () => {
 
                     {(!recipeData.instructions && (!recipeData.tags?.prep_steps || recipeData.tags.prep_steps.length === 0)) && (
                       <div className="text-center py-6 text-slate-500 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-slate-800">Nenhuma instrução cadastrada.</div>
+                    )}
+
+                    {recipeData.tags?.nutrition && (recipeData.tags.nutrition.kcal || recipeData.tags.nutrition.protein || recipeData.tags.nutrition.carbs) && (
+                      <div className="mt-4 border border-slate-100 dark:border-slate-800 rounded-xl overflow-hidden">
+                        <div className="bg-slate-50 dark:bg-slate-800 px-4 py-3 font-bold text-slate-700 dark:text-slate-200 text-sm flex gap-2 items-center">
+                          <span className="material-symbols-outlined text-lg">local_dining</span>
+                          Informação Nutricional (por porção)
+                        </div>
+                        <div className="flex gap-4 p-4 bg-white dark:bg-slate-900 justify-around">
+                          <div className="text-center">
+                            <p className="text-[10px] uppercase font-bold text-slate-400">Energia</p>
+                            <p className="text-lg font-black text-primary">{recipeData.tags.nutrition.kcal || '-'} <span className="text-sm font-medium">kcal</span></p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-[10px] uppercase font-bold text-slate-400">Proteínas</p>
+                            <p className="text-lg font-black text-primary">{recipeData.tags.nutrition.protein || '-'} <span className="text-sm font-medium">g</span></p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-[10px] uppercase font-bold text-slate-400">Carboidratos</p>
+                            <p className="text-lg font-black text-primary">{recipeData.tags.nutrition.carbs || '-'} <span className="text-sm font-medium">g</span></p>
+                          </div>
+                        </div>
+                      </div>
                     )}
                     
                     {recipeData.ingredients && recipeData.ingredients.length > 0 && (

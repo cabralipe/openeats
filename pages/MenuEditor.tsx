@@ -106,6 +106,7 @@ const MenuEditor: React.FC = () => {
   const [activeDay, setActiveDay] = useState<DayKey>('MON');
   const [activeMeal, setActiveMeal] = useState<MealKey>('LUNCH');
   const [items, setItems] = useState<WeekContent>(createEmptyWeek());
+  const [nutritionalInfo, setNutritionalInfo] = useState<Record<string, { kcal: string; protein: string; carbs: string }>>({});
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [publishSuccess, setPublishSuccess] = useState(false);
@@ -181,6 +182,7 @@ const MenuEditor: React.FC = () => {
           setMenuName('');
           setNotes('');
           setItems(createEmptyWeek());
+          setNutritionalInfo({});
           return;
         }
         loadMenu(data[0]);
@@ -195,6 +197,7 @@ const MenuEditor: React.FC = () => {
     setWeekStart(menu.week_start);
     setWeekEnd(menu.week_end);
     setNotes(menu.notes || '');
+    setNutritionalInfo(menu.nutritional_info || {});
 
     const nextItems = createEmptyWeek();
     menu.items.forEach((item: any) => {
@@ -404,6 +407,7 @@ const MenuEditor: React.FC = () => {
         week_end: weekEnd,
         status: 'DRAFT',
         notes,
+        nutritional_info: nutritionalInfo,
       });
       return menuId;
     }
@@ -415,6 +419,7 @@ const MenuEditor: React.FC = () => {
       week_end: weekEnd,
       status: 'DRAFT',
       notes,
+      nutritional_info: nutritionalInfo,
     });
     setMenuId(menu.id);
     setStatus(menu.status);
@@ -781,9 +786,40 @@ const MenuEditor: React.FC = () => {
                   </button>
                 );
               })}
+
+              <div className="mt-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
+                <h2 className="text-xs font-bold uppercase tracking-widest text-slate-500">Informação Nutricional do Dia</h2>
+                <div className="grid grid-cols-3 gap-3">
+                  <label className="block">
+                    <span className="text-[10px] font-semibold text-slate-500 uppercase">Kcal</span>
+                    <input 
+                      value={nutritionalInfo[activeDay]?.kcal || ''} 
+                      onChange={(e) => setNutritionalInfo(prev => ({ ...prev, [activeDay]: { ...prev[activeDay], kcal: e.target.value } }))}
+                      className="mt-1 w-full h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 text-xs" placeholder="Ex: 500" 
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-[10px] font-semibold text-slate-500 uppercase">Prot (g)</span>
+                    <input 
+                      value={nutritionalInfo[activeDay]?.protein || ''} 
+                      onChange={(e) => setNutritionalInfo(prev => ({ ...prev, [activeDay]: { ...prev[activeDay], protein: e.target.value } }))}
+                      className="mt-1 w-full h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 text-xs" placeholder="Ex: 20" 
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-[10px] font-semibold text-slate-500 uppercase">Carbs (g)</span>
+                    <input 
+                      value={nutritionalInfo[activeDay]?.carbs || ''} 
+                      onChange={(e) => setNutritionalInfo(prev => ({ ...prev, [activeDay]: { ...prev[activeDay], carbs: e.target.value } }))}
+                      className="mt-1 w-full h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 text-xs" placeholder="Ex: 60" 
+                    />
+                  </label>
+                </div>
+              </div>
             </div>
 
             <div className="xl:col-span-8 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
+
               <div className="p-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/40">
                 <div className="flex items-center gap-3">
                   <div className="w-11 h-11 rounded-xl bg-primary/15 text-primary flex items-center justify-center">
