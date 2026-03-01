@@ -40,6 +40,103 @@ const Deliveries: React.FC = () => {
   const [linkByDelivery, setLinkByDelivery] = useState<Record<string, string>>({});
   const [consumptionLinkByDelivery, setConsumptionLinkByDelivery] = useState<Record<string, string>>({});
   const [signaturePreview, setSignaturePreview] = useState<{ image: string; title: string; submittedAt?: string; signedBy?: string } | null>(null);
+
+  // ===== Nutritionist Signature =====
+  const [showSignModal, setShowSignModal] = useState(false);
+  const [nutriSignatureData, setNutriSignatureData] = useState('');
+  const [nutriHasSignature, setNutriHasSignature] = useState(false);
+  const [nutriName, setNutriName] = useState('');
+  const [nutriCrn, setNutriCrn] = useState('');
+  const [nutriRole, setNutriRole] = useState('Nutricionista');
+  const [isDrawingNutri, setIsDrawingNutri] = useState(false);
+  const [signing, setSigning] = useState(false);
+  const nutriCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
+
+  const startDrawingNutri = (e: React.MouseEvent | React.TouchEvent) => {
+    if ('touches' in e) e.preventDefault();
+    const canvas = nutriCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    setIsDrawingNutri(true);
+    const rect = canvas.getBoundingClientRect();
+    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+    ctx.beginPath();
+    ctx.moveTo(clientX - rect.left, clientY - rect.top);
+  };
+  const drawNutri = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!isDrawingNutri) return;
+    if ('touches' in e) e.preventDefault();
+    const canvas = nutriCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineTo(clientX - rect.left, clientY - rect.top);
+    ctx.stroke();
+    setNutriHasSignature(true);
+  };
+  const stopDrawingNutri = () => setIsDrawingNutri(false);
+  const clearNutriSignature = () => {
+    const canvas = nutriCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setNutriHasSignature(false);
+    setNutriSignatureData('');
+  };
+
+  const handleSignDelivery = async () => {
+    const canvas = nutriCanvasRef.current;
+    if (!canvas) return;
+    const sigData = canvas.toDataURL('image/png');
+    if (!nutriHasSignature || !sigData) {
+      setError('Assinatura obrigatória.');
+      return;
+    }
+    setSigning(true);
+    setError('');
+    try {
+      const { signDelivery } = await import('../api');
+      const updated = await signDelivery(selectedDelivery.id, sigData, nutriName, nutriCrn, nutriRole);
+      setDeliveries(deliveries.map(d => d.id === updated.id ? updated : d));
+      setSelectedDelivery(updated);
+      setSuccess('Entrega assinada com sucesso!');
+      setShowSignModal(false);
+      clearNutriSignature();
+      setNutriName('');
+      setNutriCrn('');
+    } catch (err: any) {
+      setError(err?.message || 'Erro ao assinar entrega.');
+    } finally {
+      setSigning(false);
+    }
+  };
+
+  const handleDownloadReceiptPdf = async (id: string) => {
+    try {
+      const { getDeliveryReceiptPdf } = await import('../api');
+      const blob = await getDeliveryReceiptPdf(id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Recibo_Entrega_${id.slice(0, 6)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setError(e?.message || 'Erro ao baixar PDF');
+    }
+  };
+
   const [activeTab, setActiveTab] = useState<'new' | 'list'>('list');
   const [selectedDelivery, setSelectedDelivery] = useState<any | null>(null);
   const [editingDeliveryId, setEditingDeliveryId] = useState<string | null>(null);
@@ -657,11 +754,10 @@ const Deliveries: React.FC = () => {
                     return (
                       <div
                         key={item.id}
-                        className={`flex items-center justify-between px-3 py-2 rounded-xl border ${
-                          checked
+                        className={`flex items-center justify-between px-3 py-2 rounded-xl border ${checked
                             ? 'bg-blue-50 dark:bg-primary-900/20 border-primary-300'
                             : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'
-                        }`}
+                          }`}
                       >
                         <label className="flex items-center gap-3 cursor-pointer flex-1 min-w-0">
                           <input
@@ -1003,10 +1099,10 @@ const Deliveries: React.FC = () => {
     const statusChip = delivery.status === 'FINALIZED'
       ? 'bg-violet-50 text-violet-600 border-violet-200 dark:bg-violet-900/20 dark:text-violet-400 dark:border-violet-800'
       : delivery.status === 'CONFERRED'
-      ? 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800'
-      : delivery.status === 'SENT'
-        ? 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800'
-        : 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800';
+        ? 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800'
+        : delivery.status === 'SENT'
+          ? 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800'
+          : 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800';
 
     const renderItemLots = (item: any) => {
       const lots = item.lots || [];
@@ -1491,20 +1587,20 @@ const Deliveries: React.FC = () => {
                   Compartilhar
                 </button>
               </div>
-              
+
               {(isConferred || delivery.status === 'FINALIZED') && (
                 <div className="grid grid-cols-2 gap-4 mt-4">
                   <button
                     onClick={() => setShowSignModal(true)}
                     className="flex items-center justify-center gap-2 bg-emerald-50 text-emerald-600 font-bold py-3.5 rounded-2xl border border-emerald-200 transition-all hover:bg-emerald-100"
                   >
-                     <span className="material-symbols-outlined">draw</span> Assinar 
+                    <span className="material-symbols-outlined">draw</span> Assinar
                   </button>
                   <button
                     onClick={() => handleDownloadReceiptPdf(delivery.id)}
                     className="flex items-center justify-center gap-2 bg-rose-50 text-rose-600 font-bold py-3.5 rounded-2xl border border-rose-200 transition-all hover:bg-rose-100"
                   >
-                     <span className="material-symbols-outlined">picture_as_pdf</span> Baixar PDF
+                    <span className="material-symbols-outlined">picture_as_pdf</span> Baixar PDF
                   </button>
                 </div>
               )}
@@ -1587,7 +1683,7 @@ const Deliveries: React.FC = () => {
         </div>
       )}
 
-      
+
       {showSignModal && (
         <div className="modal-overlay" onClick={() => setShowSignModal(false)}>
           <div className="modal-content max-w-lg" onClick={(e) => e.stopPropagation()}>
@@ -1597,36 +1693,36 @@ const Deliveries: React.FC = () => {
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
-            
+
             <div className="space-y-4">
               <p className="text-sm text-slate-500 mb-2">Seus dados de nutricionista (Nome e CRN) serão registrados automaticamente com base na sua conta atual.</p>
-              
+
               <div className="space-y-2 mt-4">
                 <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Desenhe sua assinatura</label>
                 <div className="border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 dark:bg-slate-800 overflow-hidden relative touch-none">
-                    <canvas 
-                        ref={nutriCanvasRef}
-                        width={500}
-                        height={200}
-                        className="w-full h-40 cursor-crosshair bg-white"
-                        onMouseDown={startDrawingNutri}
-                        onMouseMove={drawNutri}
-                        onMouseUp={stopDrawingNutri}
-                        onMouseLeave={stopDrawingNutri}
-                        onTouchStart={startDrawingNutri}
-                        onTouchMove={drawNutri}
-                        onTouchEnd={stopDrawingNutri}
-                    />
+                  <canvas
+                    ref={nutriCanvasRef}
+                    width={500}
+                    height={200}
+                    className="w-full h-40 cursor-crosshair bg-white"
+                    onMouseDown={startDrawingNutri}
+                    onMouseMove={drawNutri}
+                    onMouseUp={stopDrawingNutri}
+                    onMouseLeave={stopDrawingNutri}
+                    onTouchStart={startDrawingNutri}
+                    onTouchMove={drawNutri}
+                    onTouchEnd={stopDrawingNutri}
+                  />
                 </div>
                 <button type="button" onClick={clearNutriSignature} className="text-xs text-primary-600 font-semibold items-center gap-1 inline-flex hover:underline">
-                    <span className="material-symbols-outlined text-[14px]">refresh</span> Limpar
+                  <span className="material-symbols-outlined text-[14px]">refresh</span> Limpar
                 </button>
               </div>
-              
+
               <div className="flex gap-3 mt-6">
                 <button onClick={() => setShowSignModal(false)} className="flex-1 btn-secondary py-3">Cancelar</button>
                 <button onClick={handleSignDelivery} disabled={signing || !nutriHasSignature} className="flex-1 btn-primary py-3 disabled:opacity-50">
-                    {signing ? 'Assinando...' : 'Assinar Entrega'}
+                  {signing ? 'Assinando...' : 'Assinar Entrega'}
                 </button>
               </div>
             </div>
