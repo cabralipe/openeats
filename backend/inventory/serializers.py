@@ -150,6 +150,7 @@ class SupplierReceiptItemSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         supply = attrs.get('supply')
         raw_name = (attrs.get('raw_name') or '').strip()
+        category = (attrs.get('category') or '').strip()
         if not supply and not raw_name:
             raise serializers.ValidationError('Informe um insumo existente ou o nome do item recebido.')
         if not supply and not (attrs.get('category') or '').strip():
@@ -160,7 +161,17 @@ class SupplierReceiptItemSerializer(serializers.ModelSerializer):
             attrs['unit'] = supply.unit
             return attrs
 
-        matched_supply = Supply.objects.filter(name__iexact=raw_name).first() if raw_name else None
+        matched_supply = None
+        if raw_name:
+            # Reaproveitar insumo apenas quando a identidade do item bate
+            # (nome + categoria + unidade), priorizando ativos.
+            base_qs = Supply.objects.filter(name__iexact=raw_name, unit=attrs.get('unit'))
+            if category:
+                base_qs = base_qs.filter(category__iexact=category)
+            matched_supply = (
+                base_qs.filter(is_active=True).first()
+                or base_qs.first()
+            )
         if matched_supply:
             attrs['supply'] = matched_supply
             attrs['unit'] = matched_supply.unit

@@ -308,7 +308,11 @@ class StockViewSet(viewsets.ReadOnlyModelViewSet):
             else:
                 queryset = queryset.filter(quantity__gte=models.F('supply__min_stock'))
         if is_active in ['true', 'false']:
-            queryset = queryset.filter(supply__is_active=is_active == 'true')
+            if is_active == 'true':
+                # Nao ocultar saldos existentes caso o insumo esteja inativo por cadastro.
+                queryset = queryset.filter(models.Q(supply__is_active=True) | models.Q(quantity__gt=0))
+            else:
+                queryset = queryset.filter(supply__is_active=False)
         return queryset
 
 
@@ -483,6 +487,11 @@ class SupplierReceiptViewSet(viewsets.ModelViewSet):
                         resolved_supply.is_active = True
                         resolved_supply.save(update_fields=['is_active', 'updated_at'])
                     item.supply_created = resolved_supply
+                elif not resolved_supply.is_active:
+                    # Item ja veio vinculado a insumo inativo no cadastro do recebimento.
+                    # Reativar para que o saldo do recebimento apareca no inventario.
+                    resolved_supply.is_active = True
+                    resolved_supply.save(update_fields=['is_active', 'updated_at'])
 
                 quantity = entry['received_quantity']
                 lots_payload = entry.get('lots') or []
