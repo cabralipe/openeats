@@ -285,10 +285,18 @@ const SupplierReceipts: React.FC = () => {
       setError('Selecione um fornecedor.');
       return;
     }
+    const selectedSchool = schools.find((school) => school.id === schoolId);
+    const destinationLabel = selectedSchool?.name || 'Estoque Central';
     const validItems = draftItems.filter((item) => decimalInputToNumber(item.expected_quantity) > 0 && (item.supply || item.raw_name.trim()));
     if (!validItems.length) {
       setError('Adicione ao menos um item válido no recebimento.');
       return;
+    }
+    if (schoolId) {
+      const confirmedSchoolDestination = window.confirm(
+        `Este recebimento sera lancado diretamente no estoque da escola "${destinationLabel}" e nao no estoque central. Deseja continuar?`,
+      );
+      if (!confirmedSchoolDestination) return;
     }
 
     setSubmitting(true);
@@ -308,9 +316,10 @@ const SupplierReceipts: React.FC = () => {
           expected_quantity: decimalInputToNumber(item.expected_quantity),
         })),
       });
-      setSuccess('Recebimento criado.');
+      setSuccess(`Recebimento criado com destino: ${destinationLabel}.`);
       setNotes('');
       setDraftItems([]);
+      setSchoolId('');
       await loadData();
     } catch (err: any) {
       setError(err?.message || 'Não foi possível criar o recebimento.');
@@ -503,7 +512,7 @@ const SupplierReceipts: React.FC = () => {
       });
       setSelectedReceipt(updated);
       initializeConferenceForm(updated);
-      setSuccess('Conferência do recebimento concluída com lotes.');
+      setSuccess(`Conferência concluída. Entrada registrada em: ${updated?.school_name || 'Estoque Central'}.`);
       await loadData();
     } catch (err: any) {
       setError(err?.message || 'Não foi possível concluir a conferência.');
@@ -614,6 +623,15 @@ const SupplierReceipts: React.FC = () => {
                   <option value="">Estoque Central</option>
                   {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
                 </select>
+                {!schoolId ? (
+                  <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
+                    Entrada no Estoque Central (origem das entregas para as escolas).
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400 font-medium">
+                    Entrada direta na escola selecionada. Este recebimento nao alimenta o estoque central.
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Data Prevista</label>
