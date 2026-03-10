@@ -10,6 +10,7 @@ import {
   getPublicLink,
   getResponsibles,
   getSchools,
+  getMe,
   getSupplies,
   sendDelivery,
   suggestDeliveryItemLots,
@@ -40,6 +41,7 @@ const Deliveries: React.FC = () => {
   const [linkByDelivery, setLinkByDelivery] = useState<Record<string, string>>({});
   const [consumptionLinkByDelivery, setConsumptionLinkByDelivery] = useState<Record<string, string>>({});
   const [signaturePreview, setSignaturePreview] = useState<{ image: string; title: string; submittedAt?: string; signedBy?: string } | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState('');
 
   // ===== Nutritionist Signature =====
   const [showSignModal, setShowSignModal] = useState(false);
@@ -179,11 +181,12 @@ const Deliveries: React.FC = () => {
 
   const loadData = async () => {
     setError('');
-    const [schoolsRes, suppliesRes, deliveriesRes, responsiblesRes] = await Promise.allSettled([
+    const [schoolsRes, suppliesRes, deliveriesRes, responsiblesRes, meRes] = await Promise.allSettled([
       getSchools(),
       getSupplies({ is_active: true }),
       getDeliveries(statusFilter ? { status: statusFilter } : undefined),
       getResponsibles({ is_active: true }),
+      getMe(),
     ]);
 
     if (schoolsRes.status === 'fulfilled') {
@@ -205,12 +208,16 @@ const Deliveries: React.FC = () => {
     if (responsiblesRes.status === 'fulfilled') {
       setResponsibles(responsiblesRes.value as Responsible[]);
     }
+    if (meRes.status === 'fulfilled') {
+      setCurrentUserRole(String((meRes.value as { role?: string })?.role || ''));
+    }
 
     const failed: string[] = [];
     if (schoolsRes.status === 'rejected') failed.push('escolas');
     if (suppliesRes.status === 'rejected') failed.push('insumos');
     if (deliveriesRes.status === 'rejected') failed.push('entregas');
     if (responsiblesRes.status === 'rejected') failed.push('entregadores');
+    if (meRes.status === 'rejected') failed.push('perfil');
     if (failed.length) {
       setError(`Não foi possível carregar: ${failed.join(', ')}.`);
     }
@@ -1589,13 +1596,15 @@ const Deliveries: React.FC = () => {
               </div>
 
               {(isConferred || delivery.status === 'FINALIZED') && (
-                <div className="grid grid-cols-2 gap-4 mt-4">
-                  <button
-                    onClick={() => setShowSignModal(true)}
-                    className="flex items-center justify-center gap-2 bg-emerald-50 text-emerald-600 font-bold py-3.5 rounded-2xl border border-emerald-200 transition-all hover:bg-emerald-100"
-                  >
-                    <span className="material-symbols-outlined">draw</span> Assinar
-                  </button>
+                <div className={`grid gap-4 mt-4 ${currentUserRole === 'NUTRITIONIST' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                  {currentUserRole === 'NUTRITIONIST' && (
+                    <button
+                      onClick={() => setShowSignModal(true)}
+                      className="flex items-center justify-center gap-2 bg-emerald-50 text-emerald-600 font-bold py-3.5 rounded-2xl border border-emerald-200 transition-all hover:bg-emerald-100"
+                    >
+                      <span className="material-symbols-outlined">draw</span> Assinar
+                    </button>
+                  )}
                   <button
                     onClick={() => handleDownloadReceiptPdf(delivery.id)}
                     className="flex items-center justify-center gap-2 bg-rose-50 text-rose-600 font-bold py-3.5 rounded-2xl border border-rose-200 transition-all hover:bg-rose-100"
@@ -1603,6 +1612,11 @@ const Deliveries: React.FC = () => {
                     <span className="material-symbols-outlined">picture_as_pdf</span> Baixar PDF
                   </button>
                 </div>
+              )}
+              {(isConferred || delivery.status === 'FINALIZED') && currentUserRole && currentUserRole !== 'NUTRITIONIST' && (
+                <p className="mt-3 text-xs text-slate-500">
+                  A assinatura final da entrega fica disponível apenas para contas de nutricionista.
+                </p>
               )}
             </div>
           )}

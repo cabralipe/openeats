@@ -134,6 +134,21 @@ async function apiFetch<T>(path: string, options: RetryableFetchOptions = {}): P
         parsedMessage = parsed.detail;
       } else if (typeof parsed?.message === 'string' && parsed.message.trim()) {
         parsedMessage = parsed.message;
+      } else if (parsed && typeof parsed === 'object') {
+        const validationMessages = Object.entries(parsed)
+          .flatMap(([field, value]) => {
+            if (typeof value === 'string') return [field === 'non_field_errors' ? value : `${field}: ${value}`];
+            if (Array.isArray(value)) {
+              return value
+                .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+                .map((item) => (field === 'non_field_errors' ? item : `${field}: ${item}`));
+            }
+            return [];
+          })
+          .filter(Boolean);
+        if (validationMessages.length) {
+          parsedMessage = validationMessages.join(' ');
+        }
       }
     } catch {
       // Keep raw text when body is not JSON.
@@ -649,17 +664,44 @@ export function signDelivery(id: string, signatureData: string, name: string, cr
 }
 
 export function getDeliveryReceiptPdf(id: string) {
-  const token = localStorage.getItem('token');
-  const headers: Record<string, string> = {};
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return (async () => {
+    let token = tokenStore.getAccess();
+    const refresh = tokenStore.getRefresh();
 
-  return fetch(`/api/deliveries/${id}/receipt_pdf/`, {
-    method: 'GET',
-    headers,
-  }).then(res => {
-    if (!res.ok) throw new Error('Não foi possível gerar o PDF.');
-    return res.blob();
-  });
+    if ((!token && refresh) || (token && isTokenExpired(token))) {
+      token = await tryRefreshAccessToken();
+    }
+
+    if (!token) {
+      tokenStore.clear();
+      notifyAuthExpired();
+      throw new Error('Sessao expirada. Faca login novamente.');
+    }
+
+    const response = await fetch(`${API_BASE}/api/deliveries/${id}/receipt_pdf/`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        const refreshedToken = await tryRefreshAccessToken();
+        if (refreshedToken) {
+          return getDeliveryReceiptPdf(id);
+        }
+        tokenStore.clear();
+        notifyAuthExpired();
+        throw new Error('Sessao expirada. Faca login novamente.');
+      }
+
+      const message = await response.text();
+      throw new Error(message || 'Não foi possível gerar o PDF.');
+    }
+
+    return response.blob();
+  })();
 }
 
 

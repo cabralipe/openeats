@@ -1,10 +1,13 @@
+from django.core.exceptions import ObjectDoesNotExist
 from rest_framework import serializers
+
+from schools.models import School
 
 from .models import MealServiceEntry, MealServiceReport, Menu, MenuItem
 
 
 class MenuItemSerializer(serializers.ModelSerializer):
-    recipe_name = serializers.CharField(source='recipe.name', read_only=True)
+    recipe_name = serializers.SerializerMethodField()
 
     class Meta:
         model = MenuItem
@@ -24,6 +27,13 @@ class MenuItemSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'created_at']
 
+    def get_recipe_name(self, obj):
+        try:
+            recipe = obj.recipe
+        except ObjectDoesNotExist:
+            return ''
+        return getattr(recipe, 'name', '')
+
     def validate(self, attrs):
         recipe = attrs.get('recipe', getattr(self.instance, 'recipe', None))
         calc_mode = attrs.get('calc_mode', getattr(self.instance, 'calc_mode', MenuItem.CalcMode.FREE_TEXT))
@@ -37,7 +47,9 @@ class MenuItemSerializer(serializers.ModelSerializer):
 
 
 class MenuSerializer(serializers.ModelSerializer):
-    school_name = serializers.CharField(source='school.name', read_only=True)
+    school = serializers.PrimaryKeyRelatedField(queryset=School.objects.all())
+    school_name = serializers.SerializerMethodField()
+    created_by = serializers.UUIDField(source='created_by_id', read_only=True)
     items = MenuItemSerializer(many=True, read_only=True)
 
     class Meta:
@@ -48,6 +60,13 @@ class MenuSerializer(serializers.ModelSerializer):
             'created_by', 'published_at', 'created_at', 'updated_at', 'items'
         ]
         read_only_fields = ['created_by', 'published_at', 'created_at', 'updated_at']
+
+    def get_school_name(self, obj):
+        try:
+            school = obj.school
+        except ObjectDoesNotExist:
+            return ''
+        return getattr(school, 'name', '')
 
 
 class MenuItemBulkSerializer(serializers.Serializer):
