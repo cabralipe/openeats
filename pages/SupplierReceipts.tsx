@@ -4,6 +4,7 @@ import {
   createSupplierReceipt,
   deleteSupplier,
   deleteSupplierReceipt,
+  getSupplyCategories,
   getSchools,
   getSupplies,
   getSupplierReceipts,
@@ -132,6 +133,7 @@ const SupplierReceipts: React.FC = () => {
   const [schools, setSchools] = useState<any[]>([]);
   const [supplies, setSupplies] = useState<any[]>([]);
   const [receipts, setReceipts] = useState<any[]>([]);
+  const [availableCategories, setAvailableCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -164,11 +166,12 @@ const SupplierReceipts: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     setError('');
-    const [suppliersRes, schoolsRes, suppliesRes, receiptsRes] = await Promise.allSettled([
+    const [suppliersRes, schoolsRes, suppliesRes, receiptsRes, categoriesRes] = await Promise.allSettled([
       getSuppliers({ is_active: true }),
       getSchools({ is_active: true }),
       getSupplies({ is_active: true }),
       getSupplierReceipts(filterStatus ? { status: filterStatus } : undefined),
+      getSupplyCategories(),
     ]);
 
     if (suppliersRes.status === 'fulfilled') {
@@ -183,6 +186,10 @@ const SupplierReceipts: React.FC = () => {
     }
     if (schoolsRes.status === 'fulfilled') setSchools(schoolsRes.value as any[]);
     if (suppliesRes.status === 'fulfilled') setSupplies(suppliesRes.value as any[]);
+    if (categoriesRes.status === 'fulfilled') {
+      const categories = (categoriesRes.value as string[]).filter((cat) => String(cat || '').trim());
+      setAvailableCategories(Array.from(new Set(categories)).sort());
+    }
     if (receiptsRes.status === 'fulfilled') {
       const data = receiptsRes.value as any[];
       setReceipts(data);
@@ -264,6 +271,10 @@ const SupplierReceipts: React.FC = () => {
   const handleSaveItemForm = () => {
     if (!itemForm.supply && !itemForm.raw_name.trim()) {
       alert('Informe o insumo ou o nome do novo item.');
+      return;
+    }
+    if (!itemForm.supply && !itemForm.category.trim()) {
+      alert('Informe a categoria do novo item.');
       return;
     }
     if (editingItemIndex !== null) {
@@ -955,7 +966,18 @@ const SupplierReceipts: React.FC = () => {
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-primary uppercase tracking-wider">Categoria</label>
-                    <input className="input rounded-lg w-full bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-primary/50" placeholder="Ex: Hortifruti" value={itemForm.category} onChange={(e) => setItemForm((prev) => ({ ...prev, category: e.target.value }))} />
+                    <input
+                      className="input rounded-lg w-full bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-primary/50"
+                      placeholder="Ex: Hortifruti"
+                      value={itemForm.category}
+                      onChange={(e) => setItemForm((prev) => ({ ...prev, category: e.target.value }))}
+                      list="receipt-category-options"
+                    />
+                    <datalist id="receipt-category-options">
+                      {availableCategories.map((category) => (
+                        <option key={category} value={category} />
+                      ))}
+                    </datalist>
                   </div>
                 </div>
               )}

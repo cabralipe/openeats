@@ -239,6 +239,58 @@ def test_supplier_receipt_submit_conference_updates_central_stock_when_no_school
     assert float(balance.quantity) == 7.0
 
 
+def test_supplier_receipt_submit_conference_reactivates_inactive_supply(api_client, admin_user):
+    api_client.force_authenticate(user=admin_user)
+    supplier_response = api_client.post('/api/suppliers/', {'name': 'Fornecedor Reativacao'}, format='json')
+    supplier_id = supplier_response.data['id']
+
+    supply = Supply.objects.create(
+        name='Arroz Branco',
+        category='Mercearia',
+        unit=Supply.Units.KG,
+        min_stock=0,
+        is_active=False,
+    )
+    StockBalance.objects.create(supply=supply, quantity=0)
+
+    receipt_response = api_client.post('/api/supplier-receipts/', {
+        'supplier': supplier_id,
+        'expected_date': date.today().isoformat(),
+        'status': SupplierReceipt.Status.EXPECTED,
+        'items': [
+            {
+                'supply': None,
+                'raw_name': 'Arroz Branco',
+                'category': 'Mercearia',
+                'unit': Supply.Units.KG,
+                'expected_quantity': '5.00',
+            },
+        ],
+    }, format='json')
+    assert receipt_response.status_code == 201
+    receipt_id = receipt_response.data['id']
+    item_id = receipt_response.data['items'][0]['id']
+
+    submit_response = api_client.post(f'/api/supplier-receipts/{receipt_id}/submit_conference/', {
+        'items': [
+            {
+                'item_id': item_id,
+                'received_quantity': '5.00',
+            },
+        ],
+        'sender_signature_data': SIGNATURE_DATA,
+        'sender_signer_name': 'Entregador',
+        'receiver_signature_data': SIGNATURE_DATA,
+        'receiver_signer_name': 'Recebedor',
+    }, format='json')
+    assert submit_response.status_code == 200
+
+    supply.refresh_from_db()
+    assert supply.is_active is True
+    balance = StockBalance.objects.get(supply=supply)
+    assert float(balance.quantity) == 5.0
+
+
 def test_supplier_receipt_submit_conference_creates_supply_for_new_item(api_client, admin_user):
     api_client.force_authenticate(user=admin_user)
     supplier_response = api_client.post('/api/suppliers/', {'name': 'Fornecedor Novo Item'}, format='json')

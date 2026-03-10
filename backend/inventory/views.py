@@ -364,6 +364,10 @@ class SupplierReceiptViewSet(viewsets.ModelViewSet):
                             min_stock=0,
                             is_active=True,
                         )
+                    elif not resolved_supply.is_active:
+                        # Reativar insumo reaproveitado para que apareca no inventario ativo.
+                        resolved_supply.is_active = True
+                        resolved_supply.save(update_fields=['is_active', 'updated_at'])
                     item.supply_created = resolved_supply
 
                 quantity = entry['received_quantity']
