@@ -222,7 +222,14 @@ const SupplierReceipts: React.FC = () => {
       next[item.id] = {
         received_quantity: formatQtyBR(Number(item.received_quantity ?? item.expected_quantity ?? 0)),
         note: item.divergence_note || '',
-        lots: [],
+        lots: (item.lots || []).map((lot: any, index: number) => ({
+          id: String(lot.id || `${item.id}-${index}`),
+          lot_code: lot.lot_code || '',
+          expiry_date: isoToDateBR(lot.expiry_date) || '',
+          manufacture_date: isoToDateBR(lot.manufacture_date) || '',
+          received_quantity: formatQtyBR(Number(lot.received_quantity || 0)),
+          note: lot.divergence_note || lot.note || '',
+        })),
       };
     });
     setConferenceForm(next);
@@ -234,6 +241,18 @@ const SupplierReceipts: React.FC = () => {
     () => draftItems.reduce((sum, item) => sum + decimalInputToNumber(item.expected_quantity), 0),
     [draftItems],
   );
+
+  const receiptCategoryOptions = useMemo(() => {
+    const categories = [...availableCategories, 'Outros']
+      .map((value) => String(value || '').trim())
+      .filter(Boolean);
+    const unique = Array.from(new Set(categories));
+    return unique.sort((a, b) => {
+      if (a === 'Outros') return 1;
+      if (b === 'Outros') return -1;
+      return a.localeCompare(b, 'pt-BR');
+    });
+  }, [availableCategories]);
 
   const normalizeSupplyName = (value: string) =>
     String(value || '')
@@ -999,18 +1018,30 @@ const SupplierReceipts: React.FC = () => {
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-primary uppercase tracking-wider">Categoria</label>
-                    <input
+                    <select
                       className="input rounded-lg w-full bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-primary/50"
-                      placeholder="Ex: Hortifruti"
-                      value={itemForm.category}
-                      onChange={(e) => setItemForm((prev) => ({ ...prev, category: e.target.value }))}
-                      list="receipt-category-options"
-                    />
-                    <datalist id="receipt-category-options">
-                      {availableCategories.map((category) => (
-                        <option key={category} value={category} />
+                      value={receiptCategoryOptions.includes(itemForm.category) ? itemForm.category : '__custom__'}
+                      onChange={(e) => {
+                        if (e.target.value === '__custom__') {
+                          setItemForm((prev) => ({ ...prev, category: '' }));
+                          return;
+                        }
+                        setItemForm((prev) => ({ ...prev, category: e.target.value }));
+                      }}
+                    >
+                      {receiptCategoryOptions.map((category) => (
+                        <option key={category} value={category}>{category}</option>
                       ))}
-                    </datalist>
+                      <option value="__custom__">+ Nova categoria...</option>
+                    </select>
+                    {!receiptCategoryOptions.includes(itemForm.category) && (
+                      <input
+                        className="input rounded-lg w-full bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-primary/50 mt-2"
+                        placeholder="Digite a categoria"
+                        value={itemForm.category}
+                        onChange={(e) => setItemForm((prev) => ({ ...prev, category: e.target.value }))}
+                      />
+                    )}
                   </div>
                 </div>
               )}

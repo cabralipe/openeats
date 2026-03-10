@@ -391,7 +391,13 @@ class SupplierViewSet(viewsets.ModelViewSet):
 
 
 class SupplierReceiptViewSet(viewsets.ModelViewSet):
-    queryset = SupplierReceipt.objects.select_related('supplier', 'school', 'created_by').prefetch_related('items__supply').all().order_by('-expected_date', '-created_at')
+    queryset = (
+        SupplierReceipt.objects
+        .select_related('supplier', 'school', 'created_by')
+        .prefetch_related('items__supply', 'items__lots')
+        .all()
+        .order_by('-expected_date', '-created_at')
+    )
     serializer_class = SupplierReceiptSerializer
     permission_classes = [permissions.IsAuthenticated]
 

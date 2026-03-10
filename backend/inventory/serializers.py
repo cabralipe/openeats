@@ -119,6 +119,7 @@ class SupplierSerializer(serializers.ModelSerializer):
 class SupplierReceiptItemSerializer(serializers.ModelSerializer):
     supply_name = serializers.CharField(source='supply.name', read_only=True)
     supply_created_name = serializers.CharField(source='supply_created.name', read_only=True)
+    lots = serializers.SerializerMethodField()
 
     class Meta:
         model = SupplierReceiptItem
@@ -135,9 +136,16 @@ class SupplierReceiptItemSerializer(serializers.ModelSerializer):
             'divergence_note',
             'supply_created',
             'supply_created_name',
+            'lots',
             'created_at',
         ]
         read_only_fields = ['id', 'receipt', 'supply_name', 'supply_created_name', 'created_at']
+
+    def get_lots(self, obj):
+        return SupplierReceiptItemLotSerializer(
+            obj.lots.all().order_by('expiry_date', 'lot_code'),
+            many=True,
+        ).data
 
     def validate(self, attrs):
         supply = attrs.get('supply')
