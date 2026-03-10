@@ -140,6 +140,7 @@ const SupplierReceipts: React.FC = () => {
   const [success, setSuccess] = useState('');
   const [selectedReceipt, setSelectedReceipt] = useState<any | null>(null);
 
+  const [createStep, setCreateStep] = useState<1 | 2 | 3 | 4>(1);
   const [supplierId, setSupplierId] = useState('');
   const [destinationMode, setDestinationMode] = useState<'central' | 'school'>('central');
   const [schoolId, setSchoolId] = useState('');
@@ -241,6 +242,13 @@ const SupplierReceipts: React.FC = () => {
     () => draftItems.reduce((sum, item) => sum + decimalInputToNumber(item.expected_quantity), 0),
     [draftItems],
   );
+  const validDraftItems = useMemo(
+    () => draftItems.filter((item) => decimalInputToNumber(item.expected_quantity) > 0 && (item.supply || item.raw_name.trim())),
+    [draftItems],
+  );
+  const canAdvanceStep1 = Boolean(supplierId && expectedDate);
+  const canAdvanceStep2 = destinationMode === 'central' || Boolean(schoolId);
+  const canAdvanceStep3 = validDraftItems.length > 0;
 
   const receiptCategoryOptions = useMemo(() => {
     const categories = [...availableCategories, 'Outros']
@@ -309,6 +317,23 @@ const SupplierReceipts: React.FC = () => {
     setDraftItems((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const goToCreateStep = (target: 1 | 2 | 3 | 4) => {
+    if (target > 1 && !canAdvanceStep1) {
+      setError('Selecione fornecedor e data para continuar.');
+      return;
+    }
+    if (target > 2 && !canAdvanceStep2) {
+      setError('Defina o destino do recebimento para continuar.');
+      return;
+    }
+    if (target > 3 && !canAdvanceStep3) {
+      setError('Adicione ao menos um item válido para continuar.');
+      return;
+    }
+    setError('');
+    setCreateStep(target);
+  };
+
   const handleCreateReceipt = async () => {
     setError('');
     setSuccess('');
@@ -318,8 +343,7 @@ const SupplierReceipts: React.FC = () => {
     }
     const selectedSchool = schools.find((school) => school.id === schoolId);
     const destinationLabel = destinationMode === 'school' ? (selectedSchool?.name || 'Escola') : 'Estoque Central';
-    const validItems = draftItems.filter((item) => decimalInputToNumber(item.expected_quantity) > 0 && (item.supply || item.raw_name.trim()));
-    if (!validItems.length) {
+    if (!validDraftItems.length) {
       setError('Adicione ao menos um item válido no recebimento.');
       return;
     }
@@ -341,7 +365,7 @@ const SupplierReceipts: React.FC = () => {
         school: destinationMode === 'school' ? schoolId : null,
         expected_date: expectedDate,
         notes,
-        items: validItems.map((item) => ({
+        items: validDraftItems.map((item) => ({
           supply: (item.supply || findExistingSupplyByName(item.raw_name)?.id) || null,
           raw_name: (item.supply || findExistingSupplyByName(item.raw_name)?.id) ? undefined : item.raw_name.trim(),
           category: (item.supply || findExistingSupplyByName(item.raw_name)?.id) ? undefined : (item.category || 'Outros'),
@@ -356,6 +380,7 @@ const SupplierReceipts: React.FC = () => {
       setDraftItems([]);
       setSchoolId('');
       setDestinationMode('central');
+      setCreateStep(1);
       await loadData();
     } catch (err: any) {
       setError(err?.message || 'Não foi possível criar o recebimento.');
@@ -622,133 +647,160 @@ const SupplierReceipts: React.FC = () => {
           </div>
 
           <div className="p-6 space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Fornecedor</label>
-                  <div className="flex items-center gap-2">
-                    {supplierId && (
-                      <button
-                        type="button"
-                        onClick={handleDeleteSupplier}
-                        disabled={submitting}
-                        className="text-[11px] font-bold text-red-600 hover:underline disabled:opacity-60 flex items-center gap-1"
-                      >
-                        <span className="material-symbols-outlined text-sm">delete</span>
-                        Excluir
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {[1, 2, 3, 4].map((step) => (
+                <button
+                  key={step}
+                  type="button"
+                  onClick={() => goToCreateStep(step as 1 | 2 | 3 | 4)}
+                  className={`px-3 py-2 rounded-lg text-xs font-bold border transition-colors ${createStep === step ? 'bg-primary/10 text-primary border-primary/30' : 'bg-white dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-slate-700'}`}
+                >
+                  {step === 1 && '1. Dados Básicos'}
+                  {step === 2 && '2. Destino'}
+                  {step === 3 && '3. Itens'}
+                  {step === 4 && '4. Revisão'}
+                </button>
+              ))}
+            </div>
+
+            {createStep === 1 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Fornecedor</label>
+                    <div className="flex items-center gap-2">
+                      {supplierId && (
+                        <button type="button" onClick={handleDeleteSupplier} disabled={submitting} className="text-[11px] font-bold text-red-600 hover:underline disabled:opacity-60 flex items-center gap-1">
+                          <span className="material-symbols-outlined text-sm">delete</span>
+                          Excluir
+                        </button>
+                      )}
+                      <button type="button" onClick={() => setShowSupplierForm((prev) => !prev)} className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1">
+                        <span className="material-symbols-outlined text-sm">{showSupplierForm ? 'close' : 'add'}</span>
+                        {showSupplierForm ? 'Fechar' : 'Novo fornecedor'}
                       </button>
-                    )}
+                    </div>
+                  </div>
+                  <select className="input rounded-lg py-2.5 text-sm" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
+                    <option value="">Selecione</option>
+                    {suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Data Prevista</label>
+                  <input className="input rounded-lg py-2 text-sm" type="date" value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)} />
+                </div>
+              </div>
+            )}
+
+            {createStep === 2 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Tipo de Entrada</label>
+                  <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() => setShowSupplierForm((prev) => !prev)}
-                      className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1"
+                      className={`px-3 py-2 rounded-lg text-xs font-bold border ${destinationMode === 'central' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800' : 'bg-white dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-slate-700'}`}
+                      onClick={() => {
+                        setDestinationMode('central');
+                        setSchoolId('');
+                      }}
                     >
-                      <span className="material-symbols-outlined text-sm">{showSupplierForm ? 'close' : 'add'}</span>
-                      {showSupplierForm ? 'Fechar' : 'Novo fornecedor'}
+                      Estoque Central
+                    </button>
+                    <button
+                      type="button"
+                      className={`px-3 py-2 rounded-lg text-xs font-bold border ${destinationMode === 'school' ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800' : 'bg-white dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-slate-700'}`}
+                      onClick={() => setDestinationMode('school')}
+                    >
+                      Direto na Escola
                     </button>
                   </div>
+                  {destinationMode === 'central' ? (
+                    <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">Entrada no Estoque Central (origem das entregas para as escolas).</p>
+                  ) : (
+                    <p className="text-[11px] text-amber-700 dark:text-amber-400 font-medium">Entrada direta na escola selecionada. Nao alimenta o estoque central.</p>
+                  )}
                 </div>
-                <select className="input rounded-lg py-2.5 text-sm" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
-                  <option value="">Selecione</option>
-                  {suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
-                </select>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Escola (quando direto)</label>
+                  <select className="input rounded-lg py-2.5 text-sm" value={schoolId} onChange={(e) => setSchoolId(e.target.value)} disabled={destinationMode !== 'school'}>
+                    <option value="">Selecione</option>
+                    {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
+                  </select>
+                </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Tipo de Entrada</label>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    className={`px-3 py-2 rounded-lg text-xs font-bold border ${destinationMode === 'central' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800' : 'bg-white dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-slate-700'}`}
-                    onClick={() => {
-                      setDestinationMode('central');
-                      setSchoolId('');
-                    }}
-                  >
-                    Estoque Central
-                  </button>
-                  <button
-                    type="button"
-                    className={`px-3 py-2 rounded-lg text-xs font-bold border ${destinationMode === 'school' ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800' : 'bg-white dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-slate-700'}`}
-                    onClick={() => setDestinationMode('school')}
-                  >
-                    Direto na Escola
-                  </button>
+            )}
+
+            {createStep === 3 && (
+              <>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Observações</label>
+                  <textarea
+                    className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-primary placeholder:text-slate-400"
+                    placeholder="Informações adicionais sobre o recebimento..."
+                    rows={2}
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                  />
                 </div>
-                {destinationMode === 'central' ? (
-                  <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
-                    Entrada no Estoque Central (origem das entregas para as escolas).
+                <div className="border-t border-slate-100 dark:border-slate-800 pt-6">
+                  <div className="flex justify-between items-center mb-4">
+                    <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">Itens do Recebimento</h4>
+                    <button type="button" onClick={openAddItemModal} className="text-primary hover:underline text-xs font-bold flex items-center gap-1">
+                      <span className="material-symbols-outlined text-sm">add</span> Adicionar Item
+                    </button>
+                  </div>
+                  <div className="space-y-3">
+                    {draftItems.length === 0 ? (
+                      <div className="text-xs text-slate-500 italic p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 text-center">Nenhum item adicionado.</div>
+                    ) : (
+                      draftItems.map((item, index) => (
+                        <div key={index} className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex justify-between items-center transition-colors hover:border-primary/30 group">
+                          <div>
+                            <div className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                              {item.supply ? supplies.find((s) => s.id === item.supply)?.name : item.raw_name || 'Item não identificado'}
+                              {!item.supply && <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded uppercase tracking-widest font-bold">Novo</span>}
+                            </div>
+                            <div className="text-xs text-slate-500 mt-1 font-medium">
+                              {item.expected_quantity} <span className="uppercase">{item.unit}</span>
+                              {!item.supply && item.category && ` • ${item.category}`}
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button type="button" className="text-slate-400 hover:text-primary transition-colors p-2" onClick={() => { setEditingItemIndex(index); setItemForm(item); setIsItemModalOpen(true); }} title="Editar item">
+                              <span className="material-symbols-outlined text-[20px]">edit</span>
+                            </button>
+                            <button type="button" className="text-slate-400 hover:text-red-500 transition-colors p-2" onClick={() => removeDraftItem(index)} title="Excluir item">
+                              <span className="material-symbols-outlined text-[20px]">delete_outline</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {createStep === 4 && (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/50 dark:bg-slate-800/20">
+                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                    Fornecedor: <span className="font-bold">{suppliers.find((supplier) => supplier.id === supplierId)?.name || '-'}</span>
                   </p>
-                ) : (
-                  <p className="text-[11px] text-amber-700 dark:text-amber-400 font-medium">
-                    Entrada direta na escola selecionada. Nao alimenta o estoque central.
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                    Destino: {destinationMode === 'school' ? (schools.find((school) => school.id === schoolId)?.name || '-') : 'Estoque Central'} • Data: {formatDate(expectedDate)}
                   </p>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                    Itens válidos: {validDraftItems.length} • Total previsto: {formatQtyBR(totalDraftQty)}
+                  </p>
+                </div>
+                {!validDraftItems.length && (
+                  <p className="text-xs text-red-600">Nenhum item válido para criar recebimento.</p>
                 )}
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Escola (quando direto)</label>
-                <select
-                  className="input rounded-lg py-2.5 text-sm"
-                  value={schoolId}
-                  onChange={(e) => setSchoolId(e.target.value)}
-                  disabled={destinationMode !== 'school'}
-                >
-                  <option value="">Selecione</option>
-                  {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Data Prevista</label>
-                <input className="input rounded-lg py-2 text-sm" type="date" value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)} />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Observações</label>
-              <textarea
-                className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-primary placeholder:text-slate-400"
-                placeholder="Informações adicionais sobre o recebimento..."
-                rows={2}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-              />
-            </div>
-
-            <div className="border-t border-slate-100 dark:border-slate-800 pt-6">
-              <div className="flex justify-between items-center mb-4">
-                <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">Itens do Recebimento</h4>
-                <button type="button" onClick={openAddItemModal} className="text-primary hover:underline text-xs font-bold flex items-center gap-1">
-                  <span className="material-symbols-outlined text-sm">add</span> Adicionar Item
-                </button>
-              </div>
-              <div className="space-y-3">
-                {draftItems.length === 0 ? (
-                  <div className="text-xs text-slate-500 italic p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 text-center">Nenhum item adicionado.</div>
-                ) : (
-                  draftItems.map((item, index) => (
-                    <div key={index} className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex justify-between items-center transition-colors hover:border-primary/30 group">
-                      <div>
-                        <div className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
-                          {item.supply ? supplies.find((s) => s.id === item.supply)?.name : item.raw_name || 'Item não identificado'}
-                          {!item.supply && <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded uppercase tracking-widest font-bold">Novo</span>}
-                        </div>
-                        <div className="text-xs text-slate-500 mt-1 font-medium">
-                          {item.expected_quantity} <span className="uppercase">{item.unit}</span>
-                          {!item.supply && item.category && ` • ${item.category}`}
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <button type="button" className="text-slate-400 hover:text-primary transition-colors p-2" onClick={() => { setEditingItemIndex(index); setItemForm(item); setIsItemModalOpen(true); }} title="Editar item">
-                          <span className="material-symbols-outlined text-[20px]">edit</span>
-                        </button>
-                        <button type="button" className="text-slate-400 hover:text-red-500 transition-colors p-2" onClick={() => removeDraftItem(index)} title="Excluir item">
-                          <span className="material-symbols-outlined text-[20px]">delete_outline</span>
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
+            )}
           </div>
 
           <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -756,9 +808,27 @@ const SupplierReceipts: React.FC = () => {
               <span className="text-sm text-slate-500 dark:text-slate-400">Total previsto:</span>
               <span className="text-xl font-bold ml-2 text-slate-900 dark:text-white">{formatQtyBR(totalDraftQty)} <span className="text-sm font-normal text-slate-400">unidades (misto)</span></span>
             </div>
-            <button disabled={submitting} onClick={handleCreateReceipt} className="bg-primary hover:bg-blue-700 text-white px-8 py-2.5 rounded-lg font-bold transition-all shadow-md shadow-primary/20 disabled:opacity-60">
-              {submitting ? 'Salvando...' : 'Criar Recebimento'}
-            </button>
+            <div className="flex items-center gap-2">
+              {createStep > 1 && (
+                <button type="button" onClick={() => setCreateStep((createStep - 1) as 1 | 2 | 3 | 4)} className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-bold">
+                  Voltar
+                </button>
+              )}
+              {createStep < 4 && (
+                <button
+                  type="button"
+                  onClick={() => goToCreateStep((createStep + 1) as 1 | 2 | 3 | 4)}
+                  className="bg-slate-800 hover:bg-slate-900 text-white px-5 py-2.5 rounded-lg font-bold text-sm"
+                >
+                  Próximo
+                </button>
+              )}
+              {createStep === 4 && (
+                <button disabled={submitting || !validDraftItems.length} onClick={handleCreateReceipt} className="bg-primary hover:bg-blue-700 text-white px-8 py-2.5 rounded-lg font-bold transition-all shadow-md shadow-primary/20 disabled:opacity-60">
+                  {submitting ? 'Salvando...' : 'Criar Recebimento'}
+                </button>
+              )}
+            </div>
           </div>
         </section>
 
