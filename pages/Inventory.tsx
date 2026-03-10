@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { createStockMovement, createSupply, deleteSupply, exportStockCsv, getStock, getSupplies, getSupplyCategories, getSupplyLots, updateSupply } from '../api';
+import { createStockMovement, createSupply, deleteSupply, exportStockCsv, getCentralLots, getStock, getSupplies, getSupplyCategories, getSupplyLots, updateSupply } from '../api';
 import { InventoryItem } from '../types';
 
 const NOVA_OPTIONS = [
@@ -41,6 +41,30 @@ const NUTRITIONAL_COLORS: Record<string, string> = {
   ENERGETICOS_EXTRAS: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400',
 };
 
+type CentralLotDestination = {
+  school_id: string;
+  school_name: string;
+  quantity: number;
+  last_delivery_date?: string;
+};
+
+type CentralLotRow = {
+  id: string;
+  supply_id: string;
+  supply_name: string;
+  unit: string;
+  lot_code: string;
+  status: string;
+  expiry_date?: string;
+  manufacture_date?: string;
+  supplier_name?: string;
+  central_quantity: number;
+  days_to_expiry?: number | null;
+  expiry_state: 'expired' | 'near_expiry' | 'ok' | 'unknown';
+  sent_total: number;
+  destinations: CentralLotDestination[];
+};
+
 const Inventory: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [mode, setMode] = useState<'register' | 'in' | 'out' | 'edit'>('register');
@@ -63,6 +87,10 @@ const Inventory: React.FC = () => {
   const [customCategoryInput, setCustomCategoryInput] = useState('');
   const [lotsModal, setLotsModal] = useState<{ item: InventoryItem; lots: any[] } | null>(null);
   const [lotsLoading, setLotsLoading] = useState(false);
+  const [centralLotsModalOpen, setCentralLotsModalOpen] = useState(false);
+  const [centralLotsLoading, setCentralLotsLoading] = useState(false);
+  const [centralLotsDays, setCentralLotsDays] = useState(30);
+  const [centralLotsData, setCentralLotsData] = useState<{ summary?: any; results: CentralLotRow[] }>({ results: [] });
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
 
   // Merge preset + dynamic categories (deduplicated)
@@ -347,6 +375,23 @@ const Inventory: React.FC = () => {
     }
   };
 
+  const handleOpenCentralLots = async () => {
+    setError('');
+    setCentralLotsLoading(true);
+    setCentralLotsModalOpen(true);
+    try {
+      const response = await getCentralLots({ days_to_expiry: centralLotsDays });
+      setCentralLotsData({
+        summary: response?.summary || {},
+        results: Array.isArray(response?.results) ? response.results : [],
+      });
+    } catch (err: any) {
+      setError(err?.message || 'Nao foi possivel carregar a central de lotes.');
+    } finally {
+      setCentralLotsLoading(false);
+    }
+  };
+
   const formatDateBr = (value?: string) => {
     if (!value) return '-';
     const [y, m, d] = String(value).split('-');
@@ -366,6 +411,20 @@ const Inventory: React.FC = () => {
     if (status === 'BLOCKED') return 'bg-warning-100 dark:bg-warning-900/30 text-warning-600';
     if (status === 'DISCARDED') return 'bg-slate-100 dark:bg-slate-800 text-slate-500';
     return 'bg-success-100 dark:bg-success-900/30 text-success-600';
+  };
+
+  const expiryStateLabel = (state?: string) => {
+    if (state === 'expired') return 'Vencido';
+    if (state === 'near_expiry') return 'Proximo do vencimento';
+    if (state === 'ok') return 'Dentro do prazo';
+    return 'Sem validade';
+  };
+
+  const expiryStateClass = (state?: string) => {
+    if (state === 'expired') return 'bg-danger-100 dark:bg-danger-900/30 text-danger-700 dark:text-danger-400';
+    if (state === 'near_expiry') return 'bg-warning-100 dark:bg-warning-900/30 text-warning-700 dark:text-warning-400';
+    if (state === 'ok') return 'bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-400';
+    return 'bg-slate-100 dark:bg-slate-800 text-slate-600';
   };
 
   const getCategoryIcon = (category: string) => {
@@ -421,6 +480,10 @@ const Inventory: React.FC = () => {
 
       {/* Quick Actions */}
       <div className="flex gap-3 p-4 overflow-x-auto no-scrollbar">
+        <button onClick={handleOpenCentralLots} className="btn-secondary shrink-0">
+          <span className="material-symbols-outlined">inventory_2</span>
+          Central de Lotes
+        </button>
         <button onClick={() => openModal('register')} className="btn-primary shrink-0">
           <span className="material-symbols-outlined">add</span>
           Cadastrar
@@ -764,6 +827,143 @@ const Inventory: React.FC = () => {
                   Registrar {mode === 'in' ? 'Entrada' : 'Saída'}
                 </button>
               </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Central Lots Management Modal */}
+      {centralLotsModalOpen && (
+        <div className="modal-overlay" onClick={() => !centralLotsLoading && setCentralLotsModalOpen(false)}>
+          <div className="modal-content max-w-5xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4 gap-3">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Central de Gerenciamento de Lotes</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Lotes da central, proximidade de vencimento e destinos de envio por escola.
+                </p>
+              </div>
+              <button
+                onClick={() => setCentralLotsModalOpen(false)}
+                className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                disabled={centralLotsLoading}
+              >
+                <span className="material-symbols-outlined text-slate-400">close</span>
+              </button>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-end gap-3 mb-4">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Proximo do vencimento em ate (dias)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={centralLotsDays}
+                  onChange={(e) => setCentralLotsDays(Math.max(0, Number(e.target.value || 0)))}
+                  className="input w-40"
+                />
+              </div>
+              <button onClick={handleOpenCentralLots} disabled={centralLotsLoading} className="btn-secondary">
+                <span className="material-symbols-outlined">refresh</span>
+                {centralLotsLoading ? 'Atualizando...' : 'Atualizar painel'}
+              </button>
+            </div>
+
+            {centralLotsLoading ? (
+              <div className="p-6 text-sm text-slate-500 flex items-center gap-2">
+                <span className="material-symbols-outlined animate-spin">progress_activity</span>
+                Carregando central de lotes...
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3">
+                    <p className="text-[11px] uppercase tracking-wider text-slate-500">Lotes na central</p>
+                    <p className="text-xl font-bold text-slate-900 dark:text-white">{Number(centralLotsData.summary?.total_lots || 0)}</p>
+                  </div>
+                  <div className="rounded-xl border border-warning-200 dark:border-warning-900/40 p-3 bg-warning-50/40 dark:bg-warning-900/10">
+                    <p className="text-[11px] uppercase tracking-wider text-warning-700 dark:text-warning-400">Proximos do vencimento</p>
+                    <p className="text-xl font-bold text-warning-700 dark:text-warning-400">{Number(centralLotsData.summary?.near_expiry_lots || 0)}</p>
+                  </div>
+                  <div className="rounded-xl border border-danger-200 dark:border-danger-900/40 p-3 bg-danger-50/40 dark:bg-danger-900/10">
+                    <p className="text-[11px] uppercase tracking-wider text-danger-700 dark:text-danger-400">Vencidos</p>
+                    <p className="text-xl font-bold text-danger-700 dark:text-danger-400">{Number(centralLotsData.summary?.expired_lots || 0)}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3">
+                    <p className="text-[11px] uppercase tracking-wider text-slate-500">Saldo total central</p>
+                    <p className="text-xl font-bold text-primary-600 dark:text-primary-400">{Number(centralLotsData.summary?.total_central_quantity || 0).toFixed(2)}</p>
+                  </div>
+                </div>
+
+                {!centralLotsData.results.length ? (
+                  <div className="p-6 rounded-xl bg-slate-50 dark:bg-slate-800/50 text-sm text-slate-500">
+                    Nenhum lote encontrado para os filtros informados.
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-[62vh] overflow-y-auto pr-1">
+                    {centralLotsData.results.map((lot) => (
+                      <div key={lot.id} className="rounded-xl border border-slate-200 dark:border-slate-800 p-4">
+                        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-semibold text-slate-900 dark:text-white">{lot.supply_name} • Lote {lot.lot_code}</p>
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${lotStatusClass(lot.status)}`}>
+                                {lotStatusLabel(lot.status)}
+                              </span>
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${expiryStateClass(lot.expiry_state)}`}>
+                                {expiryStateLabel(lot.expiry_state)}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                              Validade: <span className="font-medium">{formatDateBr(lot.expiry_date)}</span>
+                              {' • '}Fabricacao: <span className="font-medium">{formatDateBr(lot.manufacture_date)}</span>
+                              {lot.days_to_expiry !== null && lot.days_to_expiry !== undefined ? ` • ${lot.days_to_expiry} dia(s)` : ''}
+                            </p>
+                            {lot.supplier_name && (
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                Fornecedor: <span className="font-medium">{lot.supplier_name}</span>
+                              </p>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[11px] uppercase tracking-wider text-slate-500">Saldo central</p>
+                            <p className="text-lg font-bold text-primary-600 dark:text-primary-400">
+                              {Number(lot.central_quantity || 0).toFixed(2)}
+                              <span className="text-sm font-normal text-slate-500 ml-1">{lot.unit}</span>
+                            </p>
+                            <p className="text-[11px] text-slate-500 mt-1">
+                              Enviado: <span className="font-semibold">{Number(lot.sent_total || 0).toFixed(2)} {lot.unit}</span>
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                          <p className="text-[11px] uppercase tracking-wider text-slate-500 mb-2">Destinos do lote</p>
+                          {!lot.destinations?.length ? (
+                            <p className="text-xs text-slate-400 italic">Sem envios registrados para escolas.</p>
+                          ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                              {lot.destinations.map((destination) => (
+                                <div key={`${lot.id}-${destination.school_id}`} className="rounded-lg bg-slate-50 dark:bg-slate-800/40 px-3 py-2 text-xs">
+                                  <p className="font-semibold text-slate-700 dark:text-slate-300">{destination.school_name}</p>
+                                  <p className="text-slate-500 dark:text-slate-400">
+                                    Qtd enviada: {Number(destination.quantity || 0).toFixed(2)} {lot.unit}
+                                  </p>
+                                  <p className="text-slate-500 dark:text-slate-400">
+                                    Ultima entrega: {formatDateBr(destination.last_delivery_date)}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

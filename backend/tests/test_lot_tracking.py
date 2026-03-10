@@ -229,6 +229,34 @@ def test_public_consumption_debits_school_lots_by_fefo(api_client, admin_user, s
     assert LotBalanceSchool.objects.get(school=school, lot=lot_late).quantity == Decimal('1.00')
 
 
+def test_central_lots_endpoint_returns_expiry_and_destinations(api_client, admin_user, school, supply):
+    client = _auth(api_client, admin_user)
+    StockBalance.objects.create(supply=supply, quantity=Decimal('10'))
+    lot = SupplyLot.objects.create(
+        supply=supply,
+        lot_code='RAST1',
+        expiry_date=date.today() + timedelta(days=8),
+    )
+    LotBalanceCentral.objects.create(lot=lot, quantity=Decimal('10'))
+
+    delivery = Delivery.objects.create(school=school, delivery_date=date.today(), created_by=admin_user)
+    item = DeliveryItem.objects.create(delivery=delivery, supply=supply, planned_quantity=Decimal('4'))
+    suggest = client.post(f'/api/deliveries/{delivery.id}/suggest_item_lots/', {'item_id': str(item.id)}, format='json')
+    assert suggest.status_code == 200, suggest.data
+    send_resp = client.post(f'/api/deliveries/{delivery.id}/send/', {}, format='json')
+    assert send_resp.status_code == 200, send_resp.data
+
+    resp = client.get('/api/supplies/central_lots/?days_to_expiry=10')
+    assert resp.status_code == 200, resp.data
+    assert resp.data['summary']['near_expiry_lots'] >= 1
+    rows = resp.data['results']
+    target = next((row for row in rows if row['lot_code'] == 'RAST1'), None)
+    assert target is not None
+    assert target['expiry_state'] == 'near_expiry'
+    assert target['destinations']
+    assert target['destinations'][0]['school_name'] == school.name
+
+
 def test_expiry_command_marks_expired_and_blocks_fefo(supply):
     expired_lot = SupplyLot.objects.create(
         supply=supply,
@@ -245,4 +273,3 @@ def test_expiry_command_marks_expired_and_blocks_fefo(supply):
 
     with pytest.raises(ValidationError):
         fefo_suggestion_service(supply=supply, qty=Decimal('1.00'), from_central=True)
-

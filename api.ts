@@ -314,6 +314,14 @@ export async function getSupplyLots(supplyId: string, params?: { only_available?
   return apiFetch(`/api/supplies/${supplyId}/lots/${search ? `?${search}` : ''}`);
 }
 
+export async function getCentralLots(params?: { days_to_expiry?: number; include_zero?: boolean }) {
+  const cleanParams = params
+    ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
+    : undefined;
+  const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
+  return apiFetch(`/api/supplies/central_lots/${search ? `?${search}` : ''}`);
+}
+
 export async function createSupply(payload: {
   name: string;
   category: string;

@@ -141,6 +141,7 @@ const SupplierReceipts: React.FC = () => {
   const [selectedReceipt, setSelectedReceipt] = useState<any | null>(null);
 
   const [supplierId, setSupplierId] = useState('');
+  const [destinationMode, setDestinationMode] = useState<'central' | 'school'>('central');
   const [schoolId, setSchoolId] = useState('');
   const [expectedDate, setExpectedDate] = useState(today);
   const [notes, setNotes] = useState('');
@@ -297,13 +298,17 @@ const SupplierReceipts: React.FC = () => {
       return;
     }
     const selectedSchool = schools.find((school) => school.id === schoolId);
-    const destinationLabel = selectedSchool?.name || 'Estoque Central';
+    const destinationLabel = destinationMode === 'school' ? (selectedSchool?.name || 'Escola') : 'Estoque Central';
     const validItems = draftItems.filter((item) => decimalInputToNumber(item.expected_quantity) > 0 && (item.supply || item.raw_name.trim()));
     if (!validItems.length) {
       setError('Adicione ao menos um item válido no recebimento.');
       return;
     }
-    if (schoolId) {
+    if (destinationMode === 'school' && !schoolId) {
+      setError('Selecione a escola para recebimento direto.');
+      return;
+    }
+    if (destinationMode === 'school') {
       const confirmedSchoolDestination = window.confirm(
         `Este recebimento sera lancado diretamente no estoque da escola "${destinationLabel}" e nao no estoque central. Deseja continuar?`,
       );
@@ -314,7 +319,7 @@ const SupplierReceipts: React.FC = () => {
     try {
       await createSupplierReceipt({
         supplier: supplierId,
-        school: schoolId || null,
+        school: destinationMode === 'school' ? schoolId : null,
         expected_date: expectedDate,
         notes,
         items: validItems.map((item) => ({
@@ -331,6 +336,7 @@ const SupplierReceipts: React.FC = () => {
       setNotes('');
       setDraftItems([]);
       setSchoolId('');
+      setDestinationMode('central');
       await loadData();
     } catch (err: any) {
       setError(err?.message || 'Não foi possível criar o recebimento.');
@@ -597,7 +603,7 @@ const SupplierReceipts: React.FC = () => {
           </div>
 
           <div className="p-6 space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Fornecedor</label>
@@ -629,20 +635,47 @@ const SupplierReceipts: React.FC = () => {
                 </select>
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Destino (Opcional)</label>
-                <select className="input rounded-lg py-2.5 text-sm" value={schoolId} onChange={(e) => setSchoolId(e.target.value)}>
-                  <option value="">Estoque Central</option>
-                  {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
-                </select>
-                {!schoolId ? (
+                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Tipo de Entrada</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className={`px-3 py-2 rounded-lg text-xs font-bold border ${destinationMode === 'central' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800' : 'bg-white dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-slate-700'}`}
+                    onClick={() => {
+                      setDestinationMode('central');
+                      setSchoolId('');
+                    }}
+                  >
+                    Estoque Central
+                  </button>
+                  <button
+                    type="button"
+                    className={`px-3 py-2 rounded-lg text-xs font-bold border ${destinationMode === 'school' ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800' : 'bg-white dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-slate-700'}`}
+                    onClick={() => setDestinationMode('school')}
+                  >
+                    Direto na Escola
+                  </button>
+                </div>
+                {destinationMode === 'central' ? (
                   <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
                     Entrada no Estoque Central (origem das entregas para as escolas).
                   </p>
                 ) : (
                   <p className="text-[11px] text-amber-700 dark:text-amber-400 font-medium">
-                    Entrada direta na escola selecionada. Este recebimento nao alimenta o estoque central.
+                    Entrada direta na escola selecionada. Nao alimenta o estoque central.
                   </p>
                 )}
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Escola (quando direto)</label>
+                <select
+                  className="input rounded-lg py-2.5 text-sm"
+                  value={schoolId}
+                  onChange={(e) => setSchoolId(e.target.value)}
+                  disabled={destinationMode !== 'school'}
+                >
+                  <option value="">Selecione</option>
+                  {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
+                </select>
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Data Prevista</label>

@@ -178,6 +178,114 @@ class SupplyViewSet(viewsets.ModelViewSet):
         serializer = SupplyLotSerializer(queryset, many=True)
         return Response(serializer.data)
 
+    @action(detail=False, methods=['get'])
+    def central_lots(self, request):
+        days_to_expiry_raw = request.query_params.get('days_to_expiry')
+        include_zero = request.query_params.get('include_zero') in ['true', '1', 'yes']
+        try:
+            days_to_expiry = int(days_to_expiry_raw) if days_to_expiry_raw not in [None, ''] else 30
+        except (TypeError, ValueError):
+            days_to_expiry = 30
+        if days_to_expiry < 0:
+            days_to_expiry = 0
+
+        today = timezone.localdate()
+        delivery_lots_qs = (
+            DeliveryItemLot.objects
+            .select_related('delivery_item__delivery__school')
+            .filter(delivery_item__delivery__status__in=[
+                Delivery.Status.SENT,
+                Delivery.Status.CONFERRED,
+                Delivery.Status.FINALIZED,
+            ])
+            .order_by('-delivery_item__delivery__delivery_date')
+        )
+
+        queryset = (
+            SupplyLot.objects
+            .select_related('supply', 'supplier', 'central_balance')
+            .prefetch_related(models.Prefetch('delivery_item_lots', queryset=delivery_lots_qs))
+            .filter(supply__is_active=True)
+            .order_by('expiry_date', 'supply__name', 'lot_code')
+        )
+        if not include_zero:
+            queryset = queryset.filter(central_balance__quantity__gt=0)
+
+        rows = []
+        near_expiry_count = 0
+        expired_count = 0
+        total_central_quantity = 0
+
+        for lot in queryset:
+            central_quantity = getattr(getattr(lot, 'central_balance', None), 'quantity', 0) or 0
+            total_central_quantity += float(central_quantity)
+            days_left = (lot.expiry_date - today).days if lot.expiry_date else None
+            if days_left is None:
+                expiry_state = 'unknown'
+            elif days_left < 0:
+                expiry_state = 'expired'
+                expired_count += 1
+            elif days_left <= days_to_expiry:
+                expiry_state = 'near_expiry'
+                near_expiry_count += 1
+            else:
+                expiry_state = 'ok'
+
+            destinations_map = {}
+            total_sent = 0.0
+            for item_lot in lot.delivery_item_lots.all():
+                delivery = item_lot.delivery_item.delivery
+                school = delivery.school
+                if not school:
+                    continue
+                sent_qty = item_lot.received_quantity if item_lot.received_quantity is not None else item_lot.planned_quantity
+                sent_qty = float(sent_qty or 0)
+                total_sent += sent_qty
+                key = str(school.id)
+                row = destinations_map.get(key)
+                if row is None:
+                    destinations_map[key] = {
+                        'school_id': str(school.id),
+                        'school_name': school.name,
+                        'quantity': sent_qty,
+                        'last_delivery_date': delivery.delivery_date,
+                    }
+                else:
+                    row['quantity'] += sent_qty
+                    if delivery.delivery_date and (row['last_delivery_date'] is None or delivery.delivery_date > row['last_delivery_date']):
+                        row['last_delivery_date'] = delivery.delivery_date
+
+            destinations = list(destinations_map.values())
+            destinations.sort(key=lambda row: row['school_name'])
+
+            rows.append({
+                'id': str(lot.id),
+                'supply_id': str(lot.supply_id),
+                'supply_name': lot.supply.name,
+                'unit': lot.supply.unit,
+                'lot_code': lot.lot_code,
+                'status': lot.status,
+                'expiry_date': lot.expiry_date,
+                'manufacture_date': lot.manufacture_date,
+                'supplier_name': lot.supplier.name if lot.supplier else '',
+                'central_quantity': central_quantity,
+                'days_to_expiry': days_left,
+                'expiry_state': expiry_state,
+                'sent_total': round(total_sent, 2),
+                'destinations': destinations,
+            })
+
+        return Response({
+            'summary': {
+                'total_lots': len(rows),
+                'near_expiry_lots': near_expiry_count,
+                'expired_lots': expired_count,
+                'total_central_quantity': round(total_central_quantity, 2),
+                'days_to_expiry': days_to_expiry,
+            },
+            'results': rows,
+        })
+
 
 class StockViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = StockBalance.objects.select_related('supply').all().order_by('supply__name')
