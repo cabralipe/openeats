@@ -31,6 +31,10 @@ export const tokenStore = {
   },
 };
 
+export function hasStoredSession() {
+  return Boolean(tokenStore.getAccess() || tokenStore.getRefresh());
+}
+
 function notifyAuthExpired() {
   if (typeof window === 'undefined') return;
   if (hasNotifiedAuthExpired) return;
@@ -88,20 +92,29 @@ async function tryRefreshAccessToken(): Promise<string | null> {
   return refreshPromise;
 }
 
+export async function ensureValidAccessToken(): Promise<string | null> {
+  let token = tokenStore.getAccess();
+  const refresh = tokenStore.getRefresh();
+
+  if ((!token && refresh) || (token && isTokenExpired(token))) {
+    token = await tryRefreshAccessToken();
+  }
+
+  if (!token) {
+    tokenStore.clear();
+    return null;
+  }
+
+  return token;
+}
+
 async function apiFetch<T>(path: string, options: RetryableFetchOptions = {}): Promise<T> {
   const headers = new Headers(options.headers || {});
   headers.set('Content-Type', 'application/json');
 
   if (!options.skipAuth) {
-    let token = tokenStore.getAccess();
-    const refresh = tokenStore.getRefresh();
-
-    if ((!token && refresh) || (token && isTokenExpired(token))) {
-      token = await tryRefreshAccessToken();
-    }
-
+    const token = await ensureValidAccessToken();
     if (!token) {
-      tokenStore.clear();
       notifyAuthExpired();
       throw new Error('Sessao expirada. Faca login novamente.');
     }

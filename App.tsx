@@ -18,7 +18,7 @@ import MenuProductionCalculator from './pages/MenuProductionCalculator';
 import PublicCalculator from './pages/PublicCalculator';
 import PublicCalculatorWizard from './pages/PublicCalculatorWizard';
 import { BottomNav, Sidebar } from './components/Navigation';
-import { AUTH_EXPIRED_EVENT, getNotifications, getUnreadNotificationsCount, markAllNotificationsAsRead, markNotificationAsRead, tokenStore, getMe } from './api';
+import { AUTH_EXPIRED_EVENT, ensureValidAccessToken, getNotifications, getUnreadNotificationsCount, hasStoredSession, markAllNotificationsAsRead, markNotificationAsRead, tokenStore, getMe } from './api';
 import { ProfileModal } from './components/ProfileModal';
 
 interface NotificationItem {
@@ -351,7 +351,36 @@ const NavItem: React.FC<{
 };
 
 const RequireAuth: React.FC<{ children: React.ReactElement }> = ({ children }) => {
-  if (!tokenStore.getAccess()) {
+  const [status, setStatus] = useState<'loading' | 'authorized' | 'unauthorized'>(() => (
+    hasStoredSession() ? 'loading' : 'unauthorized'
+  ));
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const validateSession = async () => {
+      const token = await ensureValidAccessToken();
+      if (!cancelled) {
+        setStatus(token ? 'authorized' : 'unauthorized');
+      }
+    };
+
+    validateSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background-light dark:bg-background-dark">
+        <div className="text-sm text-slate-500 dark:text-slate-400">Validando sessao...</div>
+      </div>
+    );
+  }
+
+  if (status === 'unauthorized') {
     return <Navigate to="/" replace />;
   }
   return children;
