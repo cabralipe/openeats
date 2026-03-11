@@ -264,7 +264,9 @@ const PublicCalculatorWizard: React.FC = () => {
             <h2 className="font-semibold">Passo 2: Data e Refeições</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-1">Data</label>
+                <label className="block text-sm font-medium mb-1">
+                  Data <span className="text-red-500">*</span>
+                </label>
                 <input type="date" value={selectedDate} onChange={(e) => handleDateChange(e.target.value)} className="input" />
               </div>
               <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 text-sm">
@@ -283,7 +285,7 @@ const PublicCalculatorWizard: React.FC = () => {
             {!menuLoading && selectedDate && (
               <div className="space-y-3">
                 <p className="text-sm font-medium">
-                  Refeições disponíveis {selectedDayCode ? `(${dayLabel[selectedDayCode] || selectedDayCode})` : ''}:
+                  Refeições disponíveis {selectedDayCode ? `(${dayLabel[selectedDayCode] || selectedDayCode})` : ''} <span className="text-red-500">*</span>:
                 </p>
                 {availableMeals.length === 0 ? (
                   <p className="text-sm text-slate-500">Nenhuma refeição disponível para essa data.</p>
@@ -324,7 +326,9 @@ const PublicCalculatorWizard: React.FC = () => {
             <h2 className="font-semibold">Passo 3: Quantidade de Alunos</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-1">Quantidade de alunos</label>
+                <label className="block text-sm font-medium mb-1">
+                  Quantidade de alunos <span className="text-red-500">*</span>
+                </label>
                 <input type="number" min="1" value={studentsCount} onChange={(e) => setStudentsCount(e.target.value)} className="input" />
               </div>
               <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 text-sm">

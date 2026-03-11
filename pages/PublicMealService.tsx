@@ -139,7 +139,9 @@ const PublicMealService: React.FC = () => {
           {step === 'date' && (
             <>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Data</label>
+                <label className="text-sm font-medium text-slate-700">
+                  Data <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="date"
                   value={serviceDate}
@@ -167,7 +169,9 @@ const PublicMealService: React.FC = () => {
                 </ul>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Quantas porcoes foram servidas?</label>
+                <label className="text-sm font-medium text-slate-700">
+                  Quantas porcoes foram servidas? <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="number"
                   min={0}

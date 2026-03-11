@@ -667,7 +667,7 @@ const MenuEditor: React.FC = () => {
               <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500">Identificacao</h2>
 
               <label className="block">
-                <span className="text-xs font-semibold text-slate-500">Escola</span>
+                <span className="text-xs font-semibold text-slate-500">Escola <span className="text-red-500">*</span></span>
                 <select value={selectedSchool} onChange={(e) => setSelectedSchool(e.target.value)} className="mt-1 w-full h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-sm">
                   {schools.map((school) => (
                     <option key={school.id} value={school.id}>{school.name}</option>
@@ -676,13 +676,13 @@ const MenuEditor: React.FC = () => {
               </label>
 
               <label className="block">
-                <span className="text-xs font-semibold text-slate-500">Nome do cardapio</span>
+                <span className="text-xs font-semibold text-slate-500">Nome do cardapio <span className="text-red-500">*</span></span>
                 <input value={menuName} onChange={(e) => setMenuName(e.target.value)} className="mt-1 w-full h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-sm" placeholder="Ex: Cardapio Semana 3" />
               </label>
 
               <div className="grid grid-cols-2 gap-3">
                 <label className="block">
-                  <span className="text-xs font-semibold text-slate-500">Semana de</span>
+                  <span className="text-xs font-semibold text-slate-500">Semana de <span className="text-red-500">*</span></span>
                   <input type="date" value={weekStart} onChange={(e) => handleDateChange(e.target.value)} className="mt-1 w-full h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-sm" />
                   <span className="text-[10px] text-slate-400 mt-1 block">Selecione qualquer dia — ajustamos para seg-sex automaticamente</span>
                 </label>
@@ -792,26 +792,26 @@ const MenuEditor: React.FC = () => {
                 <div className="grid grid-cols-3 gap-3">
                   <label className="block">
                     <span className="text-[10px] font-semibold text-slate-500 uppercase">Kcal</span>
-                    <input 
-                      value={nutritionalInfo[activeDay]?.kcal || ''} 
+                    <input
+                      value={nutritionalInfo[activeDay]?.kcal || ''}
                       onChange={(e) => setNutritionalInfo(prev => ({ ...prev, [activeDay]: { ...prev[activeDay], kcal: e.target.value } }))}
-                      className="mt-1 w-full h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 text-xs" placeholder="Ex: 500" 
+                      className="mt-1 w-full h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 text-xs" placeholder="Ex: 500"
                     />
                   </label>
                   <label className="block">
                     <span className="text-[10px] font-semibold text-slate-500 uppercase">Prot (g)</span>
-                    <input 
-                      value={nutritionalInfo[activeDay]?.protein || ''} 
+                    <input
+                      value={nutritionalInfo[activeDay]?.protein || ''}
                       onChange={(e) => setNutritionalInfo(prev => ({ ...prev, [activeDay]: { ...prev[activeDay], protein: e.target.value } }))}
-                      className="mt-1 w-full h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 text-xs" placeholder="Ex: 20" 
+                      className="mt-1 w-full h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 text-xs" placeholder="Ex: 20"
                     />
                   </label>
                   <label className="block">
                     <span className="text-[10px] font-semibold text-slate-500 uppercase">Carbs (g)</span>
-                    <input 
-                      value={nutritionalInfo[activeDay]?.carbs || ''} 
+                    <input
+                      value={nutritionalInfo[activeDay]?.carbs || ''}
                       onChange={(e) => setNutritionalInfo(prev => ({ ...prev, [activeDay]: { ...prev[activeDay], carbs: e.target.value } }))}
-                      className="mt-1 w-full h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 text-xs" placeholder="Ex: 60" 
+                      className="mt-1 w-full h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 text-xs" placeholder="Ex: 60"
                     />
                   </label>
                 </div>
@@ -873,7 +873,7 @@ const MenuEditor: React.FC = () => {
                   </label>
 
                   <label className="block">
-                    <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Nome da refeicao</span>
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Nome da refeicao <span className="text-red-500">*</span></span>
                     <input
                       value={selectedMeal.meal_name}
                       onChange={(e) => updateMealField(activeMeal, 'meal_name', e.target.value)}
@@ -883,7 +883,7 @@ const MenuEditor: React.FC = () => {
                   </label>
 
                   <label className="block">
-                    <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Porcao</span>
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Porcao <span className="text-red-500">*</span></span>
                     <input
                       value={selectedMeal.portion_text}
                       onChange={(e) => updateMealField(activeMeal, 'portion_text', e.target.value)}
@@ -926,7 +926,7 @@ const MenuEditor: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
                   <div className="md:col-span-2">
                     <label className="block">
-                      <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Descricao</span>
+                      <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Descricao <span className="text-red-500">*</span></span>
                       <textarea
                         value={selectedMeal.description}
                         onChange={(e) => updateMealField(activeMeal, 'description', e.target.value)}
@@ -1042,8 +1042,8 @@ const MenuEditor: React.FC = () => {
                       <label
                         key={nut.id}
                         className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${selectedNutritionist === nut.id
-                            ? 'border-green-500 bg-green-50 dark:bg-green-900/10'
-                            : 'border-slate-200 dark:border-slate-700 hover:border-green-300'
+                          ? 'border-green-500 bg-green-50 dark:bg-green-900/10'
+                          : 'border-slate-200 dark:border-slate-700 hover:border-green-300'
                           }`}
                       >
                         <input
@@ -1086,8 +1086,8 @@ const MenuEditor: React.FC = () => {
               <div>
                 <label
                   className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all mb-3 ${selectedNutritionist === 'new'
-                      ? 'border-green-500 bg-green-50 dark:bg-green-900/10'
-                      : 'border-slate-200 dark:border-slate-700 hover:border-green-300'
+                    ? 'border-green-500 bg-green-50 dark:bg-green-900/10'
+                    : 'border-slate-200 dark:border-slate-700 hover:border-green-300'
                     }`}
                 >
                   <input
