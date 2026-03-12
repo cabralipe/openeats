@@ -2,7 +2,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
-from inventory.models import StockBalance, Supplier, SupplierReceipt, SupplierReceiptItem, Supply
+from inventory.models import Delivery, DeliveryItem, StockBalance, Supplier, SupplierReceipt, SupplierReceiptItem, Supply
 from menus.models import Menu, MenuItem
 from schools.models import School
 
@@ -77,3 +77,49 @@ def test_export_supplier_receipts_pdf(api_client, admin_user):
     response = api_client.get('/api/exports/supplier-receipts/pdf/')
     assert response.status_code == 200
     assert response['Content-Type'].startswith('application/pdf')
+
+
+def test_export_delivery_divergences_pdf(api_client, admin_user):
+    api_client.force_authenticate(user=admin_user)
+    school = School.objects.create(name='Escola Divergencia PDF')
+    supply = Supply.objects.create(name='Macarrao', category='Massas', unit=Supply.Units.KG, min_stock=5)
+    delivery = Delivery.objects.create(
+        school=school,
+        delivery_date='2026-02-12',
+        status=Delivery.Status.CONFERRED,
+        created_by=admin_user,
+    )
+    DeliveryItem.objects.create(
+        delivery=delivery,
+        supply=supply,
+        planned_quantity='20.00',
+        received_quantity='17.00',
+        divergence_note='Faltaram 3kg',
+    )
+
+    response = api_client.get('/api/exports/deliveries/divergences/pdf/')
+    assert response.status_code == 200
+    assert response['Content-Type'].startswith('application/pdf')
+
+
+def test_export_delivery_divergences_xlsx(api_client, admin_user):
+    api_client.force_authenticate(user=admin_user)
+    school = School.objects.create(name='Escola Divergencia XLSX')
+    supply = Supply.objects.create(name='Leite', category='Laticinios', unit=Supply.Units.L, min_stock=5)
+    delivery = Delivery.objects.create(
+        school=school,
+        delivery_date='2026-02-13',
+        status=Delivery.Status.CONFERRED,
+        created_by=admin_user,
+    )
+    DeliveryItem.objects.create(
+        delivery=delivery,
+        supply=supply,
+        planned_quantity='10.00',
+        received_quantity='8.00',
+        divergence_note='Recebido abaixo do previsto',
+    )
+
+    response = api_client.get('/api/exports/deliveries/divergences/xlsx/')
+    assert response.status_code == 200
+    assert response['Content-Type'].startswith('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')

@@ -24,6 +24,8 @@ from inventory.views import (
     StockExportXlsxView,
     DeliveryExportPdfView,
     DeliveryExportXlsxView,
+    DeliveryDivergenceExportPdfView,
+    DeliveryDivergenceExportXlsxView,
     ConsumptionExportPdfView,
     ConsumptionExportXlsxView,
 )
@@ -47,6 +49,8 @@ router.register(r'exports/menus', MenuExportCsvView, basename='export-menus')
 router.register(r'exports/menus/pdf', MenuExportPdfView, basename='export-menus-pdf')
 router.register(r'exports/deliveries/pdf', DeliveryExportPdfView, basename='export-deliveries-pdf')
 router.register(r'exports/deliveries/xlsx', DeliveryExportXlsxView, basename='export-deliveries-xlsx')
+router.register(r'exports/deliveries/divergences/pdf', DeliveryDivergenceExportPdfView, basename='export-deliveries-divergences-pdf')
+router.register(r'exports/deliveries/divergences/xlsx', DeliveryDivergenceExportXlsxView, basename='export-deliveries-divergences-xlsx')
 router.register(r'exports/consumption/pdf', ConsumptionExportPdfView, basename='export-consumption-pdf')
 router.register(r'exports/consumption/xlsx', ConsumptionExportXlsxView, basename='export-consumption-xlsx')
 router.register(r'exports/supplier-receipts/pdf', SupplierReceiptExportPdfView, basename='export-supplier-receipts-pdf')

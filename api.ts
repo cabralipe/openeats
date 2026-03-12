@@ -998,6 +998,22 @@ export function exportDeliveriesXlsx(params?: { school?: string; status?: string
   openAuthenticatedUrl(`/api/exports/deliveries/xlsx/${search ? `?${search}` : ''}`);
 }
 
+export function exportDeliveryDivergencesPdf(params?: { school?: string; status?: string; date_from?: string; date_to?: string }) {
+  const cleanParams = params
+    ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
+    : undefined;
+  const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
+  openAuthenticatedUrl(`/api/exports/deliveries/divergences/pdf/${search ? `?${search}` : ''}`);
+}
+
+export function exportDeliveryDivergencesXlsx(params?: { school?: string; status?: string; date_from?: string; date_to?: string }) {
+  const cleanParams = params
+    ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
+    : undefined;
+  const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
+  openAuthenticatedUrl(`/api/exports/deliveries/divergences/xlsx/${search ? `?${search}` : ''}`);
+}
+
 export function exportConsumptionPdf(params?: { supply?: string; date_from?: string; date_to?: string; school?: string }) {
   const cleanParams = params
     ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))

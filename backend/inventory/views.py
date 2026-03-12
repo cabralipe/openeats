@@ -1,6 +1,7 @@
 from django.db import models
 from django.db import transaction
 from django.db.models.deletion import ProtectedError
+from django.db.models import F, Q
 from django.http import HttpResponse
 from django.utils import timezone
 import csv
@@ -1049,6 +1050,213 @@ class DeliveryExportXlsxView(viewsets.ViewSet):
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
         response['Content-Disposition'] = 'attachment; filename=\"deliveries.xlsx\"'
+        return response
+
+
+class DeliveryDivergenceExportPdfView(viewsets.ViewSet):
+    authentication_classes = [QueryParamJWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def list(self, request):
+        queryset = (
+            DeliveryItem.objects
+            .select_related('delivery__school', 'supply')
+            .filter(delivery__school__isnull=False)
+            .filter(
+                Q(received_quantity__isnull=False, received_quantity__lt=F('planned_quantity'))
+                | ~Q(divergence_note='')
+            )
+            .order_by('-delivery__delivery_date', 'delivery__school__name', 'supply__name')
+        )
+        school = request.query_params.get('school')
+        status_value = request.query_params.get('status')
+        date_from = request.query_params.get('date_from')
+        date_to = request.query_params.get('date_to')
+        if school:
+            queryset = queryset.filter(delivery__school_id=school)
+        if status_value:
+            queryset = queryset.filter(delivery__status=status_value)
+        if date_from:
+            queryset = queryset.filter(delivery__delivery_date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(delivery__delivery_date__lte=date_to)
+
+        rows = list(queryset)
+        total_records = len(rows)
+        total_shortage = sum(
+            max(float((item.planned_quantity or 0) - (item.received_quantity or 0)), 0.0)
+            if item.received_quantity is not None else 0.0
+            for item in rows
+        )
+
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = 'attachment; filename=\"delivery_divergences.pdf\"'
+        pdf = canvas.Canvas(response, pagesize=A4)
+        generated_at = timezone.now()
+        page_number = 1
+        filters = [
+            ('Escola', school),
+            ('Status', status_value),
+            ('Data inicial', date_from),
+            ('Data final', date_to),
+        ]
+        y = _start_pdf_page(pdf, 'Relatorio de Divergencias de Entrega', generated_at, filters, page_number)
+
+        pdf.setFont('Helvetica', 9)
+        pdf.setFillColor(colors.HexColor('#1b2a41'))
+        pdf.drawString(
+            32,
+            y,
+            _pdf_text(f"Total de divergencias: {total_records} | Falta acumulada: {total_shortage:.2f}"),
+        )
+        y -= 18
+
+        def draw_table_header(y_pos):
+            pdf.setFillColor(colors.HexColor('#e3e9f5'))
+            pdf.rect(32, y_pos - 14, 530, 16, stroke=0, fill=1)
+            pdf.setFillColor(colors.HexColor('#1b2a41'))
+            pdf.setFont('Helvetica-Bold', 8)
+            pdf.drawString(36, y_pos - 10, _pdf_text('DATA'))
+            pdf.drawString(86, y_pos - 10, _pdf_text('ESCOLA'))
+            pdf.drawString(188, y_pos - 10, _pdf_text('INSUMO'))
+            pdf.drawRightString(380, y_pos - 10, _pdf_text('PREV.'))
+            pdf.drawRightString(430, y_pos - 10, _pdf_text('RECEB.'))
+            pdf.drawRightString(480, y_pos - 10, _pdf_text('FALTA'))
+            pdf.drawString(488, y_pos - 10, _pdf_text('OBS.'))
+            return y_pos - 20
+
+        y = draw_table_header(y)
+        for item in rows:
+            school_name = item.delivery.school.name
+            supply_name = item.supply.name
+            note = item.divergence_note or ''
+            shortage = max(float((item.planned_quantity or 0) - (item.received_quantity or 0)), 0.0) if item.received_quantity is not None else 0.0
+            supply_lines = get_wrapped_text_lines(_pdf_text(supply_name), 'Helvetica', 8, 130)
+            note_lines = get_wrapped_text_lines(_pdf_text(note), 'Helvetica', 8, 70)
+            max_lines = max(len(supply_lines), len(note_lines), 1)
+            row_height = max_lines * 9 + 4
+
+            if y < row_height + 20:
+                _draw_pdf_footer(pdf, page_number)
+                pdf.showPage()
+                page_number += 1
+                y = _start_pdf_page(pdf, 'Relatorio de Divergencias de Entrega', generated_at, filters, page_number)
+                y = draw_table_header(y)
+
+            pdf.setFont('Helvetica', 8)
+            pdf.setFillColor(colors.black)
+            pdf.drawString(36, y - 8, _pdf_text(str(item.delivery.delivery_date)))
+            pdf.drawString(86, y - 8, _pdf_text(school_name[:18]))
+
+            text_y = y - 8
+            for line in supply_lines:
+                pdf.drawString(188, text_y, line)
+                text_y -= 9
+
+            pdf.drawRightString(380, y - 8, _pdf_text(f"{float(item.planned_quantity):.2f}"))
+            received = '-' if item.received_quantity is None else f"{float(item.received_quantity):.2f}"
+            pdf.drawRightString(430, y - 8, _pdf_text(received))
+            pdf.drawRightString(480, y - 8, _pdf_text(f"{shortage:.2f}" if item.received_quantity is not None else '-'))
+
+            text_y = y - 8
+            for line in note_lines:
+                pdf.drawString(488, text_y, line)
+                text_y -= 9
+
+            pdf.setStrokeColor(colors.HexColor('#e8edf6'))
+            pdf.line(32, y - row_height + 4, 562, y - row_height + 4)
+            y -= row_height
+
+        _draw_pdf_footer(pdf, page_number)
+        pdf.save()
+        return response
+
+
+class DeliveryDivergenceExportXlsxView(viewsets.ViewSet):
+    authentication_classes = [QueryParamJWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def list(self, request):
+        queryset = (
+            DeliveryItem.objects
+            .select_related('delivery__school', 'supply')
+            .filter(delivery__school__isnull=False)
+            .filter(
+                Q(received_quantity__isnull=False, received_quantity__lt=F('planned_quantity'))
+                | ~Q(divergence_note='')
+            )
+            .order_by('-delivery__delivery_date', 'delivery__school__name', 'supply__name')
+        )
+        school = request.query_params.get('school')
+        status_value = request.query_params.get('status')
+        date_from = request.query_params.get('date_from')
+        date_to = request.query_params.get('date_to')
+        if school:
+            queryset = queryset.filter(delivery__school_id=school)
+        if status_value:
+            queryset = queryset.filter(delivery__status=status_value)
+        if date_from:
+            queryset = queryset.filter(delivery__delivery_date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(delivery__delivery_date__lte=date_to)
+
+        workbook = Workbook()
+        summary_sheet = workbook.active
+        summary_sheet.title = 'Resumo'
+        summary_sheet.append(['Indicador', 'Valor'])
+
+        details_sheet = workbook.create_sheet(title='Divergencias')
+        details_sheet.append([
+            'Data',
+            'Escola',
+            'Status',
+            'Entrega',
+            'Insumo',
+            'Unidade',
+            'Quantidade Planejada',
+            'Quantidade Recebida',
+            'Falta',
+            'Observacao Divergencia',
+            'Entregador',
+            'Recebedor',
+            'Conferida em',
+        ])
+
+        rows = list(queryset)
+        total_shortage = 0.0
+        for item in rows:
+            shortage = None
+            if item.received_quantity is not None:
+                shortage_value = item.planned_quantity - item.received_quantity
+                shortage = float(shortage_value) if shortage_value > 0 else 0.0
+                total_shortage += shortage
+            details_sheet.append([
+                str(item.delivery.delivery_date),
+                item.delivery.school.name,
+                item.delivery.get_status_display(),
+                str(item.delivery.id),
+                item.supply.name,
+                item.supply.unit,
+                float(item.planned_quantity),
+                float(item.received_quantity) if item.received_quantity is not None else None,
+                shortage,
+                item.divergence_note,
+                item.delivery.sender_signed_by or item.delivery.responsible_name,
+                item.delivery.receiver_signed_by or item.delivery.conference_signed_by,
+                item.delivery.conference_submitted_at.strftime('%Y-%m-%d %H:%M') if item.delivery.conference_submitted_at else '',
+            ])
+
+        summary_sheet.append(['Total de divergencias', len(rows)])
+        summary_sheet.append(['Falta acumulada', total_shortage])
+
+        buffer = io.BytesIO()
+        workbook.save(buffer)
+        buffer.seek(0)
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        response['Content-Disposition'] = 'attachment; filename=\"delivery_divergences.xlsx\"'
         return response
 
 

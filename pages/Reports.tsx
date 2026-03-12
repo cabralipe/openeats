@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { exportConsumptionPdf, exportConsumptionXlsx, exportDeliveriesPdf, exportDeliveriesXlsx, exportMenuPdf, exportMenusCsv, exportStockCsv, exportStockPdf, exportStockXlsx, exportSupplierReceiptsPdf, getDashboard, getDeliveries, getSchools, getStockMovements, getSupplies } from '../api';
+import { exportConsumptionPdf, exportConsumptionXlsx, exportDeliveriesPdf, exportDeliveriesXlsx, exportDeliveryDivergencesPdf, exportDeliveryDivergencesXlsx, exportMenuPdf, exportMenusCsv, exportStockCsv, exportStockPdf, exportStockXlsx, exportSupplierReceiptsPdf, getDashboard, getDeliveries, getSchools, getStockMovements, getSupplies } from '../api';
 
 
 const Reports: React.FC = () => {
@@ -376,7 +376,25 @@ const Reports: React.FC = () => {
                 <span className="material-symbols-outlined">table_view</span>
                 XLSX
               </button>
+              <button
+                onClick={() => exportDeliveryDivergencesPdf({ school: deliverySchool || undefined, status: deliveryStatus || undefined, date_from: deliveryFrom || undefined, date_to: deliveryTo || undefined })}
+                className="btn-secondary"
+              >
+                <span className="material-symbols-outlined">error</span>
+                Divergências PDF
+              </button>
+              <button
+                onClick={() => exportDeliveryDivergencesXlsx({ school: deliverySchool || undefined, status: deliveryStatus || undefined, date_from: deliveryFrom || undefined, date_to: deliveryTo || undefined })}
+                className="btn-secondary"
+              >
+                <span className="material-symbols-outlined">fact_check</span>
+                Divergências XLSX
+              </button>
             </div>
+
+            <p className="text-xs text-slate-500 mb-4">
+              O relatório de divergências exporta apenas itens com falta na conferência ou com observação de divergência.
+            </p>
 
             {/* Results */}
             <div className="space-y-2 max-h-64 overflow-y-auto">
