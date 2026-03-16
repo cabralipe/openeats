@@ -113,6 +113,7 @@ class Delivery(models.Model):
     class Status(models.TextChoices):
         DRAFT = 'DRAFT', 'Rascunho'
         SENT = 'SENT', 'Enviado'
+        IN_CONFERENCE = 'IN_CONFERENCE', 'Em Conferencia'
         CONFERRED = 'CONFERRED', 'Conferido'
         FINALIZED = 'FINALIZED', 'Finalizada'
 

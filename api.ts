@@ -810,18 +810,7 @@ export async function submitPublicDeliveryConference(
   slug: string,
   token: string,
   deliveryId: string,
-  payload: {
-    items: Array<{
-      item_id: string;
-      received_quantity: number;
-      note?: string;
-      lots?: Array<{ delivery_item_lot: string; received_quantity: number; note?: string }>;
-    }>;
-    sender_signature_data: string;
-    sender_signer_name: string;
-    receiver_signature_data: string;
-    receiver_signer_name: string;
-  },
+  payload: any
 ) {
   const encodedSlug = encodeURIComponent(slug);
   const search = new URLSearchParams({ token, delivery_id: deliveryId }).toString();

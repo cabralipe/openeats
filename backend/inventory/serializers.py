@@ -579,35 +579,34 @@ class DeliveryConferenceItemInputSerializer(serializers.Serializer):
 
 
 class DeliveryConferenceInputSerializer(serializers.Serializer):
-    items = DeliveryConferenceItemInputSerializer(many=True)
+    step = serializers.ChoiceField(choices=['sender', 'items', 'receiver'], required=True)
+    items = DeliveryConferenceItemInputSerializer(many=True, required=False)
     # Sender (who delivered) signature
-    sender_signature_data = serializers.CharField()
-    sender_signer_name = serializers.CharField()
+    sender_signature_data = serializers.CharField(required=False, allow_blank=True)
+    sender_signer_name = serializers.CharField(required=False, allow_blank=True)
     # Receiver (who received at school) signature
-    receiver_signature_data = serializers.CharField()
-    receiver_signer_name = serializers.CharField()
+    receiver_signature_data = serializers.CharField(required=False, allow_blank=True)
+    receiver_signer_name = serializers.CharField(required=False, allow_blank=True)
 
     def validate_sender_signature_data(self, value):
-        if not value or not value.startswith('data:image/'):
+        if value and not value.startswith('data:image/'):
             raise serializers.ValidationError('Assinatura do remetente invalida.')
         return value
 
     def validate_receiver_signature_data(self, value):
-        if not value or not value.startswith('data:image/'):
+        if value and not value.startswith('data:image/'):
             raise serializers.ValidationError('Assinatura do receptor invalida.')
         return value
 
     def validate_sender_signer_name(self, value):
-        if not value.strip():
-            raise serializers.ValidationError('Nome do remetente obrigatorio.')
-        return value.strip()
+        return value.strip() if value else value
 
     def validate_receiver_signer_name(self, value):
-        if not value.strip():
-            raise serializers.ValidationError('Nome do receptor obrigatorio.')
-        return value.strip()
+        return value.strip() if value else value
 
     def validate_items(self, items):
+        if items is None:
+            return items
         if not items:
             raise serializers.ValidationError('Informe os itens conferidos.')
         ids = [str(item['item_id']) for item in items]
