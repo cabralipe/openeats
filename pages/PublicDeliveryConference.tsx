@@ -41,11 +41,11 @@ const PublicDeliveryConference: React.FC = () => {
   const receiverCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const items = delivery?.items || [];
-  // Steps: items + receiver signature + sender signature (sender last)
+  // Step logic: 0 = Sender, 1 to items.length = Items, last = Receiver
   const totalSteps = items.length + 2;
-  const isReceiverSignatureStep = currentStep === items.length;
-  const isSenderSignatureStep = currentStep === items.length + 1;
-  const isComplete = delivery?.status === 'CONFERRED';
+  const isSenderSignatureStep = currentStep === 0;
+  const isReceiverSignatureStep = currentStep === items.length + 1;
+  const isComplete = delivery?.status === 'CONFERRED' || delivery?.status === 'FINALIZED';
   const confirmedCount = Object.values(form).filter((f) => f.confirmed).length;
   const progress = isComplete ? 100 : Math.round((confirmedCount / Math.max(items.length, 1)) * 100);
 
@@ -58,8 +58,9 @@ const PublicDeliveryConference: React.FC = () => {
 
     setLoading(true);
     getPublicDeliveryCurrent(slug, token, deliveryId)
-      .then((data) => {
+      .then((data: any) => {
         setDelivery(data);
+        const itemsLength = (data.items || []).length;
         const nextForm: Record<string, ItemConferenceFormEntry> = {};
         (data.items || []).forEach((item: any) => {
           const lotState = Object.fromEntries(
@@ -74,7 +75,7 @@ const PublicDeliveryConference: React.FC = () => {
           nextForm[item.id] = {
             received_quantity: String(item.received_quantity ?? item.planned_quantity ?? ''),
             note: item.divergence_note || '',
-            confirmed: data.status === 'CONFERRED',
+            confirmed: data.status === 'CONFERRED' || (item.received_quantity !== null && item.received_quantity !== undefined),
             lots: lotState,
           };
         });
@@ -86,8 +87,30 @@ const PublicDeliveryConference: React.FC = () => {
         setReceiverSignatureData(data.receiver_signature || data.conference_signature || '');
         setReceiverHasSignature(!!data.receiver_signature || !!data.conference_signature);
         setReceiverName(data.receiver_signed_by || data.conference_signed_by || '');
-        if (data.status === 'CONFERRED') {
-          setCurrentStep((data.items?.length || 0) + 2);
+
+        if (data.status === 'CONFERRED' || data.status === 'FINALIZED') {
+          setCurrentStep(itemsLength + 2);
+        } else if (!data.sender_signature) {
+          setCurrentStep(0); // Go to sender
+        } else {
+          // Find first item not confirmed
+          let startItemIdx = 0;
+          let allItemsConfirmed = true;
+          for (let i = 0; i < itemsLength; i++) {
+            // In backend, "received_quantity" isn't saved until they send it.
+            // We check local state length 
+            const item = data.items[i];
+            if (item.received_quantity === null || item.received_quantity === undefined) {
+              startItemIdx = i;
+              allItemsConfirmed = false;
+              break;
+            }
+          }
+          if (allItemsConfirmed && itemsLength > 0) {
+            setCurrentStep(itemsLength + 1); // Receiver
+          } else {
+            setCurrentStep(startItemIdx + 1); // Items start at offset 1
+          }
         }
       })
       .catch(() => setError('Não foi possível carregar a entrega.'))
@@ -164,39 +187,26 @@ const PublicDeliveryConference: React.FC = () => {
     }
   };
 
-  const handleSubmit = async () => {
+  const handleSubmitStep = async (stepName: 'sender' | 'items' | 'receiver') => {
     if (!delivery) return;
-
-    const senderCanvas = senderCanvasRef.current;
-    const receiverCanvas = receiverCanvasRef.current;
-    // Use saved signature data if available (receiver signature is saved when advancing to sender step)
-    const senderSig = delivery?.status === 'CONFERRED' ? senderSignatureData : senderCanvas?.toDataURL('image/png') || '';
-    const receiverSig = receiverSignatureData || (delivery?.status === 'CONFERRED' ? receiverSignatureData : receiverCanvas?.toDataURL('image/png') || '');
-
-
-    if (!senderSig || !senderHasSignature) {
-      setError('Assinatura do remetente obrigatória.');
-      return;
-    }
-    if (!senderName.trim()) {
-      setError('Informe o nome do remetente.');
-      return;
-    }
-    if (!receiverSig || !receiverHasSignature) {
-      setError('Assinatura do receptor obrigatória.');
-      return;
-    }
-    if (!receiverName.trim()) {
-      setError('Informe o nome do receptor.');
-      return;
-    }
 
     setSending(true);
     setError('');
 
     try {
-      const payload = {
-        items: delivery.items.map((item: any) => ({
+      const payload: any = { step: stepName };
+
+      if (stepName === 'sender') {
+        const senderCanvas = senderCanvasRef.current;
+        const senderSig = senderSignatureData || senderCanvas?.toDataURL('image/png') || '';
+        if (!senderSig || !senderHasSignature) throw new Error('Assinatura do remetente obrigatória.');
+        if (!senderName.trim()) throw new Error('Informe o nome do remetente.');
+        payload.sender_signature_data = senderSig;
+        payload.sender_signer_name = senderName.trim();
+      }
+
+      if (stepName === 'items' || stepName === 'receiver') {
+        payload.items = delivery.items.map((item: any) => ({
           item_id: item.id,
           received_quantity: Number(form[item.id]?.received_quantity || 0),
           note: form[item.id]?.note || '',
@@ -207,24 +217,41 @@ const PublicDeliveryConference: React.FC = () => {
               note: form[item.id]?.lots?.[lot.id]?.note || '',
             }))
             : undefined,
-        })),
-        sender_signature_data: senderSig,
-        sender_signer_name: senderName.trim(),
-        receiver_signature_data: receiverSig,
-        receiver_signer_name: receiverName.trim(),
-      };
+        }));
+      }
+
+      if (stepName === 'receiver') {
+        const receiverCanvas = receiverCanvasRef.current;
+        const receiverSig = receiverSignatureData || receiverCanvas?.toDataURL('image/png') || '';
+        if (!receiverSig || !receiverHasSignature) throw new Error('Assinatura do receptor obrigatória.');
+        if (!receiverName.trim()) throw new Error('Informe o nome do receptor.');
+        payload.receiver_signature_data = receiverSig;
+        payload.receiver_signer_name = receiverName.trim();
+      }
+
       const data = await submitPublicDeliveryConference(slug, token, deliveryId, payload);
       setDelivery(data);
-      setSenderSignatureData(data.sender_signature || senderSig);
-      setSenderHasSignature(true);
-      setReceiverSignatureData(data.receiver_signature || receiverSig);
-      setReceiverHasSignature(true);
-      setSuccess('Conferência concluída com sucesso!');
+
+      if (stepName === 'sender') {
+        const senderCanvas = senderCanvasRef.current;
+        setSenderSignatureData(data.sender_signature || senderCanvas?.toDataURL('image/png') || '');
+        setSenderHasSignature(true);
+        setCurrentStep(1); // Go to first item
+      } else if (stepName === 'receiver') {
+        setSuccess('Conferência concluída com sucesso!');
+      }
+
     } catch (err: any) {
-      setError(err?.message || 'Não foi possível enviar a conferência.');
+      setError(err?.message || 'Não foi possível enviar a etapa da conferência.');
     } finally {
       setSending(false);
     }
+  };
+
+  const handleSaveItems = async () => {
+    await handleSubmitStep('items');
+    setSuccess('Itens salvos com sucesso!');
+    setTimeout(() => setSuccess(''), 3000);
   };
 
   const startDrawing = (
@@ -446,18 +473,22 @@ const PublicDeliveryConference: React.FC = () => {
                         setError('Assinatura do receptor obrigatória.');
                         return;
                       }
-                      // Save the receiver signature data before advancing
-                      const receiverCanvas = receiverCanvasRef.current;
-                      if (receiverCanvas) {
-                        setReceiverSignatureData(receiverCanvas.toDataURL('image/png'));
-                      }
-                      setError('');
-                      setCurrentStep((prev) => prev + 1);
+                      handleSubmitStep('receiver');
                     }}
-                    className="btn-primary flex-1"
+                    disabled={sending}
+                    className="btn flex-1 bg-gradient-to-r from-success-500 to-success-600 text-white shadow-lg shadow-success-500/30"
                   >
-                    <span className="material-symbols-outlined">arrow_forward</span>
-                    Próximo
+                    {sending ? (
+                      <>
+                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                        Enviando...
+                      </>
+                    ) : (
+                      <>
+                        <span className="material-symbols-outlined">check</span>
+                        Confirmar Tudo
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
@@ -521,9 +552,9 @@ const PublicDeliveryConference: React.FC = () => {
                     Voltar
                   </button>
                   <button
-                    onClick={handleSubmit}
+                    onClick={() => handleSubmitStep('sender')}
                     disabled={sending}
-                    className="btn flex-1 bg-gradient-to-r from-success-500 to-success-600 text-white shadow-lg shadow-success-500/30"
+                    className="btn-primary flex-1"
                   >
                     {sending ? (
                       <>
@@ -532,8 +563,8 @@ const PublicDeliveryConference: React.FC = () => {
                       </>
                     ) : (
                       <>
-                        <span className="material-symbols-outlined">check</span>
-                        Confirmar Tudo
+                        <span className="material-symbols-outlined">arrow_forward</span>
+                        Próximo
                       </>
                     )}
                   </button>
@@ -658,17 +689,24 @@ const PublicDeliveryConference: React.FC = () => {
 
                 {/* Actions */}
                 <div className="flex gap-3 pt-2">
-                  {currentStep > 0 && (
+                  {currentStep > 1 && (
                     <button onClick={goBack} className="btn-secondary">
                       <span className="material-symbols-outlined">arrow_back</span>
                     </button>
                   )}
+                  {success && <span className="text-success-600 font-medium self-center text-sm">{success}</span>}
+
+                  <button onClick={handleSaveItems} disabled={sending} className="btn-secondary h-14 text-sm font-medium">
+                    <span className="material-symbols-outlined">save</span>
+                    Salvar Progresso
+                  </button>
+
                   <button
                     onClick={confirmCurrentItem}
                     className="btn-primary flex-1 h-14 text-base shadow-lg shadow-primary-500/30"
                   >
-                    <span className="material-symbols-outlined">check</span>
-                    Confirmar e Avançar
+                    <span className="material-symbols-outlined">arrow_forward</span>
+                    Avançar Etapa
                   </button>
                 </div>
               </div>

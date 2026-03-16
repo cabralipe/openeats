@@ -483,6 +483,7 @@ class SupplierReceiptViewSet(viewsets.ModelViewSet):
                             min_stock=0,
                             is_active=True,
                         )
+                        StockBalance.objects.create(supply=resolved_supply)
                     elif not resolved_supply.is_active:
                         # Reativar insumo reaproveitado para que apareca no inventario ativo.
                         resolved_supply.is_active = True
