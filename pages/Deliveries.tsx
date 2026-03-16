@@ -229,7 +229,7 @@ const Deliveries: React.FC = () => {
 
   useEffect(() => {
     const delivery = selectedDelivery;
-    if (!delivery || delivery.status !== 'SENT') return;
+    if (!delivery || !['SENT', 'IN_CONFERENCE'].includes(delivery.status)) return;
     if (linkByDelivery[delivery.id]) return;
 
     getDeliveryConferenceLink(delivery.id)
@@ -656,6 +656,7 @@ const Deliveries: React.FC = () => {
     switch (status) {
       case 'DRAFT': return 'Rascunho';
       case 'SENT': return 'Enviada';
+      case 'IN_CONFERENCE': return 'Em Conferência';
       case 'CONFERRED': return 'Conferida';
       case 'FINALIZED': return 'Finalizada';
       default: return status;
@@ -673,6 +674,11 @@ const Deliveries: React.FC = () => {
         return {
           stripe: 'bg-blue-500',
           chip: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400',
+        };
+      case 'IN_CONFERENCE':
+        return {
+          stripe: 'bg-cyan-500',
+          chip: 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400',
         };
       case 'CONFERRED':
         return {
@@ -1027,7 +1033,7 @@ const Deliveries: React.FC = () => {
         </div>
 
         <div className="flex gap-2 mt-4 overflow-x-auto no-scrollbar pb-1">
-          {['', 'DRAFT', 'SENT', 'CONFERRED', 'FINALIZED'].map((status) => (
+          {['', 'DRAFT', 'SENT', 'IN_CONFERENCE', 'CONFERRED', 'FINALIZED'].map((status) => (
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
@@ -1098,7 +1104,7 @@ const Deliveries: React.FC = () => {
     if (!delivery) return null;
     const statusLabel = getStatusLabel(delivery.status);
     const isDraft = delivery.status === 'DRAFT';
-    const isSent = delivery.status === 'SENT';
+    const canShowConferenceLink = ['SENT', 'IN_CONFERENCE'].includes(delivery.status);
     const isConferred = delivery.status === 'CONFERRED';
     const conferenceLink = linkByDelivery[delivery.id] ? buildAbsoluteHashUrl(linkByDelivery[delivery.id]) : '';
     const detailDate = formatDateShort(delivery.delivery_date);
@@ -1107,6 +1113,8 @@ const Deliveries: React.FC = () => {
       ? 'bg-violet-50 text-violet-600 border-violet-200 dark:bg-violet-900/20 dark:text-violet-400 dark:border-violet-800'
       : delivery.status === 'CONFERRED'
         ? 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800'
+        : delivery.status === 'IN_CONFERENCE'
+          ? 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-900/20 dark:text-cyan-400 dark:border-cyan-800'
         : delivery.status === 'SENT'
           ? 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800'
           : 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800';
@@ -1218,7 +1226,7 @@ const Deliveries: React.FC = () => {
               </div>
             </div>
 
-            {isSent && (
+            {canShowConferenceLink && (
               <section className="space-y-2">
                 <div className="flex items-center justify-between px-1">
                   <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500">Link de Conferência</h2>
@@ -1350,7 +1358,7 @@ const Deliveries: React.FC = () => {
             </footer>
           ) : (
             <footer className="fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-t border-slate-200 dark:border-slate-800 p-4 pb-8 space-y-3 z-50 shadow-[0_-10px_30px_-15px_rgba(0,0,0,0.1)]">
-              <div className={`grid gap-3 ${isSent ? 'grid-cols-3' : 'grid-cols-2'}`}>
+              <div className={`grid gap-3 ${canShowConferenceLink ? 'grid-cols-3' : 'grid-cols-2'}`}>
                 <button
                   type="button"
                   onClick={() => window.print()}
@@ -1359,7 +1367,7 @@ const Deliveries: React.FC = () => {
                   <span className="material-symbols-outlined text-lg">print</span>
                   Imprimir
                 </button>
-                {isSent && (
+                {canShowConferenceLink && (
                   <button
                     type="button"
                     onClick={() => handleCopyConferenceLink(delivery)}
@@ -1420,7 +1428,7 @@ const Deliveries: React.FC = () => {
             </div>
           </div>
 
-          {isSent && (
+          {canShowConferenceLink && (
             <div className="mb-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
               <div className="flex items-center justify-between gap-3 mb-3">
                 <h3 className="font-bold text-sm uppercase tracking-wider text-slate-500">Link de Conferência</h3>
@@ -1566,7 +1574,7 @@ const Deliveries: React.FC = () => {
             </div>
           ) : (
             <div className="flex flex-col gap-4 sticky bottom-8 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-4 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-xl">
-              <div className={`grid gap-4 ${isSent ? 'grid-cols-3' : 'grid-cols-2'}`}>
+              <div className={`grid gap-4 ${canShowConferenceLink ? 'grid-cols-3' : 'grid-cols-2'}`}>
                 <button
                   type="button"
                   onClick={() => window.print()}
@@ -1575,7 +1583,7 @@ const Deliveries: React.FC = () => {
                   <span className="material-symbols-outlined text-[18px]">print</span>
                   Imprimir
                 </button>
-                {isSent && (
+                {canShowConferenceLink && (
                   <button
                     type="button"
                     onClick={() => handleCopyConferenceLink(delivery)}
