@@ -42,7 +42,6 @@ const PublicDeliveryConference: React.FC = () => {
 
   const items = delivery?.items || [];
   // Step logic: 0 = Sender, 1 to items.length = Items, last = Receiver
-  const totalSteps = items.length + 2;
   const isSenderSignatureStep = currentStep === 0;
   const isReceiverSignatureStep = currentStep === items.length + 1;
   const isComplete = delivery?.status === 'CONFERRED' || delivery?.status === 'FINALIZED';
@@ -89,7 +88,7 @@ const PublicDeliveryConference: React.FC = () => {
         setReceiverName(data.receiver_signed_by || data.conference_signed_by || '');
 
         if (data.status === 'CONFERRED' || data.status === 'FINALIZED') {
-          setCurrentStep(itemsLength + 2);
+          setCurrentStep(itemsLength + 1);
         } else if (!data.sender_signature) {
           setCurrentStep(0); // Go to sender
         } else {
@@ -106,7 +105,7 @@ const PublicDeliveryConference: React.FC = () => {
               break;
             }
           }
-          if (allItemsConfirmed && itemsLength > 0) {
+          if (allItemsConfirmed) {
             setCurrentStep(itemsLength + 1); // Receiver
           } else {
             setCurrentStep(startItemIdx + 1); // Items start at offset 1
@@ -154,7 +153,7 @@ const PublicDeliveryConference: React.FC = () => {
   };
 
   const confirmCurrentItem = () => {
-    const item = items[currentStep];
+    const item = currentStep > 0 && currentStep <= items.length ? items[currentStep - 1] : null;
     if (!item) return;
 
     const qty = Number(form[item.id]?.received_quantity);
@@ -178,7 +177,7 @@ const PublicDeliveryConference: React.FC = () => {
       [item.id]: { ...prev[item.id], confirmed: true },
     }));
     setError('');
-    setCurrentStep((prev) => prev + 1);
+    setCurrentStep((prev) => Math.min(prev + 1, items.length + 1));
   };
 
   const goBack = () => {
@@ -236,7 +235,7 @@ const PublicDeliveryConference: React.FC = () => {
         const senderCanvas = senderCanvasRef.current;
         setSenderSignatureData(data.sender_signature || senderCanvas?.toDataURL('image/png') || '');
         setSenderHasSignature(true);
-        setCurrentStep(1); // Go to first item
+        setCurrentStep(items.length > 0 ? 1 : items.length + 1);
       } else if (stepName === 'receiver') {
         setSuccess('Conferência concluída com sucesso!');
       }
@@ -332,7 +331,7 @@ const PublicDeliveryConference: React.FC = () => {
     );
   }
 
-  const currentItem = items[currentStep];
+  const currentItem = currentStep > 0 && currentStep <= items.length ? items[currentStep - 1] : null;
   const currentItemLotSum = currentItem
     ? (currentItem.lots || []).reduce((acc: number, lot: any) => {
       const lotQty = Number(form[currentItem.id]?.lots?.[lot.id]?.received_quantity ?? lot.received_quantity ?? lot.planned_quantity ?? 0);
@@ -579,7 +578,7 @@ const PublicDeliveryConference: React.FC = () => {
               <div className="bg-gradient-to-r from-primary-500 to-secondary-500 p-6 text-white">
                 <div className="flex items-center justify-between mb-4">
                   <span className="px-3 py-1 rounded-full bg-white/20 text-sm font-medium">
-                    Item {currentStep + 1} de {items.length}
+                    Item {currentStep} de {items.length}
                   </span>
                   {form[currentItem.id]?.confirmed && (
                     <span className="material-symbols-outlined text-success-300">check_circle</span>
@@ -716,11 +715,17 @@ const PublicDeliveryConference: React.FC = () => {
           {/* Step Indicators */}
           {!isComplete && (
             <div className="flex justify-center gap-2 mt-6">
+              {/* Sender signature step indicator */}
+              <button
+                onClick={() => setCurrentStep(0)}
+                className={`w-3 h-3 rounded-full transition-all ${isSenderSignatureStep ? 'w-8 bg-white' : senderHasSignature ? 'bg-success-400' : 'bg-white/50'
+                  }`}
+              />
               {items.map((_: any, index: number) => (
                 <button
                   key={index}
-                  onClick={() => form[items[index].id]?.confirmed || index <= currentStep ? setCurrentStep(index) : null}
-                  className={`w-3 h-3 rounded-full transition-all ${index === currentStep
+                  onClick={() => form[items[index].id]?.confirmed || index + 1 <= currentStep ? setCurrentStep(index + 1) : null}
+                  className={`w-3 h-3 rounded-full transition-all ${index + 1 === currentStep
                     ? 'w-8 bg-white'
                     : form[items[index].id]?.confirmed
                       ? 'bg-success-400'
@@ -728,19 +733,12 @@ const PublicDeliveryConference: React.FC = () => {
                     }`}
                 />
               ))}
-              {/* Receiver signature step indicator (first after items) */}
+              {/* Receiver signature step indicator */}
               <button
-                onClick={() => confirmedCount === items.length ? setCurrentStep(items.length) : null}
+                onClick={() => senderHasSignature && confirmedCount === items.length ? setCurrentStep(items.length + 1) : null}
                 className={`w-3 h-3 rounded-full transition-all ${isReceiverSignatureStep ? 'w-8 bg-white' : receiverHasSignature ? 'bg-success-400' : confirmedCount === items.length ? 'bg-white/50' : 'bg-white/30'
                   }`}
               />
-              {/* Sender signature step indicator (last step) */}
-              <button
-                onClick={() => receiverHasSignature ? setCurrentStep(items.length + 1) : null}
-                className={`w-3 h-3 rounded-full transition-all ${isSenderSignatureStep ? 'w-8 bg-white' : senderHasSignature ? 'bg-success-400' : receiverHasSignature ? 'bg-white/50' : 'bg-white/30'
-                  }`}
-              />
-
             </div>
           )}
 

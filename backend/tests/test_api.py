@@ -204,6 +204,22 @@ def test_dashboard_series(api_client, admin_user):
     assert 'served_by_school_category' in response.data
 
 
+def test_dashboard_counts_inactive_supplies_with_stock(api_client, admin_user):
+    api_client.force_authenticate(user=admin_user)
+    school = School.objects.create(name='Escola Dashboard Estoque')
+    Supply.objects.create(name='Ativo Cadastro', category='Mercearia', unit=Supply.Units.KG, is_active=True)
+    Supply.objects.create(name='Inativo Sem Saldo', category='Mercearia', unit=Supply.Units.KG, is_active=False)
+    inactive_school = Supply.objects.create(name='Inativo Saldo Escola', category='Mercearia', unit=Supply.Units.KG, is_active=False)
+    inactive_central = Supply.objects.create(name='Inativo Saldo Central', category='Mercearia', unit=Supply.Units.KG, is_active=False)
+
+    SchoolStockBalance.objects.create(school=school, supply=inactive_school, quantity='2.00', min_stock='0.00')
+    StockBalance.objects.create(supply=inactive_central, quantity='1.00')
+
+    response = api_client.get('/api/dashboard/')
+    assert response.status_code == 200
+    assert response.data['supplies_total'] == 3
+
+
 def test_dashboard_clear_consumption_series_removes_only_stock_outflows(api_client, admin_user):
     api_client.force_authenticate(user=admin_user)
     school = School.objects.create(name='Escola Consumo Grafico')

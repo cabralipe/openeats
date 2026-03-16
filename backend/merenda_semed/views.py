@@ -26,7 +26,11 @@ class DashboardView(APIView):
         try:
             schools_total = School.objects.count()
             schools_active = School.objects.filter(is_active=True).count()
-            supplies_total = Supply.objects.filter(is_active=True).count()
+            supplies_total = Supply.objects.filter(
+                models.Q(is_active=True)
+                | models.Q(balance__quantity__gt=0)
+                | models.Q(school_balances__quantity__gt=0),
+            ).distinct().count()
             menus_published = Menu.objects.filter(status=Menu.Status.PUBLISHED).count()
         except DatabaseError:
             # Keep endpoint alive even if one optional dashboard source is unavailable.

@@ -129,7 +129,14 @@ class SupplyViewSet(viewsets.ModelViewSet):
         if category:
             queryset = queryset.filter(category__icontains=category)
         if is_active in ['true', 'false']:
-            queryset = queryset.filter(is_active=is_active == 'true')
+            if is_active == 'true':
+                queryset = queryset.filter(
+                    Q(is_active=True)
+                    | Q(balance__quantity__gt=0)
+                    | Q(school_balances__quantity__gt=0)
+                ).distinct()
+            else:
+                queryset = queryset.filter(is_active=False)
         return queryset
 
     def perform_create(self, serializer):

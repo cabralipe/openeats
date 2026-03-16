@@ -340,6 +340,29 @@ def test_supplier_receipt_submit_conference_creates_supply_for_new_item(api_clie
     assert float(movement.quantity) == 2.0
 
 
+def test_supplies_list_includes_inactive_supply_with_school_stock(api_client, admin_user):
+    api_client.force_authenticate(user=admin_user)
+    school = School.objects.create(name='Escola Saldo Direto')
+    supply = Supply.objects.create(
+        name='Insumo Inativo com Saldo',
+        category='Mercearia',
+        unit=Supply.Units.KG,
+        min_stock=0,
+        is_active=False,
+    )
+    SchoolStockBalance.objects.create(
+        school=school,
+        supply=supply,
+        quantity='4.00',
+        min_stock='0.00',
+    )
+
+    response = api_client.get('/api/supplies/?is_active=true')
+    assert response.status_code == 200
+    returned_ids = {row['id'] for row in response.data}
+    assert str(supply.id) in returned_ids
+
+
 def test_supplier_receipt_submit_conference_requires_signatures(api_client, admin_user):
     api_client.force_authenticate(user=admin_user)
     supplier_response = api_client.post('/api/suppliers/', {'name': 'Fornecedor Sem Assinatura'}, format='json')
