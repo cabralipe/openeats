@@ -60,7 +60,7 @@ class SchoolViewSet(viewsets.ModelViewSet):
         
         # Calculate summary stats
         total = balances.count()
-        low_stock = sum(1 for b in balances if b.quantity < b.supply.min_stock)
+        low_stock = sum(1 for b in balances if b.quantity < (b.min_stock if b.min_stock > 0 else b.supply.min_stock))
         
         serializer = SchoolStockBalanceSerializer(balances, many=True)
         return Response({
