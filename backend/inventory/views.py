@@ -41,6 +41,7 @@ from .services.lots import (
     debit_lot_central,
     ensure_delivery_item_lot_plan,
     get_or_create_supply_lot,
+    refresh_expired_lot_status,
     regenerate_delivery_item_lot_plan_fefo,
 )
 from .serializers import (
@@ -223,14 +224,21 @@ class SupplyViewSet(viewsets.ModelViewSet):
         near_expiry_count = 0
         expired_count = 0
         total_central_quantity = 0
+        expiry_priority = {
+            'expired': 0,
+            'near_expiry': 1,
+            'ok': 2,
+            'unknown': 3,
+        }
 
         for lot in queryset:
+            refresh_expired_lot_status(lot, today=today)
             central_quantity = getattr(getattr(lot, 'central_balance', None), 'quantity', 0) or 0
             total_central_quantity += float(central_quantity)
             days_left = (lot.expiry_date - today).days if lot.expiry_date else None
             if days_left is None:
                 expiry_state = 'unknown'
-            elif days_left < 0:
+            elif lot.status == SupplyLot.Status.EXPIRED or days_left < 0:
                 expiry_state = 'expired'
                 expired_count += 1
             elif days_left <= days_to_expiry:
@@ -282,6 +290,15 @@ class SupplyViewSet(viewsets.ModelViewSet):
                 'sent_total': round(total_sent, 2),
                 'destinations': destinations,
             })
+
+        rows.sort(
+            key=lambda row: (
+                expiry_priority.get(row['expiry_state'], 99),
+                row['days_to_expiry'] if row['days_to_expiry'] is not None else 10**9,
+                row['supply_name'].lower(),
+                row['lot_code'].lower(),
+            )
+        )
 
         return Response({
             'summary': {

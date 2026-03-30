@@ -257,6 +257,30 @@ def test_central_lots_endpoint_returns_expiry_and_destinations(api_client, admin
     assert target['destinations'][0]['school_name'] == school.name
 
 
+def test_central_lots_endpoint_marks_expired_rows_in_real_time(api_client, admin_user, supply):
+    client = _auth(api_client, admin_user)
+    StockBalance.objects.create(supply=supply, quantity=Decimal('5'))
+    expired_lot = SupplyLot.objects.create(
+        supply=supply,
+        lot_code='VX-ENDPOINT',
+        expiry_date=date.today() - timedelta(days=2),
+        status=SupplyLot.Status.ACTIVE,
+    )
+    LotBalanceCentral.objects.create(lot=expired_lot, quantity=Decimal('5'))
+
+    resp = client.get('/api/supplies/central_lots/?days_to_expiry=30')
+    assert resp.status_code == 200, resp.data
+    assert resp.data['summary']['expired_lots'] == 1
+
+    target = next((row for row in resp.data['results'] if row['lot_code'] == 'VX-ENDPOINT'), None)
+    assert target is not None
+    assert target['expiry_state'] == 'expired'
+    assert target['status'] == SupplyLot.Status.EXPIRED
+
+    expired_lot.refresh_from_db()
+    assert expired_lot.status == SupplyLot.Status.EXPIRED
+
+
 def test_expiry_command_marks_expired_and_blocks_fefo(supply):
     expired_lot = SupplyLot.objects.create(
         supply=supply,

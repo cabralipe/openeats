@@ -65,6 +65,8 @@ type CentralLotRow = {
   destinations: CentralLotDestination[];
 };
 
+type CentralLotsView = 'all' | 'urgent' | 'expired' | 'near_expiry';
+
 const Inventory: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [mode, setMode] = useState<'register' | 'in' | 'out' | 'edit'>('register');
@@ -91,6 +93,7 @@ const Inventory: React.FC = () => {
   const [centralLotsLoading, setCentralLotsLoading] = useState(false);
   const [centralLotsDays, setCentralLotsDays] = useState(30);
   const [centralLotsData, setCentralLotsData] = useState<{ summary?: any; results: CentralLotRow[] }>({ results: [] });
+  const [centralLotsView, setCentralLotsView] = useState<CentralLotsView>('all');
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
 
   // Merge preset + dynamic categories (deduplicated)
@@ -109,6 +112,33 @@ const Inventory: React.FC = () => {
     const sorted = Array.from(set).sort();
     return [...sorted, 'Outros'];
   }, [dynamicCategories]);
+
+  const visibleCentralLots = useMemo(() => {
+    const rows = [...centralLotsData.results].sort((a, b) => {
+      const priority = { expired: 0, near_expiry: 1, ok: 2, unknown: 3 } as const;
+      const priorityDiff = priority[a.expiry_state] - priority[b.expiry_state];
+      if (priorityDiff !== 0) return priorityDiff;
+
+      const daysA = a.days_to_expiry ?? Number.MAX_SAFE_INTEGER;
+      const daysB = b.days_to_expiry ?? Number.MAX_SAFE_INTEGER;
+      if (daysA !== daysB) return daysA - daysB;
+
+      const supplyDiff = a.supply_name.localeCompare(b.supply_name);
+      if (supplyDiff !== 0) return supplyDiff;
+      return a.lot_code.localeCompare(b.lot_code);
+    });
+
+    if (centralLotsView === 'expired') {
+      return rows.filter((row) => row.expiry_state === 'expired');
+    }
+    if (centralLotsView === 'near_expiry') {
+      return rows.filter((row) => row.expiry_state === 'near_expiry');
+    }
+    if (centralLotsView === 'urgent') {
+      return rows.filter((row) => row.expiry_state === 'expired' || row.expiry_state === 'near_expiry');
+    }
+    return rows;
+  }, [centralLotsData.results, centralLotsView]);
 
   const loadStock = (
     filters?: { q?: string; category?: string; low_stock?: boolean; is_active?: boolean },
@@ -425,6 +455,14 @@ const Inventory: React.FC = () => {
     if (state === 'near_expiry') return 'bg-warning-100 dark:bg-warning-900/30 text-warning-700 dark:text-warning-400';
     if (state === 'ok') return 'bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-400';
     return 'bg-slate-100 dark:bg-slate-800 text-slate-600';
+  };
+
+  const expiryOffsetLabel = (days?: number | null, state?: CentralLotRow['expiry_state']) => {
+    if (days === null || days === undefined) return '';
+    if (state === 'expired') return `vencido ha ${Math.abs(days)} dia(s)`;
+    if (days === 0) return 'vence hoje';
+    if (days === 1) return 'vence em 1 dia';
+    return `vence em ${days} dia(s)`;
   };
 
   const getCategoryIcon = (category: string) => {
@@ -897,13 +935,56 @@ const Inventory: React.FC = () => {
                   </div>
                 </div>
 
-                {!centralLotsData.results.length ? (
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <button
+                    type="button"
+                    onClick={() => setCentralLotsView('all')}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${centralLotsView === 'all'
+                      ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300'
+                      : 'border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-300'
+                      }`}
+                  >
+                    Todos ({Number(centralLotsData.summary?.total_lots || 0)})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCentralLotsView('urgent')}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${centralLotsView === 'urgent'
+                      ? 'border-warning-500 bg-warning-50 text-warning-700 dark:bg-warning-900/20 dark:text-warning-300'
+                      : 'border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-300'
+                      }`}
+                  >
+                    Urgentes ({Number(centralLotsData.summary?.near_expiry_lots || 0) + Number(centralLotsData.summary?.expired_lots || 0)})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCentralLotsView('expired')}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${centralLotsView === 'expired'
+                      ? 'border-danger-500 bg-danger-50 text-danger-700 dark:bg-danger-900/20 dark:text-danger-300'
+                      : 'border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-300'
+                      }`}
+                  >
+                    Vencidos ({Number(centralLotsData.summary?.expired_lots || 0)})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCentralLotsView('near_expiry')}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${centralLotsView === 'near_expiry'
+                      ? 'border-warning-500 bg-warning-50 text-warning-700 dark:bg-warning-900/20 dark:text-warning-300'
+                      : 'border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-300'
+                      }`}
+                  >
+                    Proximos ({Number(centralLotsData.summary?.near_expiry_lots || 0)})
+                  </button>
+                </div>
+
+                {!visibleCentralLots.length ? (
                   <div className="p-6 rounded-xl bg-slate-50 dark:bg-slate-800/50 text-sm text-slate-500">
-                    Nenhum lote encontrado para os filtros informados.
+                    Nenhum lote encontrado para a visao selecionada.
                   </div>
                 ) : (
                   <div className="space-y-3 max-h-[62vh] overflow-y-auto pr-1">
-                    {centralLotsData.results.map((lot) => (
+                    {visibleCentralLots.map((lot) => (
                       <div key={lot.id} className="rounded-xl border border-slate-200 dark:border-slate-800 p-4">
                         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
                           <div>
@@ -921,6 +1002,11 @@ const Inventory: React.FC = () => {
                               {' • '}Fabricacao: <span className="font-medium">{formatDateBr(lot.manufacture_date)}</span>
                               {lot.days_to_expiry !== null && lot.days_to_expiry !== undefined ? ` • ${lot.days_to_expiry} dia(s)` : ''}
                             </p>
+                            {lot.days_to_expiry !== null && lot.days_to_expiry !== undefined && (
+                              <p className="text-xs font-medium mt-1 text-slate-600 dark:text-slate-300">
+                                {expiryOffsetLabel(lot.days_to_expiry, lot.expiry_state)}
+                              </p>
+                            )}
                             {lot.supplier_name && (
                               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                                 Fornecedor: <span className="font-medium">{lot.supplier_name}</span>
