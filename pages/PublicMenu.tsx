@@ -1,8 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { getPublicMenuCurrent, getPublicSchools, exportPublicMenuPdf } from '../api';
-import { getPublicRecipe } from '../api';
-import { IMAGES } from '../constants';
+import React, { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import {
+  exportPublicMenuPdf,
+  getPublicMenuCurrent,
+  getPublicRecipe,
+  getPublicSchools,
+} from "../api";
 
 interface School {
   id: string;
@@ -12,83 +15,326 @@ interface School {
   author_name?: string;
 }
 
-const dayNames: Record<string, string> = {
-  MON: 'Segunda-feira',
-  TUE: 'Terça-feira',
-  WED: 'Quarta-feira',
-  THU: 'Quinta-feira',
-  FRI: 'Sexta-feira',
+interface PublicMenuItem {
+  id: string;
+  day_of_week: string;
+  meal_type: string;
+  meal_name?: string;
+  portion_text?: string;
+  description?: string;
+  recipe?: string | null;
+  recipe_name?: string;
+}
+
+interface NutritionDayInfo {
+  kcal?: number | string | null;
+  protein?: number | string | null;
+  carbs?: number | string | null;
+}
+
+interface PublicMenuPayload {
+  school_name?: string;
+  week_start?: string;
+  week_end?: string;
+  author_name?: string;
+  author_crn?: string;
+  nutritional_info?: Record<string, NutritionDayInfo>;
+  items?: PublicMenuItem[];
+}
+
+type GroupedMealItem = {
+  id: string;
+  mealType: string;
+  mealLabel: string;
+  mealName: string;
+  portionText: string;
+  description: string;
+  recipe: string | null;
+  recipeName: string;
+};
+
+type GroupedDay = {
+  dayCode: string;
+  dayLabel: string;
+  meals: GroupedMealItem[];
+};
+
+type MealCardItem = {
+  id: string;
+  title: string;
+  summary: string;
+  displayText: string;
+  recipe: string | null;
+  recipeName: string;
+};
+
+type MealCard = {
+  key: string;
+  label: string;
+  icon: string;
+  timeLabel: string;
+  iconToneClass: string;
+  badgeToneClass: string;
+  featured: boolean;
+  items: MealCardItem[];
+};
+
+type RecipePayload = {
+  name?: string;
+  category?: string;
+  instructions?: string;
+  servings_base?: number;
+  ingredients?: Array<{
+    supply_name: string;
+    optional?: boolean;
+    qty_base?: string | number;
+    unit?: string;
+  }>;
+  tags?: {
+    prep_steps?: string[];
+    prep_time_minutes?: number;
+    nutrition?: {
+      kcal?: number | string | null;
+      protein?: number | string | null;
+      carbs?: number | string | null;
+    };
+  };
+};
+
+const pageFont = { fontFamily: "'Plus Jakarta Sans', sans-serif" } as const;
+const headlineFont = { fontFamily: "'Manrope', sans-serif" } as const;
+
+const DAY_NAMES: Record<string, string> = {
+  MON: "Segunda-feira",
+  TUE: "Terca-feira",
+  WED: "Quarta-feira",
+  THU: "Quinta-feira",
+  FRI: "Sexta-feira",
+};
+
+const DAY_ORDER = ["MON", "TUE", "WED", "THU", "FRI"];
+const MEAL_ORDER = [
+  "BREAKFAST1",
+  "SNACK1",
+  "LUNCH",
+  "SNACK2",
+  "BREAKFAST2",
+  "DINNER_COFFEE",
+  "BREAKFAST",
+  "SNACK",
+];
+
+const MEAL_TYPE_LABELS: Record<string, string> = {
+  BREAKFAST1: "Desjejum",
+  SNACK1: "Lanche",
+  LUNCH: "Almoco",
+  SNACK2: "Lanche",
+  BREAKFAST2: "Desjejum",
+  DINNER_COFFEE: "Cafe da noite",
+  BREAKFAST: "Cafe da manha",
+  SNACK: "Lanche",
+};
+
+const MEAL_META: Record<string, Omit<MealCard, "key" | "label" | "items">> = {
+  BREAKFAST1: {
+    icon: "coffee",
+    timeLabel: "07:30",
+    iconToneClass: "bg-orange-50 text-orange-600",
+    badgeToneClass: "bg-[#d3e4fe] text-[#4d5d73]",
+    featured: false,
+  },
+  BREAKFAST2: {
+    icon: "breakfast_dining",
+    timeLabel: "15:30",
+    iconToneClass: "bg-amber-50 text-amber-600",
+    badgeToneClass: "bg-[#d3e4fe] text-[#4d5d73]",
+    featured: false,
+  },
+  BREAKFAST: {
+    icon: "breakfast_dining",
+    timeLabel: "08:00",
+    iconToneClass: "bg-amber-50 text-amber-600",
+    badgeToneClass: "bg-[#d3e4fe] text-[#4d5d73]",
+    featured: false,
+  },
+  SNACK1: {
+    icon: "nutrition",
+    timeLabel: "10:00",
+    iconToneClass: "bg-green-50 text-green-600",
+    badgeToneClass: "bg-[#d3e4fe] text-[#4d5d73]",
+    featured: false,
+  },
+  SNACK2: {
+    icon: "cookie",
+    timeLabel: "16:00",
+    iconToneClass: "bg-emerald-50 text-emerald-600",
+    badgeToneClass: "bg-[#d3e4fe] text-[#4d5d73]",
+    featured: false,
+  },
+  SNACK: {
+    icon: "cookie",
+    timeLabel: "16:00",
+    iconToneClass: "bg-emerald-50 text-emerald-600",
+    badgeToneClass: "bg-[#d3e4fe] text-[#4d5d73]",
+    featured: false,
+  },
+  LUNCH: {
+    icon: "restaurant",
+    timeLabel: "12:30",
+    iconToneClass: "bg-blue-50 text-[#2251db]",
+    badgeToneClass: "bg-[#2251db] text-white",
+    featured: true,
+  },
+  DINNER_COFFEE: {
+    icon: "dark_mode",
+    timeLabel: "19:30",
+    iconToneClass: "bg-violet-50 text-violet-600",
+    badgeToneClass: "bg-[#d3e4fe] text-[#4d5d73]",
+    featured: false,
+  },
+};
+
+const defaultMealMeta = {
+  icon: "restaurant",
+  timeLabel: "Horario",
+  iconToneClass: "bg-slate-100 text-slate-600",
+  badgeToneClass: "bg-[#d3e4fe] text-[#4d5d73]",
+  featured: false,
+};
+
+const formatWeekRange = (weekStart?: string, weekEnd?: string) => {
+  if (!weekStart || !weekEnd) return "";
+  try {
+    const start = new Date(`${weekStart}T12:00:00`);
+    const end = new Date(`${weekEnd}T12:00:00`);
+    return `${start.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "short",
+    })} a ${end.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "short",
+    })}`;
+  } catch {
+    return `${weekStart} a ${weekEnd}`;
+  }
+};
+
+const capitalizeText = (value: string) =>
+  value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
+
+const formatMetric = (value?: string | number | null, suffix = "") => {
+  if (value === null || value === undefined || value === "") return "-";
+  return `${value}${suffix}`;
+};
+
+const buildMealText = (meal: GroupedMealItem) => {
+  const text =
+    [meal.mealName, meal.description].filter(Boolean).join(" - ") ||
+    meal.description ||
+    meal.mealName ||
+    "Item sem descricao";
+  return meal.portionText ? `${text} (${meal.portionText})` : text;
 };
 
 const PublicMenu: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+
   const [schools, setSchools] = useState<School[]>([]);
   const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
-  const [menu, setMenu] = useState<any | null>(null);
-  const [error, setError] = useState('');
+  const [menu, setMenu] = useState<PublicMenuPayload | null>(null);
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingMenu, setLoadingMenu] = useState(false);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const [currentDayIndex, setCurrentDayIndex] = useState(0);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [viewingRecipeId, setViewingRecipeId] = useState<string | null>(null);
-  const [recipeData, setRecipeData] = useState<any>(null);
+  const [recipeData, setRecipeData] = useState<RecipePayload | null>(null);
   const [loadingRecipe, setLoadingRecipe] = useState(false);
-  const [recipeStep, setRecipeStep] = useState(1);
 
-  const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
-  const slugFromUrl = params.get('slug') || '';
-  const tokenFromUrl = params.get('token') || '';
+  const params = useMemo(
+    () => new URLSearchParams(location.search),
+    [location.search],
+  );
+  const slugFromUrl = params.get("slug") || "";
+  const tokenFromUrl = params.get("token") || "";
 
-  // Load schools list on mount
   useEffect(() => {
-    // If slug and token are provided, skip school selection
-    if (slugFromUrl && tokenFromUrl) {
-      setLoading(true);
-      getPublicMenuCurrent(slugFromUrl, tokenFromUrl)
-        .then((data) => {
-          setMenu(data);
-          setSelectedSchool({ id: '', name: data.school_name || 'Escola', slug: slugFromUrl, city: '' });
-        })
-        .catch(() => setError('Não foi possível carregar o cardápio.'))
-        .finally(() => setLoading(false));
-      return;
-    }
+    let cancelled = false;
 
-    // Otherwise load schools list
-    setLoading(true);
-    getPublicSchools()
-      .then((data) => setSchools(data))
-      .catch(() => setError('Não foi possível carregar as escolas.'))
-      .finally(() => setLoading(false));
+    const bootstrap = async () => {
+      setLoading(true);
+      setError("");
+
+      try {
+        if (slugFromUrl) {
+          const data = (await getPublicMenuCurrent(
+            slugFromUrl,
+            tokenFromUrl || undefined,
+          )) as PublicMenuPayload;
+          if (cancelled) return;
+          setMenu(data);
+          setSelectedSchool({
+            id: "",
+            name: data.school_name || "Escola",
+            slug: slugFromUrl,
+            city: "",
+          });
+          return;
+        }
+
+        const schoolsData = (await getPublicSchools()) as School[];
+        if (!cancelled)
+          setSchools(Array.isArray(schoolsData) ? schoolsData : []);
+      } catch {
+        if (!cancelled) {
+          setError(
+            slugFromUrl
+              ? "Nao foi possivel carregar o cardapio."
+              : "Nao foi possivel carregar as escolas.",
+          );
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    bootstrap();
+
+    return () => {
+      cancelled = true;
+    };
   }, [slugFromUrl, tokenFromUrl]);
 
   const loadMenu = async (school: School) => {
     setSelectedSchool(school);
     setLoadingMenu(true);
-    setError('');
+    setError("");
     setMenu(null);
+
     try {
-      const data = await getPublicMenuCurrent(school.slug);
+      const data = (await getPublicMenuCurrent(
+        school.slug,
+      )) as PublicMenuPayload;
       setMenu(data);
     } catch {
-      setError('Nenhum cardápio disponível para esta escola nesta semana.');
+      setError("Nenhum cardapio disponivel para esta escola nesta semana.");
     } finally {
       setLoadingMenu(false);
     }
   };
 
-
   const handleViewRecipe = async (recipeId: string) => {
     setViewingRecipeId(recipeId);
+    setRecipeData(null);
     setLoadingRecipe(true);
-    setRecipeStep(1);
+
     try {
-      const data = await getPublicRecipe(recipeId);
+      const data = (await getPublicRecipe(recipeId)) as RecipePayload;
       setRecipeData(data);
     } catch {
-      // ignore
+      setRecipeData(null);
     } finally {
       setLoadingRecipe(false);
     }
@@ -97,133 +343,174 @@ const PublicMenu: React.FC = () => {
   const goBack = () => {
     setSelectedSchool(null);
     setMenu(null);
-    setError('');
+    setError("");
+    setCurrentDayIndex(0);
   };
+
+  const activeSlug = selectedSchool?.slug || slugFromUrl;
 
   const handleDownloadPdf = () => {
-    if (!menu?.week_start || !selectedSchool?.slug) return;
-    exportPublicMenuPdf(selectedSchool.slug, menu.week_start, tokenFromUrl);
+    if (!menu?.week_start || !activeSlug) return;
+    exportPublicMenuPdf(activeSlug, menu.week_start, tokenFromUrl || undefined);
   };
 
-  const filteredSchools = schools.filter((s) =>
-    s.name.toLowerCase().includes(search.toLowerCase()) ||
-    s.city.toLowerCase().includes(search.toLowerCase())
+  const filteredSchools = useMemo(
+    () =>
+      schools.filter(
+        (school) =>
+          school.name.toLowerCase().includes(search.toLowerCase()) ||
+          school.city.toLowerCase().includes(search.toLowerCase()),
+      ),
+    [schools, search],
   );
 
-  const groupedItems = useMemo(() => {
-    if (!menu?.items) return [];
-    const byDay: Record<string, any> = {};
-    const mealTypeLabel: Record<string, string> = {
-      BREAKFAST1: 'Desjejum',
-      SNACK1: 'Lanche',
-      LUNCH: 'Almoço',
-      SNACK2: 'Lanche',
-      BREAKFAST2: 'Desjejum',
-      DINNER_COFFEE: 'Café da noite',
-      BREAKFAST: 'Café da manhã',
-      SNACK: 'Lanche',
-    };
+  const groupedDays = useMemo(() => {
+    if (!menu?.items?.length) return [] as GroupedDay[];
 
-    for (const item of menu.items) {
+    const byDay: Record<string, GroupedDay> = {};
+    menu.items.forEach((item) => {
       if (!byDay[item.day_of_week]) {
         byDay[item.day_of_week] = {
-          day: dayNames[item.day_of_week] || item.day_of_week,
+          dayCode: item.day_of_week,
+          dayLabel: DAY_NAMES[item.day_of_week] || item.day_of_week,
           meals: [],
         };
       }
-      byDay[item.day_of_week].meals.push({
-        mealType: item.meal_type,
-        mealLabel: mealTypeLabel[item.meal_type] || item.meal_type,
-        mealName: item.meal_name || '',
-        portionText: item.portion_text || '',
-        description: item.description || '',
-        image: item.image_data || item.image_url || '',
-        recipe: item.recipe || null,
-        recipeName: item.recipe_name || '',
-      });
-    }
 
-    const order = ['MON', 'TUE', 'WED', 'THU', 'FRI'];
-    const fallbackImages = [IMAGES.food1, IMAGES.food2, IMAGES.food3, IMAGES.food4, IMAGES.food5];
-    return order
-      .filter((day) => byDay[day])
-      .map((day, index) => ({
-        dayCode: day,
-        ...byDay[day],
-        fallbackImage: fallbackImages[index % fallbackImages.length],
-      }));
+      byDay[item.day_of_week].meals.push({
+        id: item.id,
+        mealType: item.meal_type,
+        mealLabel:
+          MEAL_TYPE_LABELS[item.meal_type] || item.meal_type || "Refeicao",
+        mealName: item.meal_name || "",
+        portionText: item.portion_text || "",
+        description: item.description || "",
+        recipe: item.recipe || null,
+        recipeName: item.recipe_name || "",
+      });
+    });
+
+    return DAY_ORDER.filter((dayCode) => byDay[dayCode]).map(
+      (dayCode) => byDay[dayCode],
+    );
   }, [menu]);
 
   useEffect(() => {
-    if (!groupedItems.length) {
+    if (!groupedDays.length) {
       setCurrentDayIndex(0);
       return;
     }
-    const nowDay = new Date().getDay(); // 0=Sun ... 6=Sat
-    const nowCode = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][nowDay];
-    const foundIndex = groupedItems.findIndex((day) => day.dayCode === nowCode);
+
+    const nowDay = new Date().getDay();
+    const currentCode = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"][
+      nowDay
+    ];
+    const foundIndex = groupedDays.findIndex(
+      (day) => day.dayCode === currentCode,
+    );
     setCurrentDayIndex(foundIndex >= 0 ? foundIndex : 0);
-  }, [groupedItems]);
+  }, [groupedDays]);
 
-  const weekLabel = useMemo(() => {
-    if (!menu?.week_start || !menu?.week_end) return '';
-    return `${menu.week_start} a ${menu.week_end}`;
-  }, [menu]);
-
-  const currentDay = groupedItems[currentDayIndex];
+  const currentDay = groupedDays[currentDayIndex];
 
   const currentDayTitle = useMemo(() => {
-    if (!menu?.week_start || !currentDay) return currentDay?.day || 'Cardápio do Dia';
+    if (!currentDay) return "Menu do dia";
+    if (!menu?.week_start) return currentDay.dayLabel;
+
     try {
-      const offsetByCode: Record<string, number> = { MON: 0, TUE: 1, WED: 2, THU: 3, FRI: 4 };
-      const offset = offsetByCode[currentDay.dayCode] ?? 0;
+      const offsetByCode: Record<string, number> = {
+        MON: 0,
+        TUE: 1,
+        WED: 2,
+        THU: 3,
+        FRI: 4,
+      };
       const base = new Date(`${menu.week_start}T12:00:00`);
       const date = new Date(base);
-      date.setDate(base.getDate() + offset);
-      return date.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
+      date.setDate(base.getDate() + (offsetByCode[currentDay.dayCode] ?? 0));
+      return capitalizeText(
+        date.toLocaleDateString("pt-BR", {
+          weekday: "long",
+          day: "2-digit",
+          month: "long",
+        }),
+      );
     } catch {
-      return currentDay.day;
+      return currentDay.dayLabel;
     }
   }, [currentDay, menu?.week_start]);
 
-  const currentMealsByType = useMemo(() => {
-    if (!currentDay?.meals?.length) return [];
-    const iconByMeal: Record<string, string> = {
-      BREAKFAST1: 'breakfast_dining',
-      BREAKFAST2: 'breakfast_dining',
-      BREAKFAST: 'breakfast_dining',
-      LUNCH: 'restaurant',
-      SNACK1: 'bakery_dining',
-      SNACK2: 'bakery_dining',
-      SNACK: 'bakery_dining',
-      DINNER_COFFEE: 'coffee',
-    };
-    const grouped: Record<string, { key: string; label: string; icon: string; items: Array<{text: string, recipe: string | null, recipeName: string}> }> = {};
-    for (const meal of currentDay.meals) {
-      const key = meal.mealType || meal.mealLabel;
-      if (!grouped[key]) {
-        grouped[key] = {
-          key,
+  const currentMealCards = useMemo(() => {
+    if (!currentDay?.meals.length) return [] as MealCard[];
+
+    const grouped: Record<string, MealCard> = {};
+    currentDay.meals.forEach((meal) => {
+      const meta = MEAL_META[meal.mealType] || defaultMealMeta;
+      if (!grouped[meal.mealType]) {
+        grouped[meal.mealType] = {
+          key: meal.mealType,
           label: meal.mealLabel,
-          icon: iconByMeal[meal.mealType] || 'restaurant',
+          icon: meta.icon,
+          timeLabel: meta.timeLabel,
+          iconToneClass: meta.iconToneClass,
+          badgeToneClass: meta.badgeToneClass,
+          featured: meta.featured,
           items: [],
         };
       }
-      const text = [meal.mealName, meal.description].filter(Boolean).join(' - ') || meal.description || meal.mealName || 'Item sem descrição';
-      grouped[key].items.push({
-        text: meal.portionText ? `${text} (${meal.portionText})` : text,
+
+      grouped[meal.mealType].items.push({
+        id: meal.id,
+        title: meal.mealName || meal.recipeName || meal.mealLabel,
+        summary: meal.description || meal.mealName || "Item sem descricao",
+        displayText: buildMealText(meal),
         recipe: meal.recipe,
-        recipeName: meal.recipeName
+        recipeName: meal.recipeName || meal.mealName || meal.mealLabel,
       });
-    }
-    return Object.values(grouped);
+    });
+
+    return Object.values(grouped).sort((left, right) => {
+      const leftIndex = MEAL_ORDER.indexOf(left.key);
+      const rightIndex = MEAL_ORDER.indexOf(right.key);
+      return (
+        (leftIndex === -1 ? 99 : leftIndex) -
+        (rightIndex === -1 ? 99 : rightIndex)
+      );
+    });
   }, [currentDay]);
 
-  const navigateDay = (direction: 'prev' | 'next') => {
-    if (!groupedItems.length) return;
-    setCurrentDayIndex((prev) => {
-      if (direction === 'prev') return prev === 0 ? groupedItems.length - 1 : prev - 1;
-      return prev === groupedItems.length - 1 ? 0 : prev + 1;
+  const currentNutrition = currentDay?.dayCode
+    ? menu?.nutritional_info?.[currentDay.dayCode]
+    : undefined;
+
+  const weekLabel = useMemo(
+    () => formatWeekRange(menu?.week_start, menu?.week_end),
+    [menu?.week_end, menu?.week_start],
+  );
+
+  const footerBadges = useMemo(() => {
+    const badges = [
+      currentMealCards.length
+        ? `${currentMealCards.length} refeicoes planejadas`
+        : null,
+      currentMealCards.some((card) =>
+        card.items.some((item) => Boolean(item.recipe)),
+      )
+        ? "Receitas disponiveis"
+        : "Cardapio publicado",
+      menu?.author_name ? "Responsavel tecnico informado" : null,
+    ].filter(Boolean) as string[];
+
+    return badges.slice(0, 3);
+  }, [currentMealCards, menu?.author_name]);
+
+  const navigateDay = (direction: "prev" | "next") => {
+    if (!groupedDays.length) return;
+    setCurrentDayIndex((previousIndex) => {
+      if (direction === "prev") {
+        return previousIndex === 0 ? groupedDays.length - 1 : previousIndex - 1;
+      }
+      return previousIndex === groupedDays.length - 1 ? 0 : previousIndex + 1;
     });
   };
 
@@ -235,423 +522,798 @@ const PublicMenu: React.FC = () => {
     if (touchStartX === null) return;
     const endX = event.changedTouches[0]?.clientX ?? touchStartX;
     const delta = endX - touchStartX;
-    if (Math.abs(delta) > 50) {
-      navigateDay(delta > 0 ? 'prev' : 'next');
+    if (Math.abs(delta) > 48) {
+      navigateDay(delta > 0 ? "prev" : "next");
     }
     setTouchStartX(null);
   };
 
-  // Loading state
+  const renderRecipeLinks = (items: MealCardItem[]) => {
+    const recipeItems = items.filter((item) => Boolean(item.recipe));
+    if (!recipeItems.length) return null;
+
+    return (
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        {recipeItems.map((item) => (
+          <button
+            key={`recipe-${item.id}`}
+            type="button"
+            onClick={() => item.recipe && handleViewRecipe(item.recipe)}
+            className="flex items-center gap-1 text-sm font-bold text-[#2251db] transition-all hover:underline"
+          >
+            Ver Receita
+            <span className="material-symbols-outlined text-[18px]">
+              arrow_forward
+            </span>
+          </button>
+        ))}
+      </div>
+    );
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-primary-900 to-secondary-900 flex items-center justify-center">
-        <div className="flex items-center gap-3 text-white">
-          <div className="w-8 h-8 border-3 border-white/30 border-t-white rounded-full animate-spin"></div>
-          <span className="text-lg">Carregando...</span>
+      <div
+        className="flex min-h-screen items-center justify-center bg-[#f7f9fb] px-6 text-[#2c3437]"
+        style={pageFont}
+      >
+        <div className="flex items-center gap-3 rounded-full bg-white px-5 py-3 shadow-[0_12px_30px_rgba(44,52,55,0.08)]">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#d3e4fe] border-t-[#2251db]" />
+          <span className="text-sm font-semibold text-[#506076]">
+            Carregando cardapio...
+          </span>
         </div>
       </div>
     );
   }
 
-  // School selection (when no slug/token provided)
   if (!selectedSchool && !slugFromUrl) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-primary-900 to-secondary-900 flex flex-col">
-        {/* Header */}
-        <header className="bg-white/10 backdrop-blur-xl border-b border-white/10 p-4">
-          <div className="max-w-2xl mx-auto flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-secondary-500 flex items-center justify-center shadow-lg">
-              <span className="material-symbols-outlined text-white">restaurant_menu</span>
-            </div>
-            <div className="flex-1">
-              <h1 className="text-white font-bold text-xl">Cardápio Escolar</h1>
-              <p className="text-white/60 text-sm">Selecione uma escola</p>
-            </div>
-            <button
-              onClick={() => navigate('/public/calculator')}
-              className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-sm font-medium"
+      <div
+        className="min-h-screen bg-[#f7f9fb] text-[#2c3437]"
+        style={pageFont}
+      >
+        <header className="sticky top-0 z-50 border-b border-slate-200/70 bg-[#f7f9fb]/95 backdrop-blur">
+          <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-4">
+            <h1
+              className="text-xl font-extrabold tracking-tighter text-[#2251db]"
+              style={headlineFont}
             >
+              NutriSemed
+            </h1>
+            <button
+              type="button"
+              onClick={() => navigate("/public/calculator")}
+              className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-[#506076] shadow-sm transition-colors hover:bg-[#eaeff2]"
+            >
+              <span className="material-symbols-outlined text-[20px]">
+                calculate
+              </span>
               Calculadora
             </button>
           </div>
         </header>
 
-        {/* Main Content */}
-        <main className="flex-1 p-4">
-          <div className="max-w-2xl mx-auto space-y-4">
-            {/* Search */}
-            <div className="relative">
-              <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">search</span>
+        <main className="mx-auto w-full max-w-5xl px-6 py-12 pb-24">
+          <section className="mb-10">
+            <span className="mb-2 block text-xs font-bold uppercase tracking-[0.15em] text-[#2251db]">
+              PLANEJAMENTO ALIMENTAR
+            </span>
+            <h2
+              className="text-4xl font-extrabold tracking-tight text-[#2c3437] md:text-5xl"
+              style={headlineFont}
+            >
+              Cardapios Publicos
+            </h2>
+            <p className="mt-3 max-w-2xl text-base text-[#596064] md:text-lg">
+              Selecione uma escola para abrir o cardapio publicado da semana e
+              navegar pelas refeicoes do dia.
+            </p>
+          </section>
+
+          <div className="rounded-[2rem] bg-white p-4 shadow-[0_12px_40px_rgba(44,52,55,0.06)]">
+            <label className="relative block">
+              <span className="material-symbols-outlined pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#747c80]">
+                search
+              </span>
               <input
                 type="text"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar escola..."
-                className="w-full pl-12 pr-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-primary-500/50"
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Buscar escola ou cidade"
+                className="w-full rounded-2xl border border-[#dce4e8] bg-[#f7f9fb] py-4 pl-12 pr-4 text-sm text-[#2c3437] outline-none transition-colors placeholder:text-[#747c80] focus:border-[#2251db]"
               />
-            </div>
+            </label>
+          </div>
 
-            {/* Schools List */}
-            {error && (
-              <div className="bg-red-500/20 border border-red-500/30 rounded-xl p-4 text-red-200 text-center">
-                {error}
+          {error ? (
+            <div className="mt-6 rounded-3xl border border-[#fa746f] bg-[#fff4f3] px-5 py-4 text-sm font-medium text-[#6e0a12]">
+              {error}
+            </div>
+          ) : null}
+
+          <div className="mt-8 grid gap-4 md:grid-cols-2">
+            {filteredSchools.length === 0 ? (
+              <div className="rounded-[2rem] bg-white p-10 text-center shadow-[0_12px_40px_rgba(44,52,55,0.06)] md:col-span-2">
+                <span className="material-symbols-outlined text-5xl text-[#747c80]">
+                  school
+                </span>
+                <p className="mt-4 text-base font-semibold text-[#2c3437]">
+                  Nenhuma escola encontrada.
+                </p>
+                <p className="mt-2 text-sm text-[#596064]">
+                  Ajuste a busca ou publique um cardapio para a semana atual.
+                </p>
               </div>
-            )}
-
-            <div className="space-y-2">
-              {filteredSchools.length === 0 ? (
-                <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-8 text-center">
-                  <span className="material-symbols-outlined text-4xl text-white/40 mb-2">school</span>
-                  <p className="text-white/60">
-                    {schools.length === 0
-                      ? 'Nenhuma escola com cardápio publicado esta semana.'
-                      : 'Nenhuma escola encontrada.'}
-                  </p>
-                </div>
-              ) : (
-                filteredSchools.map((school) => (
-                  <button
-                    key={school.id}
-                    onClick={() => loadMenu(school)}
-                    className="w-full bg-white/10 backdrop-blur-xl rounded-xl p-4 text-left hover:bg-white/20 transition-all border border-white/10 group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-secondary-500 flex items-center justify-center text-white shadow-lg">
-                        <span className="material-symbols-outlined">school</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-white font-medium truncate">{school.name}</h3>
-                        <div className="flex flex-wrap items-center gap-2 mt-0.5">
-                          {school.city && <span className="text-white/60 text-xs">{school.city}</span>}
-                          {school.city && school.author_name && <span className="text-white/30 text-[10px]">•</span>}
-                          {school.author_name && (
-                            <span className="text-primary-300 text-xs truncate" title={school.author_name}>
-                              Nutricionista: {school.author_name}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <span className="material-symbols-outlined text-white/40 group-hover:text-white/80 transition-colors">chevron_right</span>
+            ) : (
+              filteredSchools.map((school) => (
+                <button
+                  key={school.id}
+                  type="button"
+                  onClick={() => loadMenu(school)}
+                  className="group rounded-[2rem] bg-white p-6 text-left shadow-[0_12px_40px_rgba(44,52,55,0.06)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_18px_44px_rgba(44,52,55,0.09)]"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="rounded-2xl bg-[#d3e4fe] p-4 text-[#2251db] transition-transform duration-300 group-hover:scale-105">
+                      <span className="material-symbols-outlined text-3xl">
+                        apartment
+                      </span>
                     </div>
-                  </button>
-                ))
-              )}
-            </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3
+                            className="text-xl font-extrabold text-[#2c3437]"
+                            style={headlineFont}
+                          >
+                            {school.name}
+                          </h3>
+                          <p className="mt-2 text-sm text-[#596064]">
+                            {school.city || "Cidade nao informada"}
+                          </p>
+                        </div>
+                        <span className="material-symbols-outlined text-[#acb3b7] transition-colors group-hover:text-[#2251db]">
+                          arrow_outward
+                        </span>
+                      </div>
+
+                      {school.author_name ? (
+                        <div className="mt-4 inline-flex rounded-full bg-[#eaeff2] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[#4d5d73]">
+                          Nutricionista: {school.author_name}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </button>
+              ))
+            )}
           </div>
         </main>
-
-        {/* Footer */}
-        <footer className="bg-white/5 backdrop-blur-xl border-t border-white/10 p-4 text-center">
-          <p className="text-white/40 text-xs">Merenda SEMED • Cardápio Escolar</p>
-        </footer>
       </div>
     );
   }
 
-  // Menu display
   return (
-    <div className="relative flex min-h-screen w-full flex-col bg-background-light dark:bg-background-dark overflow-x-hidden">
-      <header className="flex items-center bg-white dark:bg-slate-900 px-4 py-3 justify-between border-b border-slate-200 dark:border-slate-800 sticky top-0 z-20">
-        <button
-          onClick={() => (slugFromUrl ? navigate('/') : goBack())}
-          className="text-slate-900 dark:text-white flex size-10 items-center justify-center cursor-pointer"
-        >
-          <span className="material-symbols-outlined">arrow_back_ios_new</span>
-        </button>
-        <h2 className="text-slate-900 dark:text-white text-lg font-bold leading-tight tracking-tight flex-1 text-center font-display">
-          NutriSemed
-        </h2>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => navigate('/public/calculator')}
-            className="flex size-10 items-center justify-center cursor-pointer text-slate-900 dark:text-white"
-            title="Calculadora pública"
-          >
-            <span className="material-symbols-outlined">calculate</span>
-          </button>
-          <button
-            onClick={handleDownloadPdf}
-            className="flex size-10 items-center justify-end cursor-pointer text-slate-900 dark:text-white"
-            disabled={!menu}
-            title="Baixar PDF"
-          >
-            <span className="material-symbols-outlined">calendar_month</span>
-          </button>
+    <div className="min-h-screen bg-[#f7f9fb] text-[#2c3437]" style={pageFont}>
+      <header className="sticky top-0 z-50 border-b border-slate-200/70 bg-[#f7f9fb]/95 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-4">
+            {!slugFromUrl ? (
+              <button
+                type="button"
+                onClick={goBack}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-full text-[#506076] transition-colors hover:bg-slate-200/60"
+                title="Voltar para escolas"
+              >
+                <span className="material-symbols-outlined">arrow_back</span>
+              </button>
+            ) : null}
+            <h1
+              className="text-xl font-extrabold tracking-tighter text-[#2251db]"
+              style={headlineFont}
+            >
+              NutriSemed
+            </h1>
+          </div>
+
+          <nav className="hidden items-center gap-2 md:flex">
+            <span className="rounded-lg border-b-2 border-[#2251db] px-3 py-1 font-bold text-[#2251db]">
+              Cardapio
+            </span>
+            <button
+              type="button"
+              onClick={() => navigate("/public/calculator")}
+              className="rounded-lg px-3 py-1 font-medium text-[#596064] transition-colors hover:bg-slate-200/50"
+            >
+              Calculadora
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={!menu}
+              className="rounded-lg px-3 py-1 font-medium text-[#596064] transition-colors hover:bg-slate-200/50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              PDF
+            </button>
+            {!slugFromUrl ? (
+              <button
+                type="button"
+                onClick={goBack}
+                className="rounded-lg px-3 py-1 font-medium text-[#596064] transition-colors hover:bg-slate-200/50"
+              >
+                Escolas
+              </button>
+            ) : null}
+          </nav>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={!menu}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full text-[#506076] transition-colors hover:bg-slate-200/60 disabled:cursor-not-allowed disabled:opacity-50"
+              title="Baixar PDF"
+            >
+              <span className="material-symbols-outlined">calendar_today</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate("/public/calculator")}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full text-[#506076] transition-colors hover:bg-slate-200/60"
+              title="Abrir calculadora publica"
+            >
+              <span className="material-symbols-outlined">calculate</span>
+            </button>
+          </div>
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto px-6 py-8 flex flex-col items-center">
+      <main
+        className="mx-auto w-full max-w-4xl px-6 py-12 pb-32"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
         {loadingMenu ? (
-          <div className="flex items-center justify-center py-20 w-full">
-            <div className="flex items-center gap-3 text-slate-500">
-              <div className="w-8 h-8 border-3 border-slate-300 border-t-primary rounded-full animate-spin"></div>
-              <span>Carregando cardápio...</span>
+          <div className="flex justify-center py-20">
+            <div className="flex items-center gap-3 rounded-full bg-white px-5 py-3 shadow-[0_12px_30px_rgba(44,52,55,0.08)]">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#d3e4fe] border-t-[#2251db]" />
+              <span className="text-sm font-semibold text-[#506076]">
+                Carregando cardapio...
+              </span>
             </div>
           </div>
         ) : error ? (
-          <div className="p-4 w-full max-w-md">
-            <div className="bg-warning-50 border border-warning-200 rounded-xl p-6 text-center">
-              <span className="material-symbols-outlined text-warning-500 text-3xl mb-2">info</span>
-              <p className="text-warning-700">{error}</p>
-              {!slugFromUrl && (
-                <button onClick={goBack} className="mt-4 px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
-                  Escolher outra escola
-                </button>
-              )}
-            </div>
+          <div className="rounded-[2rem] border border-[#fa746f] bg-[#fff4f3] px-6 py-8 text-center shadow-[0_12px_40px_rgba(44,52,55,0.05)]">
+            <span className="material-symbols-outlined text-4xl text-[#a83836]">
+              error
+            </span>
+            <p className="mt-4 text-base font-semibold text-[#6e0a12]">
+              {error}
+            </p>
+            {!slugFromUrl ? (
+              <button
+                type="button"
+                onClick={goBack}
+                className="mt-6 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-[#506076] shadow-sm transition-colors hover:bg-[#eaeff2]"
+              >
+                Escolher outra escola
+              </button>
+            ) : null}
           </div>
         ) : (
           <>
-            <div
-              className="relative w-full max-w-md bg-white dark:bg-slate-800 rounded-xl flex flex-col overflow-hidden min-h-[580px] border border-slate-200 dark:border-slate-700"
-              style={{ boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)' }}
-              onTouchStart={handleTouchStart}
-              onTouchEnd={handleTouchEnd}
-            >
-              <div className="pt-8 pb-6 px-8 text-center border-b border-dashed border-slate-200 dark:border-slate-700">
-                <p className="text-primary font-semibold text-sm uppercase tracking-widest mb-1">Menu do Dia</p>
-                <h1 className="text-2xl font-bold text-slate-900 dark:text-white capitalize">{currentDayTitle}</h1>
-                {selectedSchool?.name && (
-                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{selectedSchool.name}</p>
-                )}
-                {weekLabel && (
-                  <p className="mt-1 text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider">Semana: {weekLabel}</p>
-                )}
-              </div>
+            <section className="mb-10">
+              <span className="mb-2 block text-xs font-bold uppercase tracking-[0.15em] text-[#2251db]">
+                PLANEJAMENTO ALIMENTAR
+              </span>
+              <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <h2
+                    className="text-4xl font-extrabold tracking-tight text-[#2c3437] md:text-5xl"
+                    style={headlineFont}
+                  >
+                    Menu do Dia
+                  </h2>
+                  <p className="mt-2 text-lg text-[#596064]">
+                    {currentDayTitle}
+                  </p>
+                  <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-[#596064]">
+                    {selectedSchool?.name || menu?.school_name ? (
+                      <span className="rounded-full bg-white px-3 py-1 shadow-sm">
+                        {selectedSchool?.name || menu?.school_name}
+                      </span>
+                    ) : null}
+                    {weekLabel ? (
+                      <span className="rounded-full bg-white px-3 py-1 shadow-sm">
+                        Semana: {weekLabel}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
 
-              <div className="flex-1 p-8 space-y-8">
-                {currentMealsByType.map((mealSection) => (
-                  <section key={mealSection.key}>
-                    <div className="flex items-center gap-2 mb-4">
-                      <span className="material-symbols-outlined text-primary filled">{mealSection.icon}</span>
-                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">{mealSection.label}</h3>
-                    </div>
-                    <ul className="space-y-4">
-                      {mealSection.items.map((desc, idx) => (
-                        <li key={`${mealSection.key}-${idx}`} className="flex items-start gap-3 justify-between">
-                          <div className="flex items-start gap-3">
-                            <span className="material-symbols-outlined text-slate-400 text-sm mt-1">fiber_manual_record</span>
-                            <p className="text-slate-700 dark:text-slate-300">{desc.text}</p>
-                          </div>
-                          {desc.recipe && (
-                            <button 
-                              onClick={() => handleViewRecipe(desc.recipe as string)}
-                              className="shrink-0 flex items-center gap-1.5 px-3 py-1 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold rounded-full transition-colors"
-                              title={`Ver receita: ${desc.recipeName}`}
-                            >
-                              <span className="material-symbols-outlined text-[14px]">menu_book</span>
-                              Ver Receita
-                            </button>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => navigateDay("prev")}
+                    className="flex items-center gap-2 rounded-xl bg-white px-5 py-3 font-semibold text-[#506076] shadow-sm transition-colors hover:bg-[#eaeff2]"
+                  >
+                    <span className="material-symbols-outlined text-[20px]">
+                      chevron_left
+                    </span>
+                    Dia anterior
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigateDay("next")}
+                    className="flex items-center gap-2 rounded-xl bg-[#2251db] px-5 py-3 font-semibold text-white shadow-[0_14px_30px_rgba(34,81,219,0.2)] transition-opacity hover:opacity-90"
+                  >
+                    Proximo dia
+                    <span className="material-symbols-outlined text-[20px]">
+                      chevron_right
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            {groupedDays.length > 1 ? (
+              <div className="mb-8 flex flex-wrap gap-2">
+                {groupedDays.map((day, index) => (
+                  <button
+                    key={day.dayCode}
+                    type="button"
+                    onClick={() => setCurrentDayIndex(index)}
+                    className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+                      index === currentDayIndex
+                        ? "bg-[#2251db] text-white shadow-[0_10px_20px_rgba(34,81,219,0.16)]"
+                        : "bg-white text-[#506076] shadow-sm hover:bg-[#eaeff2]"
+                    }`}
+                  >
+                    {day.dayLabel}
+                  </button>
                 ))}
-
-                {currentMealsByType.length === 0 && (
-                  <section>
-                    <p className="text-slate-500 dark:text-slate-400">Nenhum item registrado para este dia.</p>
-                  </section>
-                )}
               </div>
+            ) : null}
 
-              <div className="bg-primary/5 dark:bg-primary/10 px-8 py-5 border-t border-slate-100 dark:border-slate-700">
-                <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">Informação Nutricional</h4>
-                <div className="flex flex-wrap gap-3">
-                  <div className="bg-white dark:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm flex items-center gap-2">
-                    <span className="text-xs font-bold text-primary">Kcal</span>
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                      {menu?.nutritional_info?.[currentDay?.dayCode]?.kcal || '-'}
-                    </span>
-                  </div>
-                  <div className="bg-white dark:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm flex items-center gap-2">
-                    <span className="text-xs font-bold text-primary">Prot</span>
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                      {menu?.nutritional_info?.[currentDay?.dayCode]?.protein ? `${menu.nutritional_info[currentDay.dayCode].protein}g` : '-'}
-                    </span>
-                  </div>
-                  <div className="bg-white dark:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm flex items-center gap-2">
-                    <span className="text-xs font-bold text-primary">Carbs</span>
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                      {menu?.nutritional_info?.[currentDay?.dayCode]?.carbs ? `${menu.nutritional_info[currentDay.dayCode].carbs}g` : '-'}
-                    </span>
-                  </div>
-                </div>
-              </div>
+            <div className="space-y-6">
+              {currentMealCards.length === 0 ? (
+                <article className="rounded-[2rem] bg-white p-10 text-center shadow-[0_12px_40px_rgba(44,52,55,0.06)]">
+                  <span className="material-symbols-outlined text-5xl text-[#747c80]">
+                    restaurant_menu
+                  </span>
+                  <p className="mt-4 text-lg font-semibold text-[#2c3437]">
+                    Nenhuma refeicao registrada para este dia.
+                  </p>
+                  <p className="mt-2 text-sm text-[#596064]">
+                    Publique os itens do cardapio para exibir esta tela.
+                  </p>
+                </article>
+              ) : (
+                currentMealCards.map((card) => {
+                  if (card.featured) {
+                    const primaryItem = card.items[0];
+                    const secondaryItems = card.items.slice(1);
 
-              <div className="absolute bottom-0 right-0">
-                <div
-                  style={{
-                    width: 0,
-                    height: 0,
-                    borderStyle: 'solid',
-                    borderWidth: '0 0 40px 40px',
-                    borderColor: 'transparent transparent #e2e8f0 transparent',
-                    filter: 'drop-shadow(-2px -2px 2px rgba(0,0,0,0.05))',
-                  }}
-                />
-                <div className="absolute bottom-2 right-2 text-slate-400 pointer-events-none">
-                  <span className="material-symbols-outlined text-sm">keyboard_double_arrow_right</span>
-                </div>
-              </div>
-            </div>
+                    return (
+                      <article
+                        key={card.key}
+                        className="group relative overflow-hidden rounded-[2.5rem] bg-white p-8 shadow-[0_12px_40px_rgba(44,52,55,0.06)] ring-1 ring-[#2251db]/5 transition-all duration-300 hover:shadow-[0_18px_44px_rgba(44,52,55,0.1)]"
+                      >
+                        <div className="absolute -right-16 -top-16 h-32 w-32 rounded-full bg-[#2251db]/5" />
+                        <div className="relative z-10 flex items-start gap-6">
+                          <div className="rounded-[2rem] bg-blue-50 p-5 text-[#2251db] transition-transform duration-300 group-hover:rotate-3">
+                            <span className="material-symbols-outlined text-4xl">
+                              {card.icon}
+                            </span>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                              <h3
+                                className="text-2xl font-bold text-[#2251db]"
+                                style={headlineFont}
+                              >
+                                {card.label}
+                              </h3>
+                              <span className="rounded-full bg-[#2251db] px-4 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-white">
+                                {card.timeLabel}
+                              </span>
+                            </div>
 
-            <div className="mt-6 flex gap-2">
-              {groupedItems.map((_, idx) => (
-                <button
-                  key={`dot-${idx}`}
-                  onClick={() => setCurrentDayIndex(idx)}
-                  className={`size-2 rounded-full ${idx === currentDayIndex ? 'bg-primary' : 'bg-slate-300 dark:bg-slate-700'}`}
-                  aria-label={`Ir para dia ${idx + 1}`}
-                />
-              ))}
-            </div>
-            <p className="mt-4 text-slate-400 text-xs font-medium uppercase tracking-widest text-center">
-              Deslize para ver o próximo dia
-            </p>
-            <div className="mt-4 flex gap-3">
-              <button
-                onClick={() => navigateDay('prev')}
-                className="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900"
-              >
-                Dia anterior
-              </button>
-              <button
-                onClick={() => navigateDay('next')}
-                className="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900"
-              >
-                Próximo dia
-              </button>
-            </div>
-            <div className="mt-6 text-center">
-              <p className="text-xs uppercase tracking-wider text-slate-400 dark:text-slate-500">Material elaborado por</p>
-              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                {menu?.author_name || 'Nutricionista responsável não informada'}
-              </p>
-              {menu?.author_crn && (
-                <p className="text-xs text-slate-500 dark:text-slate-400">CRN: {menu.author_crn}</p>
+                            <div className="space-y-4">
+                              <div>
+                                <h4
+                                  className="text-lg font-extrabold text-[#2c3437]"
+                                  style={headlineFont}
+                                >
+                                  {primaryItem?.title || "Preparacao principal"}
+                                </h4>
+                                <p className="mt-1 leading-relaxed text-[#596064]">
+                                  {primaryItem?.displayText ||
+                                    "Item sem descricao"}
+                                </p>
+                              </div>
+
+                              {secondaryItems.length ? (
+                                <div className="flex flex-wrap items-center gap-3 pt-2 text-sm text-[#596064]">
+                                  <span className="font-bold text-[#2251db]">
+                                    Acompanha
+                                  </span>
+                                  {secondaryItems.map((item, index) => (
+                                    <React.Fragment key={item.id}>
+                                      {index > 0 ? (
+                                        <span className="h-1 w-1 rounded-full bg-[#acb3b7]" />
+                                      ) : null}
+                                      <span>
+                                        {item.title || item.displayText}
+                                      </span>
+                                    </React.Fragment>
+                                  ))}
+                                </div>
+                              ) : null}
+
+                              {renderRecipeLinks(card.items)}
+                            </div>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  }
+
+                  return (
+                    <article
+                      key={card.key}
+                      className="group rounded-[1.75rem] bg-white p-6 shadow-[0_4px_20px_rgba(44,52,55,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgba(44,52,55,0.08)]"
+                    >
+                      <div className="flex items-start gap-5">
+                        <div
+                          className={`rounded-2xl p-4 transition-transform duration-300 group-hover:scale-110 ${card.iconToneClass}`}
+                        >
+                          <span className="material-symbols-outlined text-3xl">
+                            {card.icon}
+                          </span>
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <h3
+                              className="text-xl font-bold text-[#2c3437]"
+                              style={headlineFont}
+                            >
+                              {card.label}
+                            </h3>
+                            <span
+                              className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wider ${card.badgeToneClass}`}
+                            >
+                              {card.timeLabel}
+                            </span>
+                          </div>
+
+                          {card.items.length === 1 ? (
+                            <p className="leading-relaxed text-[#596064]">
+                              {card.items[0].displayText}
+                            </p>
+                          ) : (
+                            <div className="space-y-2">
+                              {card.items.map((item) => (
+                                <p
+                                  key={item.id}
+                                  className="leading-relaxed text-[#596064]"
+                                >
+                                  {item.displayText}
+                                </p>
+                              ))}
+                            </div>
+                          )}
+
+                          {renderRecipeLinks(card.items)}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })
               )}
             </div>
+
+            <section className="relative mt-16 overflow-hidden rounded-[2rem] bg-[#f0f4f7] p-8">
+              <h3 className="mb-6 text-center text-xs font-bold uppercase tracking-[0.2em] text-[#596064]">
+                Informacoes Nutricionais Diarias
+              </h3>
+
+              <div className="mx-auto grid max-w-2xl grid-cols-3 gap-4 md:gap-12">
+                <div className="text-center">
+                  <p
+                    className="text-3xl font-extrabold text-[#2c3437]"
+                    style={headlineFont}
+                  >
+                    {formatMetric(currentNutrition?.kcal)}
+                  </p>
+                  <p className="mt-1 text-xs font-bold uppercase tracking-widest text-[#2251db]">
+                    Kcal Total
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p
+                    className="text-3xl font-extrabold text-[#2c3437]"
+                    style={headlineFont}
+                  >
+                    {formatMetric(currentNutrition?.protein, "g")}
+                  </p>
+                  <p className="mt-1 text-xs font-bold uppercase tracking-widest text-[#2251db]">
+                    Proteinas
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p
+                    className="text-3xl font-extrabold text-[#2c3437]"
+                    style={headlineFont}
+                  >
+                    {formatMetric(currentNutrition?.carbs, "g")}
+                  </p>
+                  <p className="mt-1 text-xs font-bold uppercase tracking-widest text-[#2251db]">
+                    Carbos
+                  </p>
+                </div>
+              </div>
+
+              {footerBadges.length ? (
+                <div className="mt-8 flex justify-center border-t border-[#acb3b7]/15 pt-6">
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {footerBadges.map((badge) => (
+                      <span
+                        key={badge}
+                        className="rounded-full bg-[#d3e4fe] px-3 py-1 text-[10px] font-bold uppercase tracking-tight text-[#435368]"
+                      >
+                        {badge}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="mt-8 text-center">
+                <p className="text-xs uppercase tracking-[0.18em] text-[#596064]">
+                  Responsavel tecnico
+                </p>
+                <p className="mt-2 text-sm font-semibold text-[#2c3437]">
+                  {menu?.author_name || "Nao informado"}
+                </p>
+                {menu?.author_crn ? (
+                  <p className="mt-1 text-xs text-[#596064]">
+                    CRN: {menu.author_crn}
+                  </p>
+                ) : null}
+              </div>
+            </section>
           </>
         )}
       </main>
 
-      {/* Recipe Modal */}
-      {viewingRecipeId && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-200 relative my-auto">
-            
-            <div className="flex items-center justify-between p-4 md:p-6 border-b border-slate-100 dark:border-slate-800 shrink-0">
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary">menu_book</span>
-                Cartão de Receita
-              </h2>
-              <button onClick={() => setViewingRecipeId(null)} className="w-10 h-10 flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-white rounded-xl transition-colors shrink-0">
+      <footer className="fixed bottom-0 left-0 z-50 flex w-full items-center justify-around rounded-t-[1.75rem] bg-white/80 px-4 pb-6 pt-3 shadow-[0_-4px_20px_rgba(44,52,55,0.05)] backdrop-blur-xl md:hidden">
+        <button
+          type="button"
+          className="flex flex-col items-center justify-center rounded-2xl bg-blue-100 px-5 py-2 text-blue-800 transition-transform hover:scale-105"
+        >
+          <span className="material-symbols-outlined">restaurant_menu</span>
+          <span className="mt-1 text-[10px] font-medium uppercase tracking-wider">
+            Cardapio
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate("/public/calculator")}
+          className="flex flex-col items-center justify-center px-5 py-2 text-slate-400 transition-transform hover:scale-105"
+        >
+          <span className="material-symbols-outlined">calculate</span>
+          <span className="mt-1 text-[10px] font-medium uppercase tracking-wider">
+            Calc
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={handleDownloadPdf}
+          disabled={!menu}
+          className="flex flex-col items-center justify-center px-5 py-2 text-slate-400 transition-transform hover:scale-105 disabled:opacity-50"
+        >
+          <span className="material-symbols-outlined">calendar_month</span>
+          <span className="mt-1 text-[10px] font-medium uppercase tracking-wider">
+            PDF
+          </span>
+        </button>
+        {!slugFromUrl ? (
+          <button
+            type="button"
+            onClick={goBack}
+            className="flex flex-col items-center justify-center px-5 py-2 text-slate-400 transition-transform hover:scale-105"
+          >
+            <span className="material-symbols-outlined">person</span>
+            <span className="mt-1 text-[10px] font-medium uppercase tracking-wider">
+              Escola
+            </span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => navigate("/")}
+            className="flex flex-col items-center justify-center px-5 py-2 text-slate-400 transition-transform hover:scale-105"
+          >
+            <span className="material-symbols-outlined">home</span>
+            <span className="mt-1 text-[10px] font-medium uppercase tracking-wider">
+              Inicio
+            </span>
+          </button>
+        )}
+      </footer>
+
+      {viewingRecipeId ? (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/55 p-4 backdrop-blur-sm">
+          <div className="my-auto flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 md:px-6">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2251db]">
+                  Cartao de Receita
+                </p>
+                <h2
+                  className="mt-1 text-2xl font-extrabold text-[#2c3437]"
+                  style={headlineFont}
+                >
+                  {recipeData?.name || "Receita"}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingRecipeId(null)}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
+              >
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 md:p-6">
+            <div className="min-h-0 overflow-y-auto px-5 py-5 md:px-6">
               {loadingRecipe ? (
-                 <div className="flex justify-center p-10"><div className="w-8 h-8 border-3 border-primary/30 border-t-primary rounded-full animate-spin"></div></div>
+                <div className="flex justify-center py-16">
+                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#d3e4fe] border-t-[#2251db]" />
+                </div>
               ) : !recipeData ? (
-                 <div className="text-center p-10 text-slate-500">Falha ao carregar a receita.</div>
+                <div className="rounded-[1.5rem] bg-[#f0f4f7] px-6 py-10 text-center text-sm text-[#596064]">
+                  Falha ao carregar a receita.
+                </div>
               ) : (
                 <div className="space-y-6">
-                  <div className="text-center mb-6">
-                    <h3 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">{recipeData.name}</h3>
-                    {recipeData.category && <span className="text-xs font-bold text-primary bg-primary/10 px-3 py-1 rounded-full">{recipeData.category}</span>}
-                  </div>
+                  {recipeData.category ? (
+                    <div className="inline-flex rounded-full bg-[#d3e4fe] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[#435368]">
+                      {recipeData.category}
+                    </div>
+                  ) : null}
+                  {recipeData.instructions ? (
+                    <section className="rounded-[1.5rem] bg-[#f7f9fb] p-5">
+                      <h3
+                        className="text-lg font-extrabold text-[#2c3437]"
+                        style={headlineFont}
+                      >
+                        Orientacoes gerais
+                      </h3>
+                      <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-[#596064]">
+                        {recipeData.instructions}
+                      </p>
+                    </section>
+                  ) : null}
 
-                  <div className="flex flex-col gap-4">
-                    {/* Render Step by Step Instructions if available inside instruction parsed via newlines maybe? Or from backend text */}
-                    
-                    {recipeData.instructions && (
-                      <div className="space-y-3">
-                        <h4 className="font-bold text-slate-700 dark:text-slate-200">Orientações Gerais</h4>
-                        <p className="text-slate-600 dark:text-slate-300 text-sm whitespace-pre-wrap leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
-                          {recipeData.instructions}
-                        </p>
-                      </div>
-                    )}
-
-                    {recipeData.tags?.prep_steps && Array.isArray(recipeData.tags.prep_steps) && recipeData.tags.prep_steps.length > 0 && (
-                      <div className="space-y-4 pt-2">
-                        <div className="flex items-center justify-between">
-                          <h4 className="font-bold text-slate-700 dark:text-slate-200">Modo de Preparo</h4>
-                          {recipeData.tags?.prep_time_minutes && (
-                            <span className="flex items-center gap-1.5 text-xs font-bold text-primary bg-primary/10 px-3 py-1 rounded-full">
-                              <span className="material-symbols-outlined text-[14px]">timer</span>
-                              {recipeData.tags.prep_time_minutes} min
+                  {recipeData.tags?.prep_steps?.length ? (
+                    <section className="rounded-[1.5rem] bg-[#f7f9fb] p-5">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <h3
+                          className="text-lg font-extrabold text-[#2c3437]"
+                          style={headlineFont}
+                        >
+                          Modo de preparo
+                        </h3>
+                        {recipeData.tags.prep_time_minutes ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-[#d3e4fe] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[#435368]">
+                            <span className="material-symbols-outlined text-[14px]">
+                              timer
                             </span>
-                          )}
-                        </div>
-                        <div className="bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-4">
-                          {recipeData.tags.prep_steps.map((stepText: string, index: number) => (
-                            <div key={index} className="flex gap-4 items-start">
-                              <div className="w-8 h-8 rounded-full bg-primary/20 text-primary font-bold text-sm flex items-center justify-center shrink-0 mt-0.5">
-                                {index + 1}
-                              </div>
-                              <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-sm pt-1">
-                                {stepText}
-                              </p>
+                            {recipeData.tags.prep_time_minutes} min
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-4 space-y-4">
+                        {recipeData.tags.prep_steps.map((step, index) => (
+                          <div key={`step-${index}`} className="flex gap-4">
+                            <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#d3e4fe] text-sm font-bold text-[#2251db]">
+                              {index + 1}
                             </div>
-                          ))}
-                        </div>
+                            <p className="text-sm leading-relaxed text-[#596064]">
+                              {step}
+                            </p>
+                          </div>
+                        ))}
                       </div>
-                    )}
+                    </section>
+                  ) : null}
 
-                    {(!recipeData.instructions && (!recipeData.tags?.prep_steps || recipeData.tags.prep_steps.length === 0)) && (
-                      <div className="text-center py-6 text-slate-500 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-slate-800">Nenhuma instrução cadastrada.</div>
-                    )}
+                  {recipeData.tags?.nutrition ? (
+                    <section className="rounded-[1.5rem] bg-[#f0f4f7] p-5">
+                      <h3
+                        className="text-lg font-extrabold text-[#2c3437]"
+                        style={headlineFont}
+                      >
+                        Informacao nutricional
+                      </h3>
+                      <div className="mt-4 grid grid-cols-3 gap-4 text-center">
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-[#596064]">
+                            Energia
+                          </p>
+                          <p
+                            className="mt-1 text-2xl font-extrabold text-[#2251db]"
+                            style={headlineFont}
+                          >
+                            {formatMetric(recipeData.tags.nutrition.kcal)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-[#596064]">
+                            Proteinas
+                          </p>
+                          <p
+                            className="mt-1 text-2xl font-extrabold text-[#2251db]"
+                            style={headlineFont}
+                          >
+                            {formatMetric(
+                              recipeData.tags.nutrition.protein,
+                              "g",
+                            )}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-[#596064]">
+                            Carbos
+                          </p>
+                          <p
+                            className="mt-1 text-2xl font-extrabold text-[#2251db]"
+                            style={headlineFont}
+                          >
+                            {formatMetric(recipeData.tags.nutrition.carbs, "g")}
+                          </p>
+                        </div>
+                      </div>
+                    </section>
+                  ) : null}
 
-                    {recipeData.tags?.nutrition && (recipeData.tags.nutrition.kcal || recipeData.tags.nutrition.protein || recipeData.tags.nutrition.carbs) && (
-                      <div className="mt-4 border border-slate-100 dark:border-slate-800 rounded-xl overflow-hidden">
-                        <div className="bg-slate-50 dark:bg-slate-800 px-4 py-3 font-bold text-slate-700 dark:text-slate-200 text-sm flex gap-2 items-center">
-                          <span className="material-symbols-outlined text-lg">local_dining</span>
-                          Informação Nutricional (por porção)
-                        </div>
-                        <div className="flex gap-4 p-4 bg-white dark:bg-slate-900 justify-around">
-                          <div className="text-center">
-                            <p className="text-[10px] uppercase font-bold text-slate-400">Energia</p>
-                            <p className="text-lg font-black text-primary">{recipeData.tags.nutrition.kcal || '-'} <span className="text-sm font-medium">kcal</span></p>
-                          </div>
-                          <div className="text-center">
-                            <p className="text-[10px] uppercase font-bold text-slate-400">Proteínas</p>
-                            <p className="text-lg font-black text-primary">{recipeData.tags.nutrition.protein || '-'} <span className="text-sm font-medium">g</span></p>
-                          </div>
-                          <div className="text-center">
-                            <p className="text-[10px] uppercase font-bold text-slate-400">Carboidratos</p>
-                            <p className="text-lg font-black text-primary">{recipeData.tags.nutrition.carbs || '-'} <span className="text-sm font-medium">g</span></p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {recipeData.ingredients && recipeData.ingredients.length > 0 && (
-                      <div className="mt-6 border border-slate-100 dark:border-slate-800 rounded-xl overflow-hidden">
-                        <div className="bg-slate-50 dark:bg-slate-800 px-4 py-3 font-bold text-slate-700 dark:text-slate-200 text-sm flex gap-2 items-center">
-                          <span className="material-symbols-outlined text-lg">kitchen</span>
-                          Ingredientes ({recipeData.servings_base} porções base)
-                        </div>
-                        <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-                          {recipeData.ingredients.map((ing: any, idx: number) => (
-                            <li key={idx} className="px-4 py-2.5 text-sm flex justify-between items-center hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                              <span className="text-slate-700 dark:text-slate-300">{ing.supply_name} {ing.optional ? '(Opcional)':''}</span>
-                              <span className="font-medium text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-xs">{ing.qty_base} {ing.unit}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
+                  {recipeData.ingredients?.length ? (
+                    <section className="rounded-[1.5rem] bg-[#f7f9fb] p-5">
+                      <h3
+                        className="text-lg font-extrabold text-[#2c3437]"
+                        style={headlineFont}
+                      >
+                        Ingredientes
+                      </h3>
+                      <ul className="mt-4 divide-y divide-slate-200 overflow-hidden rounded-[1.25rem] border border-slate-200 bg-white">
+                        {recipeData.ingredients.map((ingredient, index) => (
+                          <li
+                            key={`ingredient-${index}`}
+                            className="flex items-center justify-between gap-4 px-4 py-3"
+                          >
+                            <span className="text-sm text-[#2c3437]">
+                              {ingredient.supply_name}
+                              {ingredient.optional ? " (Opcional)" : ""}
+                            </span>
+                            <span className="rounded-full bg-[#eaeff2] px-3 py-1 text-xs font-semibold text-[#4d5d73]">
+                              {ingredient.qty_base || "-"}{" "}
+                              {ingredient.unit || ""}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  ) : null}
                 </div>
               )}
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 };

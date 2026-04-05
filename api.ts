@@ -2,6 +2,16 @@ const USE_SAME_ORIGIN_PROXY = import.meta.env.DEV && Boolean(import.meta.env.VIT
 const rawApiBase = (import.meta.env.VITE_API_BASE || '').trim();
 const API_BASE = USE_SAME_ORIGIN_PROXY ? '' : rawApiBase;
 
+function buildQueryString(params?: Record<string, string | number | boolean | null | undefined>) {
+  if (!params) return '';
+  const cleanParams = Object.entries(params).reduce((acc, [key, value]) => {
+    if (value === undefined || value === null || value === '') return acc;
+    acc[key] = String(value);
+    return acc;
+  }, {} as Record<string, string>);
+  return new URLSearchParams(cleanParams).toString();
+}
+
 type FetchOptions = RequestInit & { skipAuth?: boolean };
 type RetryableFetchOptions = FetchOptions & { _retry?: boolean };
 
@@ -220,6 +230,8 @@ export async function createSchool(payload: {
   address?: string;
   city?: string;
   is_active?: boolean;
+  education_stages?: string[];
+  education_modalities?: string[];
 }) {
   return apiFetch('/api/schools/', {
     method: 'POST',
@@ -232,6 +244,8 @@ export async function updateSchool(id: string, payload: Partial<{
   address: string;
   city: string;
   is_active: boolean;
+  education_stages: string[];
+  education_modalities: string[];
 }>) {
   return apiFetch(`/api/schools/${id}/`, {
     method: 'PATCH',
@@ -247,6 +261,430 @@ export async function deleteSchool(id: string) {
 
 export async function getPublicLink(schoolId: string) {
   return apiFetch(`/api/schools/${schoolId}/public_link/`);
+}
+
+export async function getEducationStages(params?: { is_active?: boolean }) {
+  const search = buildQueryString(params);
+  return apiFetch(`/api/education-stages/${search ? `?${search}` : ''}`);
+}
+
+export async function createEducationStage(payload: {
+  name: string;
+  code: string;
+  age_range_start?: number | null;
+  age_range_end?: number | null;
+  is_active?: boolean;
+}) {
+  return apiFetch('/api/education-stages/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateEducationStage(id: string, payload: Partial<{
+  name: string;
+  code: string;
+  age_range_start: number | null;
+  age_range_end: number | null;
+  is_active: boolean;
+}>) {
+  return apiFetch(`/api/education-stages/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteEducationStage(id: string) {
+  return apiFetch(`/api/education-stages/${id}/`, {
+    method: 'DELETE',
+  });
+}
+
+export async function getEducationModalities(params?: { is_active?: boolean }) {
+  const search = buildQueryString(params);
+  return apiFetch(`/api/education-modalities/${search ? `?${search}` : ''}`);
+}
+
+export async function createEducationModality(payload: {
+  name: string;
+  code: string;
+  is_active?: boolean;
+}) {
+  return apiFetch('/api/education-modalities/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateEducationModality(id: string, payload: Partial<{
+  name: string;
+  code: string;
+  is_active: boolean;
+}>) {
+  return apiFetch(`/api/education-modalities/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteEducationModality(id: string) {
+  return apiFetch(`/api/education-modalities/${id}/`, {
+    method: 'DELETE',
+  });
+}
+
+export async function getPnaePlans(params?: {
+  school?: string;
+  year?: string | number;
+  status?: string;
+  responsible_nutritionist?: string;
+}) {
+  const search = buildQueryString(params);
+  return apiFetch(`/api/pnae/plans/${search ? `?${search}` : ''}`);
+}
+
+export async function getPnaePlan(id: string) {
+  return apiFetch(`/api/pnae/plans/${id}/`);
+}
+
+export async function getPnaeDashboard() {
+  return apiFetch('/api/pnae/plans/dashboard/');
+}
+
+export async function submitPnaePlanReview(id: string, comment?: string) {
+  return apiFetch(`/api/pnae/plans/${id}/submit-review/`, {
+    method: 'POST',
+    body: JSON.stringify({ comment: comment || '' }),
+  });
+}
+
+export async function approvePnaePlan(id: string, comment?: string) {
+  return apiFetch(`/api/pnae/plans/${id}/approve/`, {
+    method: 'POST',
+    body: JSON.stringify({ comment: comment || '' }),
+  });
+}
+
+export async function rejectPnaePlan(id: string, comment?: string) {
+  return apiFetch(`/api/pnae/plans/${id}/reject/`, {
+    method: 'POST',
+    body: JSON.stringify({ comment: comment || '' }),
+  });
+}
+
+export async function getPnaeOperationalSummary(id: string, params?: { month?: string | number }) {
+  const search = buildQueryString(params);
+  return apiFetch(`/api/pnae/plans/${id}/operational-summary/${search ? `?${search}` : ''}`);
+}
+
+export async function generatePnaeMenuDrafts(id: string, payload: { month: number }) {
+  return apiFetch(`/api/pnae/plans/${id}/generate-menu-drafts/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function generatePnaeDeliveryDraft(id: string, payload: { month: number }) {
+  return apiFetch(`/api/pnae/plans/${id}/generate-delivery-draft/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createPnaePlan(payload: {
+  school: string;
+  year: number;
+  title?: string;
+  justification?: string;
+  diagnosis_summary?: string;
+  general_objectives?: string;
+  operational_strategy?: string;
+  execution_locations?: string;
+  executing_agency?: string;
+  financial_schedule_notes?: string;
+  status?: string;
+  notes?: string;
+  responsible_nutritionist?: string | null;
+}) {
+  return apiFetch('/api/pnae/plans/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updatePnaePlan(id: string, payload: Partial<{
+  school: string;
+  year: number;
+  title: string;
+  justification: string;
+  diagnosis_summary: string;
+  general_objectives: string;
+  operational_strategy: string;
+  execution_locations: string;
+  executing_agency: string;
+  financial_schedule_notes: string;
+  status: string;
+  notes: string;
+  responsible_nutritionist: string | null;
+}>) {
+  return apiFetch(`/api/pnae/plans/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deletePnaePlan(id: string) {
+  return apiFetch(`/api/pnae/plans/${id}/`, {
+    method: 'DELETE',
+  });
+}
+
+export async function createPnaePlanGoal(payload: {
+  plan: string;
+  title: string;
+  description?: string;
+  indicator?: string;
+  target_value?: string | number | null;
+  current_value?: string | number | null;
+  due_date?: string | null;
+  order?: number;
+}) {
+  return apiFetch('/api/pnae/plan-goals/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updatePnaePlanGoal(id: string, payload: Partial<{
+  plan: string;
+  title: string;
+  description: string;
+  indicator: string;
+  target_value: string | number | null;
+  current_value: string | number | null;
+  due_date: string | null;
+  order: number;
+}>) {
+  return apiFetch(`/api/pnae/plan-goals/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deletePnaePlanGoal(id: string) {
+  return apiFetch(`/api/pnae/plan-goals/${id}/`, {
+    method: 'DELETE',
+  });
+}
+
+export async function createPnaePlanAction(payload: {
+  plan: string;
+  title: string;
+  description?: string;
+  responsible_sector?: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  status?: string;
+  order?: number;
+}) {
+  return apiFetch('/api/pnae/plan-actions/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updatePnaePlanAction(id: string, payload: Partial<{
+  plan: string;
+  title: string;
+  description: string;
+  responsible_sector: string;
+  start_date: string | null;
+  end_date: string | null;
+  status: string;
+  order: number;
+}>) {
+  return apiFetch(`/api/pnae/plan-actions/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deletePnaePlanAction(id: string) {
+  return apiFetch(`/api/pnae/plan-actions/${id}/`, {
+    method: 'DELETE',
+  });
+}
+
+export async function createPnaePlanItem(payload: {
+  plan: string;
+  education_stage: string;
+  education_modality: string;
+  month: number;
+  meal_type: string;
+  recipe?: string | null;
+  servings_planned?: number;
+  weekly_frequency?: number;
+  notes?: string;
+}) {
+  return apiFetch('/api/pnae/plan-items/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updatePnaePlanItem(id: string, payload: Partial<{
+  plan: string;
+  education_stage: string;
+  education_modality: string;
+  month: number;
+  meal_type: string;
+  recipe: string | null;
+  servings_planned: number;
+  weekly_frequency: number;
+  notes: string;
+}>) {
+  return apiFetch(`/api/pnae/plan-items/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deletePnaePlanItem(id: string) {
+  return apiFetch(`/api/pnae/plan-items/${id}/`, {
+    method: 'DELETE',
+  });
+}
+
+export async function createPnaePlanScheduleEntry(payload: {
+  plan: string;
+  month: number;
+  activity: string;
+  expected_result?: string;
+  order?: number;
+}) {
+  return apiFetch('/api/pnae/plan-schedule-entries/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updatePnaePlanScheduleEntry(id: string, payload: Partial<{
+  plan: string;
+  month: number;
+  activity: string;
+  expected_result: string;
+  order: number;
+}>) {
+  return apiFetch(`/api/pnae/plan-schedule-entries/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deletePnaePlanScheduleEntry(id: string) {
+  return apiFetch(`/api/pnae/plan-schedule-entries/${id}/`, {
+    method: 'DELETE',
+  });
+}
+
+export async function createPnaePlanBudgetItem(payload: {
+  plan: string;
+  category: string;
+  description?: string;
+  funding_source?: string;
+  estimated_amount?: string | number;
+  executed_amount?: string | number;
+  order?: number;
+}) {
+  return apiFetch('/api/pnae/plan-budget-items/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updatePnaePlanBudgetItem(id: string, payload: Partial<{
+  plan: string;
+  category: string;
+  description: string;
+  funding_source: string;
+  estimated_amount: string | number;
+  executed_amount: string | number;
+  order: number;
+}>) {
+  return apiFetch(`/api/pnae/plan-budget-items/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deletePnaePlanBudgetItem(id: string) {
+  return apiFetch(`/api/pnae/plan-budget-items/${id}/`, {
+    method: 'DELETE',
+  });
+}
+
+export async function createPnaePlanEvaluationTool(payload: {
+  plan: string;
+  name: string;
+  description?: string;
+  frequency?: string;
+  target_audience?: string;
+  order?: number;
+}) {
+  return apiFetch('/api/pnae/plan-evaluation-tools/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updatePnaePlanEvaluationTool(id: string, payload: Partial<{
+  plan: string;
+  name: string;
+  description: string;
+  frequency: string;
+  target_audience: string;
+  order: number;
+}>) {
+  return apiFetch(`/api/pnae/plan-evaluation-tools/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deletePnaePlanEvaluationTool(id: string) {
+  return apiFetch(`/api/pnae/plan-evaluation-tools/${id}/`, {
+    method: 'DELETE',
+  });
+}
+
+export async function createPnaePlanMonthlyExecution(payload: {
+  plan: string;
+  month: number;
+  status?: string;
+  progress_percent?: number;
+  executed_servings?: number;
+  execution_notes?: string;
+  deviation_notes?: string;
+  evidence_links?: string[];
+}) {
+  return apiFetch('/api/pnae/plan-monthly-executions/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updatePnaePlanMonthlyExecution(id: string, payload: Partial<{
+  status: string;
+  progress_percent: number;
+  executed_servings: number;
+  execution_notes: string;
+  deviation_notes: string;
+  evidence_links: string[];
+}>) {
+  return apiFetch(`/api/pnae/plan-monthly-executions/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
 }
 
 // Responsibles CRUD
@@ -335,18 +773,12 @@ export async function getSupplies(params?: { q?: string; category?: string; is_a
 }
 
 export async function getSupplyLots(supplyId: string, params?: { only_available?: boolean }) {
-  const cleanParams = params
-    ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
-    : undefined;
-  const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
+  const search = buildQueryString(params);
   return apiFetch(`/api/supplies/${supplyId}/lots/${search ? `?${search}` : ''}`);
 }
 
 export async function getCentralLots(params?: { days_to_expiry?: number; include_zero?: boolean }) {
-  const cleanParams = params
-    ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
-    : undefined;
-  const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
+  const search = buildQueryString(params);
   return apiFetch(`/api/supplies/central_lots/${search ? `?${search}` : ''}`);
 }
 

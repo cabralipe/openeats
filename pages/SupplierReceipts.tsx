@@ -4,6 +4,7 @@ import {
   createSupplierReceipt,
   deleteSupplier,
   deleteSupplierReceipt,
+  exportSupplierReceiptsPdf,
   getSupplyCategories,
   getSchools,
   getSupplies,
@@ -284,6 +285,62 @@ const SupplierReceipts: React.FC = () => {
       return supplier.includes(q) || school.includes(q);
     });
   }, [receipts, searchQuery]);
+
+  const receiptStats = useMemo(() => {
+    const counts = receipts.reduce(
+      (acc, receipt) => {
+        const status = String(receipt.status || '');
+        acc.total += 1;
+        if (status === 'CONFERRED') acc.conferred += 1;
+        else if (status === 'IN_CONFERENCE') acc.inConference += 1;
+        else if (status === 'CANCELLED') acc.cancelled += 1;
+        else acc.pending += 1;
+        return acc;
+      },
+      { total: 0, pending: 0, inConference: 0, conferred: 0, cancelled: 0 },
+    );
+
+    return {
+      ...counts,
+      filtered: filteredReceipts.length,
+    };
+  }, [filteredReceipts.length, receipts]);
+
+  const stepGuides = useMemo(
+    () => [
+      {
+        step: 1 as const,
+        title: 'Dados basicos',
+        description: 'Escolha o fornecedor responsavel e a data prevista de chegada.',
+        tip: 'Use a data do romaneio ou a previsao acertada com o fornecedor.',
+      },
+      {
+        step: 2 as const,
+        title: 'Destino',
+        description: 'Defina se a entrada vai para o estoque central ou direto para a escola.',
+        tip: 'Recebimento direto na escola nao alimenta o estoque central.',
+      },
+      {
+        step: 3 as const,
+        title: 'Itens',
+        description: 'Liste os insumos esperados e a quantidade de cada um.',
+        tip: 'Adicione observacoes que ajudem a conferencia no momento da entrega.',
+      },
+      {
+        step: 4 as const,
+        title: 'Revisao',
+        description: 'Confirme fornecedor, destino, data e itens antes de salvar.',
+        tip: 'Revise o total previsto para evitar divergencias na entrada.',
+      },
+    ],
+    [],
+  );
+
+  const activeStepGuide = stepGuides.find((step) => step.step === createStep) || stepGuides[0];
+  const selectedSupplierName = suppliers.find((supplier) => supplier.id === supplierId)?.name || 'Nenhum fornecedor selecionado';
+  const selectedSchoolName = schools.find((school) => school.id === schoolId)?.name || 'Nenhuma escola selecionada';
+  const destinationSummary = destinationMode === 'school' ? selectedSchoolName : 'Estoque Central';
+  const historyPreview = filteredReceipts.slice(0, 6);
 
   const formatDate = (value?: string) => {
     if (!value) return '-';
@@ -582,68 +639,188 @@ const SupplierReceipts: React.FC = () => {
     }
   };
 
+  const handleExportPdf = () => {
+    exportSupplierReceiptsPdf(filterStatus ? { status: filterStatus } : undefined);
+  };
+
   return (
-    <div className="flex flex-col flex-1 min-h-full bg-background-light dark:bg-background-dark">
-      <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-10 px-4 lg:px-8 py-4">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Recebimentos</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Gerencie a entrada de insumos e conferência de lotes</p>
-          </div>
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-            <div className="relative">
-              <span className="material-symbols-outlined text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 text-[20px]">search</span>
-              <input
-                className="pl-10 pr-4 py-2 bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-sm focus:ring-2 focus:ring-primary w-full sm:w-64"
-                placeholder="Buscar por fornecedor..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                type="text"
-              />
+    <div className="flex flex-col flex-1 min-h-full bg-[#f7f9fb] text-slate-900 dark:bg-slate-950 dark:text-white">
+      <header className="sticky top-0 z-10 border-b border-slate-200/80 bg-[#f7f9fb]/90 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/90">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-5 lg:px-8">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <span className="mb-2 block text-[11px] font-extrabold uppercase tracking-[0.22em] text-primary">Logistica e Suprimentos</span>
+              <h2 className="text-4xl font-extrabold tracking-tight text-slate-950 dark:text-white md:text-5xl" style={{ fontFamily: 'Manrope, sans-serif' }}>
+                Recebimentos
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-300 md:text-base">
+                Organize a entrada de insumos, revise o destino correto e conduza a conferencia de lotes com menos erro operacional.
+              </p>
             </div>
-            <select className="input rounded-lg text-sm" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-              <option value="">Todos</option>
-              <option value="DRAFT">Rascunho</option>
-              <option value="IN_CONFERENCE">Em conferência</option>
-              <option value="CONFERRED">Conferido</option>
-              <option value="CANCELLED">Cancelado</option>
-            </select>
-            <button className="btn-secondary" onClick={loadData}>Atualizar</button>
+            <div className="grid gap-3 sm:grid-cols-2 lg:flex">
+              <div className="relative min-w-[220px]">
+                <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[20px] text-slate-400">search</span>
+                <input
+                  className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm text-slate-700 shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  placeholder="Buscar por fornecedor ou destino..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  type="text"
+                />
+              </div>
+              <select
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+              >
+                <option value="">Todos os status</option>
+                <option value="DRAFT">Rascunho</option>
+                <option value="IN_CONFERENCE">Em conferencia</option>
+                <option value="CONFERRED">Conferido</option>
+                <option value="CANCELLED">Cancelado</option>
+              </select>
+              <button
+                type="button"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-bold text-white transition hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+                onClick={loadData}
+              >
+                <span className="material-symbols-outlined text-[18px]">refresh</span>
+                Atualizar
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-primary/20 bg-primary/10 px-5 py-3 text-sm font-bold text-primary transition hover:bg-primary/15"
+                onClick={handleExportPdf}
+              >
+                <span className="material-symbols-outlined text-[18px]">picture_as_pdf</span>
+                Exportar PDF
+              </button>
+            </div>
           </div>
         </div>
       </header>
 
-      <div className="p-4 lg:p-8 max-w-6xl mx-auto w-full space-y-8">
+      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-4 py-8 pb-24 lg:px-8">
         {success && (
-          <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/50 rounded-lg p-4 flex items-center gap-3 text-emerald-700 dark:text-emerald-400">
-            <span className="material-symbols-outlined">check_circle</span>
-            <p className="text-sm font-medium">{success}</p>
-            <button type="button" className="ml-auto text-emerald-400 hover:text-emerald-600" onClick={() => setSuccess('')}>
+          <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-emerald-700 shadow-sm dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-300">
+            <span className="material-symbols-outlined mt-0.5 text-[20px]">check_circle</span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">Acao concluida</p>
+              <p className="text-sm">{success}</p>
+            </div>
+            <button type="button" className="text-emerald-400 transition hover:text-emerald-600" onClick={() => setSuccess('')}>
               <span className="material-symbols-outlined">close</span>
             </button>
           </div>
         )}
         {error && (
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 rounded-lg p-4 flex items-center gap-3 text-red-700 dark:text-red-400">
-            <span className="material-symbols-outlined">error</span>
-            <p className="text-sm font-medium">{error}</p>
-            <button type="button" className="ml-auto text-red-400 hover:text-red-600" onClick={() => setError('')}>
+          <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-red-700 shadow-sm dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300">
+            <span className="material-symbols-outlined mt-0.5 text-[20px]">error</span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">Atencao necessaria</p>
+              <p className="text-sm">{error}</p>
+            </div>
+            <button type="button" className="text-red-400 transition hover:text-red-600" onClick={() => setError('')}>
               <span className="material-symbols-outlined">close</span>
             </button>
           </div>
         )}
 
-        <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary/10 rounded-lg text-primary">
-                <span className="material-symbols-outlined">add_box</span>
-              </div>
-              <h3 className="font-bold text-lg text-slate-900 dark:text-white">Novo Recebimento</h3>
+        <section className="overflow-hidden rounded-[32px] border border-slate-200/80 bg-white shadow-[0_14px_50px_rgba(15,23,42,0.06)] dark:border-slate-800 dark:bg-slate-900">
+          <div className="grid gap-8 px-6 py-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:px-8">
+            <div>
+              <span className="mb-3 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.18em] text-primary">
+                <span className="material-symbols-outlined text-[16px]">local_shipping</span>
+                Fluxo guiado
+              </span>
+              <h3 className="text-3xl font-extrabold tracking-tight text-slate-950 dark:text-white md:text-4xl" style={{ fontFamily: 'Manrope, sans-serif' }}>
+                Crie o recebimento e confira sem perder contexto
+              </h3>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300 md:text-base">
+                O processo esta dividido em quatro etapas: dados basicos, destino, itens e revisao final. Cada bloco abaixo explica o que falta para concluir o lancamento.
+              </p>
             </div>
-            <span className="text-xs font-medium text-slate-400 px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded">
-              {draftItems.length} item(ns) selecionado(s)
-            </span>
+            <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-1">
+              <div className="rounded-[28px] bg-[#f0f4ff] p-5 dark:bg-slate-800">
+                <p className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-primary">Pendentes</p>
+                <p className="mt-3 text-4xl font-extrabold text-slate-950 dark:text-white" style={{ fontFamily: 'Manrope, sans-serif' }}>{receiptStats.pending}</p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Rascunhos e entregas aguardando conferencia.</p>
+              </div>
+              <div className="rounded-[28px] bg-[#eefbf6] p-5 dark:bg-emerald-950/30">
+                <p className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">Em conferencia</p>
+                <p className="mt-3 text-4xl font-extrabold text-slate-950 dark:text-white" style={{ fontFamily: 'Manrope, sans-serif' }}>{receiptStats.inConference}</p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Recebimentos abertos para validar quantidade, lote e validade.</p>
+              </div>
+              <div className="rounded-[28px] bg-[#f8fafc] p-5 dark:bg-slate-800/90">
+                <p className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Conferidos</p>
+                <p className="mt-3 text-4xl font-extrabold text-slate-950 dark:text-white" style={{ fontFamily: 'Manrope, sans-serif' }}>{receiptStats.conferred}</p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Entradas finalizadas e prontas para consulta historica.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-[32px] bg-transparent px-2 py-2">
+          <div className="relative mx-auto flex max-w-3xl items-start justify-between gap-2 sm:gap-4">
+            <div className="absolute left-5 right-5 top-5 hidden h-0.5 bg-slate-200 sm:block dark:bg-slate-800" />
+            {stepGuides.map((step) => {
+              const isCompleted = createStep > step.step;
+              const isActive = createStep === step.step;
+              return (
+                <button
+                  key={step.step}
+                  type="button"
+                  onClick={() => goToCreateStep(step.step)}
+                  className="relative z-[1] flex flex-1 flex-col items-center gap-3 text-center"
+                >
+                  <div
+                    className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-extrabold transition ${
+                      isActive
+                        ? 'bg-primary text-white ring-4 ring-primary/20'
+                        : isCompleted
+                          ? 'bg-primary text-white'
+                          : 'bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-300'
+                    }`}
+                  >
+                    {isCompleted ? <span className="material-symbols-outlined text-[18px]">check</span> : step.step}
+                  </div>
+                  <div className="space-y-1">
+                    <p className={`text-[11px] font-extrabold uppercase tracking-[0.16em] ${isActive || isCompleted ? 'text-primary' : 'text-slate-500 dark:text-slate-400'}`}>
+                      {step.title}
+                    </p>
+                    <p className="hidden text-xs leading-5 text-slate-500 sm:block dark:text-slate-400">{step.description}</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-[32px] border border-slate-200/80 bg-white shadow-[0_10px_40px_rgba(15,23,42,0.05)] dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex flex-col gap-6 border-b border-slate-100 px-6 py-6 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                <span className="material-symbols-outlined">add_circle</span>
+              </div>
+              <div>
+                <h3 className="text-2xl font-bold text-slate-950 dark:text-white" style={{ fontFamily: 'Manrope, sans-serif' }}>
+                  Novo Recebimento
+                </h3>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                  Preencha cada etapa para iniciar a entrada de estoque com o destino correto.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+                <span className="material-symbols-outlined text-[16px]">inventory_2</span>
+                {validDraftItems.length} item(ns) validos
+              </span>
+              <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] text-primary">
+                <span className="material-symbols-outlined text-[16px]">monitoring</span>
+                Total previsto {formatQtyBR(totalDraftQty)}
+              </span>
+            </div>
           </div>
 
           <div className="p-6 space-y-6">
@@ -1034,7 +1211,29 @@ const SupplierReceipts: React.FC = () => {
             </div>
           </section>
         )}
-      </div>
+
+        <section className="flex flex-col items-start gap-4 rounded-[32px] border border-blue-100 bg-blue-50/70 px-6 py-6 dark:border-blue-900/40 dark:bg-blue-950/20 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-primary shadow-sm dark:bg-slate-900">
+              <span className="material-symbols-outlined">lightbulb</span>
+            </div>
+            <div>
+              <h4 className="text-lg font-bold text-blue-950 dark:text-blue-100">Dica de conferencia</h4>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-blue-900/80 dark:text-blue-100/80">
+                Sempre valide integridade da embalagem, temperatura quando aplicavel e prazo de validade antes de concluir a entrada no sistema.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleExportPdf}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-blue-200 bg-white px-5 py-3 text-sm font-bold text-blue-900 shadow-sm transition hover:bg-blue-50 dark:border-blue-900/40 dark:bg-slate-900 dark:text-blue-100 dark:hover:bg-slate-800"
+          >
+            <span className="material-symbols-outlined text-[18px]">download</span>
+            Baixar relatorio PDF
+          </button>
+        </section>
+      </main>
 
       {isItemModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
@@ -1222,8 +1421,8 @@ const SupplierReceipts: React.FC = () => {
         </div>
       )}
 
-      <footer className="px-4 lg:px-8 py-6 text-center text-slate-400 dark:text-slate-500 text-xs border-t border-slate-200 dark:border-slate-800 mt-auto">
-        © 2026 NutriSemed - Sistema de Gestão Nutricional Escolar. Todos os direitos reservados.
+      <footer className="px-4 py-8 text-center text-xs font-medium text-slate-400 dark:text-slate-500 lg:px-8">
+        (c) 2026 NutriSemed - Gestao inteligente de nutricao escolar.
       </footer>
     </div>
   );

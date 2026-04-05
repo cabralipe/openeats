@@ -8,6 +8,15 @@ interface NavItem {
   path: string;
 }
 
+const PNAE_MANAGER_ROLES = new Set([
+  'SEMED_ADMIN',
+  'MUNICIPAL_MANAGER',
+  'NUTRITIONIST',
+  'SCHOOL_FEEDING_COORDINATOR',
+  'SCHOOL_DIRECTOR',
+  'CAE_COUNCILOR',
+]);
+
 const navItems: NavItem[] = [
   { icon: 'dashboard', label: 'Home', path: '/admin' },
   { icon: 'school', label: 'Escolas', path: '/admin/schools' },
@@ -18,6 +27,7 @@ const navItems: NavItem[] = [
 
 const moreNavItems: NavItem[] = [
   { icon: 'menu_book', label: 'Receitas', path: '/admin/recipes' },
+  { icon: 'assignment', label: 'PNAE', path: '/admin/pnae' },
   { icon: 'edit_calendar', label: 'Editor', path: '/admin/editor' },
   { icon: 'calculate', label: 'Calculadora Produção', path: '/admin/production-calculator' },
   { icon: 'insert_chart', label: 'Relatórios', path: '/admin/reports' },
@@ -80,6 +90,8 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, onLogout, user, onOpenProfile }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const canAccessPnae = Boolean(user?.role && PNAE_MANAGER_ROLES.has(user.role));
+  const visibleMoreNavItems = moreNavItems.filter((item) => item.path !== '/admin/pnae' || canAccessPnae);
 
   const handleLogout = () => {
     tokenStore.clear();
@@ -146,7 +158,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, onLogout, use
           <div className="pt-4">
             <p className="px-4 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Operações</p>
           </div>
-          {moreNavItems.map((item) => {
+          {visibleMoreNavItems.map((item) => {
             const isActive = location.pathname === item.path;
             return (
               <button

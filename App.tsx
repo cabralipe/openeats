@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import Schools from './pages/Schools';
 import Inventory from './pages/Inventory';
 import Recipes from './pages/Recipes';
+import PnaePlanning from './pages/PnaePlanning';
 import MenuEditor from './pages/MenuEditor';
 import Deliveries from './pages/Deliveries';
 import SupplierReceipts from './pages/SupplierReceipts';
@@ -34,6 +35,15 @@ interface NotificationItem {
   school_name?: string;
 }
 
+const PNAE_MANAGER_ROLES = new Set([
+  'SEMED_ADMIN',
+  'MUNICIPAL_MANAGER',
+  'NUTRITIONIST',
+  'SCHOOL_FEEDING_COORDINATOR',
+  'SCHOOL_DIRECTOR',
+  'CAE_COUNCILOR',
+]);
+
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -43,6 +53,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isProfileOpen, setProfileOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const canAccessPnae = Boolean(user?.role && PNAE_MANAGER_ROLES.has(user.role));
 
   useEffect(() => {
     const handleAuthExpired = () => navigate('/', { replace: true });
@@ -100,6 +111,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       '/admin/deliveries': 'Entregas',
       '/admin/supplier-receipts': 'Recebimentos',
       '/admin/recipes': 'Receitas',
+      '/admin/pnae': 'Planejamento PNAE',
       '/admin/editor': 'Editor de Cardápio',
       '/admin/reports': 'Relatórios',
       '/admin/audit': 'Auditoria',
@@ -117,6 +129,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       '/admin/deliveries': 'local_shipping',
       '/admin/supplier-receipts': 'receipt_long',
       '/admin/recipes': 'menu_book',
+      '/admin/pnae': 'assignment',
       '/admin/editor': 'edit_calendar',
       '/admin/reports': 'insert_chart',
       '/admin/audit': 'history',
@@ -164,6 +177,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           <NavItem icon="local_shipping" label="Entregas" path="/admin/deliveries" current={location.pathname} onClick={() => navigate('/admin/deliveries')} />
           <NavItem icon="receipt_long" label="Recebimentos" path="/admin/supplier-receipts" current={location.pathname} onClick={() => navigate('/admin/supplier-receipts')} />
           <NavItem icon="menu_book" label="Receitas" path="/admin/recipes" current={location.pathname} onClick={() => navigate('/admin/recipes')} />
+          {canAccessPnae ? <NavItem icon="assignment" label="PNAE" path="/admin/pnae" current={location.pathname} onClick={() => navigate('/admin/pnae')} /> : null}
 
           <div className="pt-4 pb-2">
             <p className="px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Operações</p>
@@ -407,6 +421,7 @@ const App: React.FC = () => {
                 <Route path="/deliveries" element={<Deliveries />} />
                 <Route path="/supplier-receipts" element={<SupplierReceipts />} />
                 <Route path="/recipes" element={<Recipes />} />
+                <Route path="/pnae" element={<PnaePlanning />} />
                 <Route path="/editor" element={<MenuEditor />} />
                 <Route path="/production-calculator" element={<MenuProductionCalculator />} />
                 <Route path="/reports" element={<Reports />} />

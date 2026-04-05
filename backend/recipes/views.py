@@ -16,13 +16,17 @@ class RecipeViewSet(viewsets.ModelViewSet):
         active = self.request.query_params.get('active')
         search = (self.request.query_params.get('search') or '').strip()
         category = (self.request.query_params.get('category') or '').strip()
+        technical_sheet_code = (self.request.query_params.get('technical_sheet_code') or '').strip()
         if active in ['true', 'false']:
             queryset = queryset.filter(active=(active == 'true'))
         if category:
             queryset = queryset.filter(category__iexact=category)
+        if technical_sheet_code:
+            queryset = queryset.filter(technical_sheet_code__iexact=technical_sheet_code)
         if search:
             queryset = queryset.filter(
                 models.Q(name__icontains=search) |
-                models.Q(instructions__icontains=search)
+                models.Q(instructions__icontains=search) |
+                models.Q(technical_sheet_code__icontains=search)
             ).distinct()
         return queryset

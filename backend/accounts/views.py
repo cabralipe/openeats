@@ -4,7 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .permissions import IsSemedAdmin
+from .permissions import CanAccessNutritionists, scope_queryset_by_municipality
 from .serializers import (
     MeUpdateSerializer,
     NutritionistCreateSerializer,
@@ -29,7 +29,7 @@ class MeView(APIView):
 
 
 class NutritionistUserViewSet(viewsets.ModelViewSet):
-    permission_classes = [permissions.IsAuthenticated, IsSemedAdmin]
+    permission_classes = [permissions.IsAuthenticated, CanAccessNutritionists]
     queryset = User.objects.filter(role=User.Roles.NUTRITIONIST).order_by('-date_joined')
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
 
@@ -44,6 +44,10 @@ class NutritionistUserViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
         q = (self.request.query_params.get('q') or '').strip()
         is_active = self.request.query_params.get('is_active')
+        municipality = self.request.query_params.get('municipality')
+        queryset = scope_queryset_by_municipality(queryset, self.request.user)
+        if municipality:
+            queryset = queryset.filter(municipality_id=municipality)
         if q:
             queryset = queryset.filter(email__icontains=q)
         if is_active in {'true', 'false'}:
@@ -51,10 +55,16 @@ class NutritionistUserViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        serializer.save()
+        extra = {}
+        if getattr(self.request.user, 'role', None) == User.Roles.MUNICIPAL_MANAGER:
+            extra['municipality'] = self.request.user.municipality
+        serializer.save(**extra)
 
     def perform_update(self, serializer):
-        serializer.save()
+        extra = {}
+        if getattr(self.request.user, 'role', None) == User.Roles.MUNICIPAL_MANAGER:
+            extra['municipality'] = self.request.user.municipality
+        serializer.save(**extra)
 
     @action(detail=True, methods=['post'], url_path='deactivate')
     def deactivate(self, request, pk=None):

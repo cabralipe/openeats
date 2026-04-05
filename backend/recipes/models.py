@@ -9,9 +9,15 @@ from inventory.models import Supply
 class Recipe(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
+    technical_sheet_code = models.CharField(max_length=40, blank=True, default='')
     category = models.CharField(max_length=50, blank=True, default='')
     servings_base = models.PositiveIntegerField(default=100)
+    preparation_time_minutes = models.PositiveIntegerField(default=0)
+    yield_weight = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    portion_weight = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     instructions = models.TextField(blank=True, default='')
+    equipment_notes = models.TextField(blank=True, default='')
+    preparation_notes = models.TextField(blank=True, default='')
     tags = models.JSONField(blank=True, default=dict)
     active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -19,6 +25,13 @@ class Recipe(models.Model):
 
     class Meta:
         ordering = ['name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['technical_sheet_code'],
+                condition=~models.Q(technical_sheet_code=''),
+                name='unique_recipe_technical_sheet_code',
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.name
@@ -30,6 +43,10 @@ class RecipeIngredient(models.Model):
     supply = models.ForeignKey(Supply, on_delete=models.PROTECT, related_name='recipe_ingredients')
     qty_base = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
     unit = models.CharField(max_length=10, choices=Supply.Units.choices)
+    gross_weight = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)], default=0)
+    net_weight = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)], default=0)
+    correction_factor = models.DecimalField(max_digits=8, decimal_places=4, validators=[MinValueValidator(0)], default=1)
+    unit_cost = models.DecimalField(max_digits=12, decimal_places=4, validators=[MinValueValidator(0)], default=0)
     optional = models.BooleanField(default=False)
     notes = models.TextField(blank=True, default='')
 
@@ -41,4 +58,3 @@ class RecipeIngredient(models.Model):
 
     def __str__(self) -> str:
         return f'{self.recipe.name} - {self.supply.name}'
-

@@ -78,6 +78,7 @@ INSTALLED_APPS = [
     'inventory',
     'menus',
     'recipes',
+    'pnae.apps.PnaeConfig',
     'production',
     'public',
 ]

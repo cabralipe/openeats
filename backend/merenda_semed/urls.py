@@ -7,7 +7,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from accounts.views import MeView, NutritionistUserViewSet
 from auditlog.views import AuditLogListView
 from merenda_semed.views import DashboardView, DashboardSeriesView, DashboardClearConsumptionView
-from schools.views import SchoolViewSet
+from schools.views import EducationModalityViewSet, EducationStageViewSet, MunicipalityViewSet, SchoolViewSet
 from inventory.views import (
     DeliveryViewSet,
     NotificationViewSet,
@@ -33,7 +33,10 @@ from menus.views import MenuViewSet, MenuExportCsvView, MenuExportPdfView
 from public.views import PublicConsumptionView, PublicDeliveryCurrentView, PublicMealServiceView, PublicMenuByWeekView, PublicMenuCurrentView, PublicSchoolDetailView, PublicSchoolListView, PublicMenuPdfView, PublicProductionCalculatorView, PublicRecipeView
 
 router = DefaultRouter()
+router.register(r'municipalities', MunicipalityViewSet, basename='municipality')
 router.register(r'schools', SchoolViewSet, basename='school')
+router.register(r'education-stages', EducationStageViewSet, basename='education-stage')
+router.register(r'education-modalities', EducationModalityViewSet, basename='education-modality')
 router.register(r'supplies', SupplyViewSet, basename='supply')
 router.register(r'stock/movements', StockMovementViewSet, basename='stock-movement')
 router.register(r'stock', StockViewSet, basename='stock')
@@ -71,6 +74,7 @@ urlpatterns = [
     path('api/auth/me/', MeView.as_view(), name='auth-me'),
     path('api/auth/', include('accounts.urls')),
     path('api/', include(router.urls)),
+    path('api/pnae/', include('pnae.urls')),
     path('api/recipes/', include('recipes.urls')),
     path('api/production/', include('production.urls')),
     path('public/calculator/', include('production.public_urls')),

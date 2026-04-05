@@ -4,15 +4,18 @@ from rest_framework import serializers
 from inventory.models import Supply
 
 from .models import Recipe, RecipeIngredient
+from .services import calculate_recipe_metrics
 
 
 class RecipeIngredientSerializer(serializers.ModelSerializer):
     supply_name = serializers.CharField(source='supply.name', read_only=True)
+    total_cost = serializers.SerializerMethodField()
 
     class Meta:
         model = RecipeIngredient
         fields = [
-            'id', 'recipe', 'supply', 'supply_name', 'qty_base', 'unit', 'optional', 'notes',
+            'id', 'recipe', 'supply', 'supply_name', 'qty_base', 'unit', 'gross_weight',
+            'net_weight', 'correction_factor', 'unit_cost', 'total_cost', 'optional', 'notes',
         ]
         read_only_fields = ['id', 'recipe', 'supply_name']
 
@@ -23,15 +26,23 @@ class RecipeIngredientSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'unit': 'Unidade invalida.'})
         return attrs
 
+    def get_total_cost(self, obj):
+        qty_reference = obj.net_weight or obj.qty_base
+        return round((obj.unit_cost or 0) * qty_reference, 4)
+
 
 class RecipeSerializer(serializers.ModelSerializer):
     ingredients = RecipeIngredientSerializer(many=True, required=False)
+    metrics = serializers.SerializerMethodField()
 
     class Meta:
         model = Recipe
         fields = [
-            'id', 'name', 'category', 'servings_base', 'instructions', 'tags', 'active',
+            'id', 'name', 'technical_sheet_code', 'category', 'servings_base',
+            'preparation_time_minutes', 'yield_weight', 'portion_weight', 'instructions',
+            'equipment_notes', 'preparation_notes', 'tags', 'active',
             'created_at', 'updated_at', 'ingredients',
+            'metrics',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -65,3 +76,5 @@ class RecipeSerializer(serializers.ModelSerializer):
             self._save_ingredients(instance, ingredients_data)
         return instance
 
+    def get_metrics(self, obj):
+        return calculate_recipe_metrics(obj)

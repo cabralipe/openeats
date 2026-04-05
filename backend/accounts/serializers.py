@@ -8,9 +8,16 @@ User = get_user_model()
 
 
 class UserSerializer(serializers.ModelSerializer):
+    role_display = serializers.CharField(source='get_role_display', read_only=True)
+    municipality_name = serializers.CharField(source='municipality.name', read_only=True)
+
     class Meta:
         model = User
-        fields = ['id', 'name', 'email', 'crn', 'function_role', 'role', 'is_active', 'date_joined']
+        fields = [
+            'id', 'name', 'email', 'crn', 'function_role',
+            'role', 'role_display', 'municipality', 'municipality_name',
+            'is_active', 'date_joined',
+        ]
 
 
 class MeUpdateSerializer(serializers.ModelSerializer):
@@ -25,7 +32,10 @@ class NutritionistCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'name', 'email', 'crn', 'function_role', 'password', 'role', 'is_active', 'date_joined']
+        fields = [
+            'id', 'name', 'email', 'crn', 'function_role', 'password',
+            'role', 'municipality', 'is_active', 'date_joined',
+        ]
         read_only_fields = ['id', 'role', 'is_active', 'date_joined']
         extra_kwargs = {
             'name': {'required': False, 'allow_blank': True},
@@ -48,6 +58,7 @@ class NutritionistCreateSerializer(serializers.ModelSerializer):
             email=email,
             crn=crn,
             function_role=function_role,
+            municipality=validated_data.get('municipality'),
             role=User.Roles.NUTRITIONIST,
             is_active=True,
             is_staff=False,
@@ -63,7 +74,7 @@ class NutritionistUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['name', 'email', 'crn', 'function_role', 'password', 'is_active']
+        fields = ['name', 'email', 'crn', 'function_role', 'municipality', 'password', 'is_active']
         extra_kwargs = {
             'crn': {'required': False, 'allow_blank': True},
             'function_role': {'required': False, 'allow_blank': True},

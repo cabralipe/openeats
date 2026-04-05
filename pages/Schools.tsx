@@ -2,8 +2,21 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import QRCode from 'qrcode';
-import { createSchool, deleteSchool, getPublicLink, getSchools, getSchoolStock, updateSchool, getMenus, copyMenu, getSchoolStockConfig, updateSchoolStockLimit } from '../api';
-import { School } from '../types';
+import {
+  copyMenu,
+  createSchool,
+  deleteSchool,
+  getEducationModalities,
+  getEducationStages,
+  getMenus,
+  getPublicLink,
+  getSchoolStock,
+  getSchoolStockConfig,
+  getSchools,
+  updateSchool,
+  updateSchoolStockLimit,
+} from '../api';
+import { EducationModality, EducationStage, School } from '../types';
 
 interface StockConfigItem {
   id: string;
@@ -23,19 +36,45 @@ interface MenuData {
   school_name?: string;
 }
 
+const emptySchoolForm = () => ({
+  name: '',
+  address: '',
+  city: '',
+  is_active: true,
+  education_stages: [] as string[],
+  education_modalities: [] as string[],
+});
+
+const parseErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return fallback;
+};
+
+const normalizeSchool = (school: any): School => ({
+  id: school.id,
+  name: school.name,
+  address: school.address || '',
+  city: school.city || '',
+  location: [school.address, school.city].filter(Boolean).join(' • ') || 'Sem endereço',
+  status: school.is_active ? 'active' : 'pending',
+  publicSlug: school.public_slug,
+  publicToken: school.public_token,
+  education_stages: Array.isArray(school.education_stages) ? school.education_stages : [],
+  education_modalities: Array.isArray(school.education_modalities) ? school.education_modalities : [],
+  education_stage_details: Array.isArray(school.education_stage_details) ? school.education_stage_details : [],
+  education_modality_details: Array.isArray(school.education_modality_details) ? school.education_modality_details : [],
+});
+
 const Schools: React.FC = () => {
   const navigate = useNavigate();
   const [schools, setSchools] = useState<School[]>([]);
+  const [educationStages, setEducationStages] = useState<EducationStage[]>([]);
+  const [educationModalities, setEducationModalities] = useState<EducationModality[]>([]);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<School | null>(null);
-  const [form, setForm] = useState({
-    name: '',
-    address: '',
-    city: '',
-    is_active: true,
-  });
+  const [form, setForm] = useState(emptySchoolForm);
   const [search, setSearch] = useState('');
   const [cityFilter, setCityFilter] = useState('');
   const [addressFilter, setAddressFilter] = useState('');
@@ -70,14 +109,7 @@ const Schools: React.FC = () => {
   ) => {
     return getSchools(filters)
       .then((data) => {
-        const mapped = (data as any[]).map((school: any) => ({
-          id: school.id,
-          name: school.name,
-          location: [school.address, school.city].filter(Boolean).join(' • ') || 'Sem endereço',
-          status: school.is_active ? 'active' : 'pending',
-          publicSlug: school.public_slug,
-          publicToken: school.public_token,
-        }));
+        const mapped = (data as any[]).map((school: any) => normalizeSchool(school));
         setSchools(mapped);
       })
       .catch(() => {
@@ -85,14 +117,23 @@ const Schools: React.FC = () => {
       });
   };
 
+  const loadEducationData = async () => {
+    const [stages, modalities] = await Promise.all([
+      getEducationStages(),
+      getEducationModalities(),
+    ]);
+    setEducationStages(Array.isArray(stages) ? (stages as EducationStage[]) : []);
+    setEducationModalities(Array.isArray(modalities) ? (modalities as EducationModality[]) : []);
+  };
+
   useEffect(() => {
     let cancelled = false;
     const loadInitialData = async () => {
       setIsLoading(true);
       setError('');
-      const result = await Promise.allSettled([loadSchools(undefined, true)]);
+      const result = await Promise.allSettled([loadSchools(undefined, true), loadEducationData()]);
       if (cancelled) return;
-      if (result[0].status === 'rejected') {
+      if (result.some((item) => item.status === 'rejected')) {
         setError('Não foi possível carregar as escolas.');
       }
       setIsLoading(false);
@@ -329,7 +370,7 @@ const Schools: React.FC = () => {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: '', address: '', city: '', is_active: true });
+    setForm(emptySchoolForm());
     setShowModal(true);
   };
 
@@ -458,14 +499,33 @@ const Schools: React.FC = () => {
 
   const openEdit = (school: School) => {
     setEditing(school);
-    const [address, city] = school.location.split(' • ');
     setForm({
       name: school.name,
-      address: address || '',
-      city: city || '',
+      address: school.address || '',
+      city: school.city || '',
       is_active: school.status === 'active',
+      education_stages: school.education_stages || [],
+      education_modalities: school.education_modalities || [],
     });
     setShowModal(true);
+  };
+
+  const toggleEducationStage = (stageId: string) => {
+    setForm((prev) => ({
+      ...prev,
+      education_stages: prev.education_stages.includes(stageId)
+        ? prev.education_stages.filter((id) => id !== stageId)
+        : [...prev.education_stages, stageId],
+    }));
+  };
+
+  const toggleEducationModality = (modalityId: string) => {
+    setForm((prev) => ({
+      ...prev,
+      education_modalities: prev.education_modalities.includes(modalityId)
+        ? prev.education_modalities.filter((id) => id !== modalityId)
+        : [...prev.education_modalities, modalityId],
+    }));
   };
 
   const handleSave = async (event: React.FormEvent) => {
@@ -480,8 +540,8 @@ const Schools: React.FC = () => {
       setShowModal(false);
       const isActive = statusFilter === 'all' ? undefined : statusFilter === 'active';
       await loadSchools({ q: search, is_active: isActive, city: cityFilter, address: addressFilter });
-    } catch {
-      setError('Não foi possível salvar a escola.');
+    } catch (error) {
+      setError(parseErrorMessage(error, 'Não foi possível salvar a escola.'));
     }
   };
 
@@ -630,10 +690,22 @@ const Schools: React.FC = () => {
                   <div className={`w-12 h-12 rounded-xl ${getAvatarColor(school.name)} flex items-center justify-center text-white font-bold text-lg shadow-md`}>
                     {school.name.charAt(0).toUpperCase()}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-slate-900 dark:text-white truncate">{school.name}</h3>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 truncate">{locationLabel(school)}</p>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-bold text-slate-900 dark:text-white truncate">{school.name}</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 truncate">{locationLabel(school)}</p>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {(school.education_stage_details || []).slice(0, 2).map((stage) => (
+                      <span key={stage.id} className="inline-flex items-center rounded-full bg-primary-50 px-2 py-0.5 text-[10px] font-semibold text-primary-600 dark:bg-primary-900/20 dark:text-primary-300">
+                        {stage.name}
+                      </span>
+                    ))}
+                    {(school.education_modality_details || []).slice(0, 2).map((modality) => (
+                      <span key={modality.id} className="inline-flex items-center rounded-full bg-secondary-50 px-2 py-0.5 text-[10px] font-semibold text-secondary-600 dark:bg-secondary-900/20 dark:text-secondary-300">
+                        {modality.name}
+                      </span>
+                    ))}
                   </div>
+                </div>
                   <span className={`badge shrink-0 ${school.status === 'active' ? 'badge-success' : 'badge-warning'
                     }`}>
                     {school.status === 'active' ? 'Ativa' : 'Pendente'}
@@ -765,6 +837,74 @@ const Schools: React.FC = () => {
                     onChange={(e) => setForm({ ...form, city: e.target.value })}
                     placeholder="Cidade"
                   />
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Etapas de ensino</label>
+                    <span className="text-xs text-slate-400">{form.education_stages.length} selecionada{form.education_stages.length !== 1 ? 's' : ''}</span>
+                  </div>
+                  <div className="max-h-40 space-y-2 overflow-y-auto rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                    {educationStages.length === 0 ? (
+                      <p className="text-sm text-slate-500">Cadastre etapas na área PNAE para vincular à escola.</p>
+                    ) : (
+                      educationStages.map((stage) => (
+                        <label
+                          key={stage.id}
+                          className={`flex cursor-pointer items-start gap-3 rounded-lg p-2 transition-colors ${form.education_stages.includes(stage.id)
+                            ? 'bg-primary-50 dark:bg-primary-900/20'
+                            : 'hover:bg-slate-50 dark:hover:bg-slate-800'
+                            }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={form.education_stages.includes(stage.id)}
+                            onChange={() => toggleEducationStage(stage.id)}
+                            className="mt-1 h-4 w-4 rounded border-slate-300 text-primary-500 focus:ring-primary-500"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-slate-900 dark:text-white">{stage.name}</p>
+                            <p className="text-xs text-slate-500">{stage.code || 'Sem código'}</p>
+                          </div>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Modalidades</label>
+                    <span className="text-xs text-slate-400">{form.education_modalities.length} selecionada{form.education_modalities.length !== 1 ? 's' : ''}</span>
+                  </div>
+                  <div className="max-h-40 space-y-2 overflow-y-auto rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                    {educationModalities.length === 0 ? (
+                      <p className="text-sm text-slate-500">Cadastre modalidades na área PNAE para vincular à escola.</p>
+                    ) : (
+                      educationModalities.map((modality) => (
+                        <label
+                          key={modality.id}
+                          className={`flex cursor-pointer items-start gap-3 rounded-lg p-2 transition-colors ${form.education_modalities.includes(modality.id)
+                            ? 'bg-secondary-50 dark:bg-secondary-900/20'
+                            : 'hover:bg-slate-50 dark:hover:bg-slate-800'
+                            }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={form.education_modalities.includes(modality.id)}
+                            onChange={() => toggleEducationModality(modality.id)}
+                            className="mt-1 h-4 w-4 rounded border-slate-300 text-primary-500 focus:ring-primary-500"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-slate-900 dark:text-white">{modality.name}</p>
+                            <p className="text-xs text-slate-500">{modality.code || 'Sem código'}</p>
+                          </div>
+                        </label>
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1072,7 +1212,7 @@ const Schools: React.FC = () => {
                         />
                       </div>
                     </div>
-                    <p className="text-xs text-slate-500 mt-1">Deixe em branco para usar as datas originais. Selecionamos seg–sex automaticamente.</p>
+                    <p className="text-xs text-slate-500 mt-1">Deixe em branco para usar as datas originais. Selecionamos seg-sex automaticamente.</p>
                   </div>
                 </div>
               )}
@@ -1220,3 +1360,4 @@ const Schools: React.FC = () => {
 
 
 export default Schools;
+

@@ -2,32 +2,100 @@ from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from accounts.permissions import IsPnaeManager, scope_queryset_by_municipality
 from inventory.models import SchoolStockBalance
 from inventory.serializers import SchoolStockBalanceSerializer
-from .models import School, generate_token
-from .serializers import SchoolSerializer
+
+from .models import EducationModality, EducationStage, Municipality, School, generate_token
+from .serializers import (
+    EducationModalitySerializer,
+    EducationStageSerializer,
+    MunicipalitySerializer,
+    SchoolSerializer,
+)
+
+
+class MunicipalityViewSet(viewsets.ModelViewSet):
+    queryset = Municipality.objects.all().order_by('name', 'state')
+    serializer_class = MunicipalitySerializer
+    permission_classes = [permissions.IsAuthenticated, IsPnaeManager]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        queryset = scope_queryset_by_municipality(queryset, self.request.user)
+        query = self.request.query_params.get('q')
+        is_active = self.request.query_params.get('is_active')
+        if query:
+            queryset = queryset.filter(name__icontains=query)
+        if is_active in ['true', 'false']:
+            queryset = queryset.filter(is_active=is_active == 'true')
+        return queryset
+
+
+class EducationModalityViewSet(viewsets.ModelViewSet):
+    queryset = EducationModality.objects.all().order_by('name')
+    serializer_class = EducationModalitySerializer
+    permission_classes = [permissions.IsAuthenticated, IsPnaeManager]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        query = self.request.query_params.get('q')
+        is_active = self.request.query_params.get('is_active')
+        if query:
+            queryset = queryset.filter(name__icontains=query)
+        if is_active in ['true', 'false']:
+            queryset = queryset.filter(is_active=is_active == 'true')
+        return queryset
+
+
+class EducationStageViewSet(viewsets.ModelViewSet):
+    queryset = EducationStage.objects.all().order_by('name')
+    serializer_class = EducationStageSerializer
+    permission_classes = [permissions.IsAuthenticated, IsPnaeManager]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        query = self.request.query_params.get('q')
+        is_active = self.request.query_params.get('is_active')
+        if query:
+            queryset = queryset.filter(name__icontains=query)
+        if is_active in ['true', 'false']:
+            queryset = queryset.filter(is_active=is_active == 'true')
+        return queryset
 
 
 class SchoolViewSet(viewsets.ModelViewSet):
-    queryset = School.objects.all().order_by('name')
+    queryset = School.objects.select_related('municipality').prefetch_related(
+        'education_stages', 'education_modalities',
+    ).order_by('name')
     serializer_class = SchoolSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         queryset = super().get_queryset()
+        queryset = scope_queryset_by_municipality(queryset, self.request.user)
         query = self.request.query_params.get('q')
         city = self.request.query_params.get('city')
         address = self.request.query_params.get('address')
+        municipality = self.request.query_params.get('municipality')
         is_active = self.request.query_params.get('is_active')
+        education_stage = self.request.query_params.get('education_stage')
+        education_modality = self.request.query_params.get('education_modality')
         if query:
             queryset = queryset.filter(name__icontains=query)
         if city:
             queryset = queryset.filter(city__icontains=city)
         if address:
             queryset = queryset.filter(address__icontains=address)
+        if municipality:
+            queryset = queryset.filter(municipality_id=municipality)
+        if education_stage:
+            queryset = queryset.filter(education_stages__id=education_stage)
+        if education_modality:
+            queryset = queryset.filter(education_modalities__id=education_modality)
         if is_active in ['true', 'false']:
             queryset = queryset.filter(is_active=is_active == 'true')
-        return queryset
+        return queryset.distinct()
 
     @action(detail=True, methods=['post'])
     def regenerate_link(self, request, pk=None):
@@ -52,21 +120,22 @@ class SchoolViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'])
     def stock(self, request, pk=None):
-        """Returns the stock balance for this school."""
         school = self.get_object()
         balances = SchoolStockBalance.objects.select_related('supply').filter(
-            school=school
+            school=school,
         ).order_by('supply__category', 'supply__name')
-        
-        # Calculate summary stats
         total = balances.count()
-        low_stock = sum(1 for b in balances if b.quantity < (b.min_stock if b.min_stock > 0 else b.supply.min_stock))
-        
+        low_stock = sum(
+            1 for balance in balances
+            if balance.quantity < (balance.min_stock if balance.min_stock > 0 else balance.supply.min_stock)
+        )
+
         serializer = SchoolStockBalanceSerializer(balances, many=True)
         return Response({
             'school': {
                 'id': str(school.id),
                 'name': school.name,
+                'municipality_name': school.municipality.name if school.municipality else '',
             },
             'summary': {
                 'total_items': total,
