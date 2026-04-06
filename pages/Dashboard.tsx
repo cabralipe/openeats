@@ -353,46 +353,60 @@ const Dashboard: React.FC = () => {
                 </button>
               </div>
             </div>
-            <div ref={consumptionChartContainer.ref} className="h-64 min-h-[16rem] min-w-0">
-              {chartsReady && consumptionChartContainer.ready ? (
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
-                  <AreaChart data={series}>
-                    <defs>
-                      <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <XAxis
-                      dataKey="name"
-                      stroke="#94a3b8"
-                      fontSize={12}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <Tooltip
-                      cursor={{ fill: 'transparent' }}
-                      contentStyle={{
-                        borderRadius: '12px',
-                        border: 'none',
-                        boxShadow: '0 10px 25px -5px rgb(0 0 0 / 0.1)',
-                        backgroundColor: 'white',
-                        padding: '8px 12px'
-                      }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="value"
-                      stroke="#3b82f6"
-                      strokeWidth={2}
-                      fill="url(#colorValue)"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full w-full" />
-              )}
-            </div>
+            {series.length === 0 ? (
+              <div className="text-sm text-slate-500 py-10 flex h-64 items-center justify-center text-center">
+                Nenhum consumo mensal registrado recentemente.
+              </div>
+            ) : (
+              <div ref={consumptionChartContainer.ref} className="h-64 min-h-[16rem] min-w-0">
+                {chartsReady && consumptionChartContainer.ready ? (
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
+                    <AreaChart data={series} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                      <XAxis
+                        dataKey="name"
+                        stroke="#94a3b8"
+                        fontSize={12}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis
+                        stroke="#94a3b8"
+                        fontSize={12}
+                        tickLine={false}
+                        axisLine={false}
+                        width={40}
+                      />
+                      <Tooltip
+                        cursor={{ fill: 'transparent' }}
+                        contentStyle={{
+                          borderRadius: '12px',
+                          border: 'none',
+                          boxShadow: '0 10px 25px -5px rgb(0 0 0 / 0.1)',
+                          backgroundColor: 'white',
+                          padding: '8px 12px'
+                        }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="value"
+                        stroke="#3b82f6"
+                        strokeWidth={2}
+                        fill="url(#colorValue)"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full w-full" />
+                )}
+              </div>
+            )}
           </div>
 
           <div className="card p-4 lg:p-6">
