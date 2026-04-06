@@ -391,3 +391,28 @@ def test_cae_role_sees_only_non_draft_plans(api_client, cae_user, manager_user, 
     assert response.status_code == 200, response.data
     assert len(response.data) == 1
     assert response.data[0]['id'] == str(approved_plan.id)
+
+
+def test_pnae_acceptance_suite_runs_inside_platform_and_rolls_back(api_client, manager_user):
+    client = _auth(api_client, manager_user)
+
+    response = client.post('/api/pnae/acceptance-tests/', {}, format='json')
+
+    assert response.status_code == 200, response.data
+    assert response.data['suite_id'] == 'pnae-platform-acceptance'
+    assert response.data['rolled_back'] is True
+    assert response.data['summary']['failed'] == 0
+    assert response.data['summary']['passed'] == response.data['summary']['total']
+    assert len(response.data['results']) >= 5
+    assert PnaeAnnualPlan.objects.count() == 0
+
+
+def test_pnae_acceptance_suite_catalog_is_visible_but_cae_cannot_execute(api_client, cae_user):
+    client = _auth(api_client, cae_user)
+
+    catalog_response = client.get('/api/pnae/acceptance-tests/')
+    assert catalog_response.status_code == 200, catalog_response.data
+    assert len(catalog_response.data['scenarios']) >= 5
+
+    run_response = client.post('/api/pnae/acceptance-tests/', {}, format='json')
+    assert run_response.status_code == 403

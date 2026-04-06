@@ -257,6 +257,44 @@ export interface PnaeDashboardSummary {
   monthly_execution_open: number;
 }
 
+export interface PnaeAcceptanceScenarioDefinition {
+  id: string;
+  title: string;
+  description: string;
+}
+
+export interface PnaeAcceptanceScenarioResult extends PnaeAcceptanceScenarioDefinition {
+  status: 'PASSED' | 'FAILED';
+  duration_ms: number;
+  details: string[];
+  error?: string;
+}
+
+export interface PnaeAcceptanceSuiteCatalog {
+  suite_id: string;
+  suite_name: string;
+  execution_mode: string;
+  rolled_back: boolean;
+  scenarios: PnaeAcceptanceScenarioDefinition[];
+}
+
+export interface PnaeAcceptanceSuiteRun extends PnaeAcceptanceSuiteCatalog {
+  executed_at: string;
+  executed_by?: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  summary: {
+    total: number;
+    passed: number;
+    failed: number;
+    duration_ms: number;
+    status: 'PASSED' | 'FAILED';
+  };
+  results: PnaeAcceptanceScenarioResult[];
+}
+
 export interface PnaeAnnualPlanDetail extends PnaeAnnualPlanSummary {
   justification: string;
   diagnosis_summary: string;

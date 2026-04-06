@@ -351,6 +351,17 @@ export async function getPnaeDashboard() {
   return apiFetch('/api/pnae/plans/dashboard/');
 }
 
+export async function getPnaeAcceptanceCatalog() {
+  return apiFetch('/api/pnae/acceptance-tests/');
+}
+
+export async function runPnaeAcceptanceSuite(payload?: { scenario_ids?: string[] }) {
+  return apiFetch('/api/pnae/acceptance-tests/', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  });
+}
+
 export async function submitPnaePlanReview(id: string, comment?: string) {
   return apiFetch(`/api/pnae/plans/${id}/submit-review/`, {
     method: 'POST',
@@ -843,7 +854,13 @@ export async function getStockMovements(params?: { date_from?: string; date_to?:
   return apiFetch(`/api/stock/movements/${search ? `?${search}` : ''}`);
 }
 
-export async function getDeliveries(params?: { school?: string; status?: string; conference_enabled?: boolean }) {
+export async function getDeliveries(params?: {
+  school?: string;
+  status?: string;
+  conference_enabled?: boolean;
+  date_from?: string;
+  date_to?: string;
+}) {
   const cleanParams = params
     ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
     : undefined;

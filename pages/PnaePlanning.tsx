@@ -529,6 +529,7 @@ type ModalShellProps = {
   children: React.ReactNode;
   maxWidthClass?: string;
   closeOnOverlayClick?: boolean;
+  zIndexClass?: string;
 };
 
 const ModalShell: React.FC<ModalShellProps> = ({
@@ -538,9 +539,10 @@ const ModalShell: React.FC<ModalShellProps> = ({
   children,
   maxWidthClass = "max-w-4xl",
   closeOnOverlayClick = false,
+  zIndexClass = "z-50",
 }) => (
   <div
-    className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/50 p-3 backdrop-blur-sm animate-fade-in md:items-center md:p-6"
+    className={`fixed inset-0 ${zIndexClass} flex items-end justify-center overflow-y-auto bg-black/50 p-3 backdrop-blur-sm animate-fade-in md:items-center md:p-6`}
     onClick={closeOnOverlayClick ? onClose : undefined}
   >
     <div
@@ -2647,6 +2649,7 @@ const PnaePlanning: React.FC = () => {
           subtitle="Cabecalho e diretrizes principais do plano PNAE."
           onClose={closePlanModal}
           maxWidthClass="max-w-5xl"
+          zIndexClass="z-[70]"
         >
           <form onSubmit={handleSavePlan} className="space-y-5">
             <div className="grid gap-3 md:grid-cols-3">
@@ -2950,6 +2953,7 @@ const PnaePlanning: React.FC = () => {
           title={editingGoal ? "Editar meta" : "Nova meta"}
           subtitle="Meta anual com indicador, prazo e ordem de exibicao."
           onClose={closeGoalModal}
+          zIndexClass="z-[70]"
         >
           <form onSubmit={handleSaveGoal} className="space-y-5">
             <ModalSteps
@@ -3085,6 +3089,7 @@ const PnaePlanning: React.FC = () => {
           title={editingAction ? "Editar acao" : "Nova acao"}
           subtitle="Acoes operacionais vinculadas ao plano anual."
           onClose={closeActionModal}
+          zIndexClass="z-[70]"
         >
           <form onSubmit={handleSaveAction} className="space-y-5">
             <ModalSteps
@@ -3225,6 +3230,7 @@ const PnaePlanning: React.FC = () => {
           title={editingItem ? "Editar item do plano" : "Novo item do plano"}
           subtitle="Distribuicao mensal por etapa, modalidade, refeicao e receita."
           onClose={closeItemModal}
+          zIndexClass="z-[70]"
         >
           <form onSubmit={handleSaveItem} className="space-y-5">
             <ModalSteps
@@ -3418,6 +3424,7 @@ const PnaePlanning: React.FC = () => {
           }
           subtitle="Atividade mensal e resultado esperado do plano anual."
           onClose={closeScheduleEntryModal}
+          zIndexClass="z-[70]"
         >
           <form onSubmit={handleSaveScheduleEntry} className="space-y-5">
             <ModalSteps
@@ -3517,6 +3524,7 @@ const PnaePlanning: React.FC = () => {
           }
           subtitle="Categoria, fonte e valores previstos para execucao do plano."
           onClose={closeBudgetItemModal}
+          zIndexClass="z-[70]"
         >
           <form onSubmit={handleSaveBudgetItem} className="space-y-5">
             <ModalSteps
@@ -3640,6 +3648,7 @@ const PnaePlanning: React.FC = () => {
           }
           subtitle="Ferramenta, frequencia e publico para acompanhamento do plano."
           onClose={closeEvaluationToolModal}
+          zIndexClass="z-[70]"
         >
           <form onSubmit={handleSaveEvaluationTool} className="space-y-5">
             <ModalSteps
@@ -3749,6 +3758,7 @@ const PnaePlanning: React.FC = () => {
           }
           subtitle="Registre andamento, evidencias e desvios do mes."
           onClose={closeExecutionModal}
+          zIndexClass="z-[70]"
         >
           <form onSubmit={handleSaveExecution} className="space-y-5">
             <div className="grid gap-4 md:grid-cols-2">
@@ -3879,6 +3889,7 @@ const PnaePlanning: React.FC = () => {
           subtitle={`${detailPlan.school_name} - ${detailPlan.year}`}
           onClose={() => setDetailPlan(null)}
           maxWidthClass="max-w-7xl"
+          zIndexClass="z-40"
         >
           <div className="space-y-6 overflow-x-hidden">
             {loadingDetail ? (

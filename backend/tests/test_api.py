@@ -363,6 +363,36 @@ def test_deliveries_list_filters_by_conferred_status(api_client, admin_user):
     assert str(draft_delivery.id) not in returned_ids
 
 
+def test_deliveries_list_filters_by_date_range(api_client, admin_user):
+    api_client.force_authenticate(user=admin_user)
+    school = School.objects.create(name='Escola Filtro Periodo')
+    older_delivery = Delivery.objects.create(
+        school=school,
+        delivery_date='2026-02-01',
+        created_by=admin_user,
+        status=Delivery.Status.SENT,
+    )
+    in_range_delivery = Delivery.objects.create(
+        school=school,
+        delivery_date='2026-02-15',
+        created_by=admin_user,
+        status=Delivery.Status.CONFERRED,
+    )
+    newer_delivery = Delivery.objects.create(
+        school=school,
+        delivery_date='2026-03-01',
+        created_by=admin_user,
+        status=Delivery.Status.FINALIZED,
+    )
+
+    response = api_client.get('/api/deliveries/?date_from=2026-02-10&date_to=2026-02-20')
+    assert response.status_code == 200
+    returned_ids = {entry['id'] for entry in response.data}
+    assert str(in_range_delivery.id) in returned_ids
+    assert str(older_delivery.id) not in returned_ids
+    assert str(newer_delivery.id) not in returned_ids
+
+
 def test_copy_delivery_to_multiple_schools_creates_drafts(api_client, admin_user):
     api_client.force_authenticate(user=admin_user)
     source_school = School.objects.create(name='Escola Origem')

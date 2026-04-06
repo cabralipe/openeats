@@ -1,6 +1,7 @@
 import os
 import importlib.util
 import hashlib
+import sys
 from pathlib import Path
 
 import environ
@@ -46,6 +47,14 @@ def _database_url_from_env_file(path: str):
     except OSError:
         return None
     return None
+
+
+def _is_pytest_runtime() -> bool:
+    if os.environ.get('PYTEST_CURRENT_TEST'):
+        return True
+    argv = ' '.join(sys.argv).lower()
+    executable = Path(sys.argv[0]).name.lower() if sys.argv else ''
+    return 'pytest' in argv or executable.startswith('pytest')
 
 SECRET_KEY = env('SECRET_KEY', default='unsafe-secret-key')
 DEBUG = env('DEBUG')
@@ -124,7 +133,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'merenda_semed.wsgi.application'
 
-if os.environ.get('PYTEST_CURRENT_TEST'):
+if _is_pytest_runtime():
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',

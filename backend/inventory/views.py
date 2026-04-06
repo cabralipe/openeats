@@ -1611,6 +1611,8 @@ class DeliveryViewSet(viewsets.ModelViewSet):
         school = self.request.query_params.get('school')
         status_value = self.request.query_params.get('status')
         conference_enabled = self.request.query_params.get('conference_enabled')
+        date_from = self.request.query_params.get('date_from')
+        date_to = self.request.query_params.get('date_to')
 
         if school:
             queryset = queryset.filter(school_id=school)
@@ -1618,6 +1620,10 @@ class DeliveryViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(status=status_value)
         if conference_enabled in ['true', 'false']:
             queryset = queryset.filter(conference_enabled=conference_enabled == 'true')
+        if date_from:
+            queryset = queryset.filter(delivery_date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(delivery_date__lte=date_to)
         return queryset
 
     def perform_destroy(self, instance):

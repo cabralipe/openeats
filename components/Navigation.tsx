@@ -28,6 +28,7 @@ const navItems: NavItem[] = [
 const moreNavItems: NavItem[] = [
   { icon: 'menu_book', label: 'Receitas', path: '/admin/recipes' },
   { icon: 'assignment', label: 'PNAE', path: '/admin/pnae' },
+  { icon: 'fact_check', label: 'Testes PNAE', path: '/admin/pnae-tests' },
   { icon: 'edit_calendar', label: 'Editor', path: '/admin/editor' },
   { icon: 'calculate', label: 'Calculadora Produção', path: '/admin/production-calculator' },
   { icon: 'insert_chart', label: 'Relatórios', path: '/admin/reports' },
@@ -91,7 +92,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, onLogout, use
   const navigate = useNavigate();
   const location = useLocation();
   const canAccessPnae = Boolean(user?.role && PNAE_MANAGER_ROLES.has(user.role));
-  const visibleMoreNavItems = moreNavItems.filter((item) => item.path !== '/admin/pnae' || canAccessPnae);
+  const visibleMoreNavItems = moreNavItems.filter((item) => !['/admin/pnae', '/admin/pnae-tests'].includes(item.path) || canAccessPnae);
 
   const handleLogout = () => {
     tokenStore.clear();
