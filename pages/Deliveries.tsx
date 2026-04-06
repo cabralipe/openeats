@@ -23,6 +23,18 @@ type DraftItem = { supply: string; planned_quantity: string };
 type Responsible = { id: string; name: string; phone: string };
 type WizardStep = 1 | 2 | 3;
 
+const maskPhone = (value: string) => {
+  let v = value.replace(/\D/g, '');
+  if (v.length <= 10) {
+    v = v.replace(/^(\d{2})(\d)/g, '($1) $2');
+    v = v.replace(/(\d{4})(\d)/, '$1-$2');
+  } else {
+    v = v.replace(/^(\d{2})(\d)/g, '($1) $2');
+    v = v.replace(/(\d{5})(\d)/, '$1-$2');
+  }
+  return v.substring(0, 15);
+};
+
 const Deliveries: React.FC = () => {
   const [schools, setSchools] = useState<any[]>([]);
   const [supplies, setSupplies] = useState<any[]>([]);
@@ -814,7 +826,7 @@ const Deliveries: React.FC = () => {
                     <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Telefone</label>
                     <input
                       value={responsiblePhone}
-                      onChange={(e) => setResponsiblePhone(e.target.value)}
+                      onChange={(e) => setResponsiblePhone(maskPhone(e.target.value))}
                       className="input rounded-xl text-sm"
                       placeholder="(00) 00000-0000"
                       type="tel"
@@ -829,7 +841,7 @@ const Deliveries: React.FC = () => {
                     />
                     <input
                       value={newResponsiblePhone}
-                      onChange={(e) => setNewResponsiblePhone(e.target.value)}
+                      onChange={(e) => setNewResponsiblePhone(maskPhone(e.target.value))}
                       className="input rounded-xl text-sm"
                       placeholder="Telefone"
                     />

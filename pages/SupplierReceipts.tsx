@@ -39,6 +39,18 @@ type ConferenceItemForm = {
 
 const today = new Date().toISOString().slice(0, 10);
 
+const maskPhone = (value: string) => {
+  let v = value.replace(/\D/g, '');
+  if (v.length <= 10) {
+    v = v.replace(/^(\d{2})(\d)/g, '($1) $2');
+    v = v.replace(/(\d{4})(\d)/, '$1-$2');
+  } else {
+    v = v.replace(/^(\d{2})(\d)/g, '($1) $2');
+    v = v.replace(/(\d{5})(\d)/, '$1-$2');
+  }
+  return v.substring(0, 15);
+};
+
 const formatQtyBR = (value: number) =>
   new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value || 0);
 
@@ -1395,7 +1407,7 @@ const SupplierReceipts: React.FC = () => {
                       className="input rounded-lg w-full bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-primary/50"
                       placeholder="(00) 00000-0000"
                       value={supplierForm.phone}
-                      onChange={(e) => setSupplierForm((prev) => ({ ...prev, phone: e.target.value }))}
+                      onChange={(e) => setSupplierForm((prev) => ({ ...prev, phone: maskPhone(e.target.value) }))}
                     />
                   </div>
                   <div className="space-y-2">
