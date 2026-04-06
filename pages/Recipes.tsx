@@ -671,26 +671,32 @@ const Recipes: React.FC = () => {
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
                         {form.ingredients.map((ingredient, index) => (
-                          <tr key={`${index}-${ingredient.supply || 'empty'}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 align-top">
-                            <td className="px-4 py-3 space-y-2 sm:space-y-0 sm:flex sm:gap-2">
-                              <select className="input text-xs w-full sm:flex-1 bg-slate-50 dark:bg-slate-800" value={ingredient.supply} onChange={(e) => handleIngredientSupplyChange(index, e.target.value)}>
-                                <option value="">Selecione o Insumo...</option>
-                                {supplies.map((s) => <option key={s.id} value={s.id}>{s.name}{s.category ? ` • ${s.category}`:''}</option>)}
-                              </select>
-                              <input className="input text-[11px] w-full sm:w-1/3" value={ingredient.notes || ''} onChange={(e) => updateIngredient(index, { notes: e.target.value })} placeholder="Obs. Ex: sem casca" title="Observações para este ingrediente" />
-                            </td>
+                          <tr key={`${index}-${ingredient.supply || 'empty'}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 align-middle">
                             <td className="px-4 py-3">
-                              <input type="number" min="0" step="0.01" className="input text-xs" value={ingredient.qty_base} onChange={(e) => updateIngredient(index, { qty_base: e.target.value })} />
+                              <div className="flex flex-col sm:flex-row gap-2 sm:items-center w-full">
+                                <select className="input text-xs w-full sm:flex-1 min-w-[120px] bg-slate-50 dark:bg-slate-800" value={ingredient.supply} onChange={(e) => handleIngredientSupplyChange(index, e.target.value)}>
+                                  <option value="">Selecione o Insumo...</option>
+                                  {supplies.map((s) => <option key={s.id} value={s.id}>{s.name}{s.category ? ` • ${s.category}`:''}</option>)}
+                                </select>
+                                <input className="input text-[11px] w-full min-w-[100px]" value={ingredient.notes || ''} onChange={(e) => updateIngredient(index, { notes: e.target.value })} placeholder="Obs. Ex: sem casca" title="Observações para este ingrediente" />
+                              </div>
                             </td>
-                            <td className="px-4 py-3">
-                              <select className="input text-xs" value={ingredient.unit} onChange={(e) => updateIngredient(index, { unit: e.target.value })}>
-                                {UNIT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                              </select>
+                            <td className="px-4 py-3 align-top sm:align-middle">
+                              <div className="min-w-[70px]">
+                                <input type="number" min="0" step="0.01" className="input text-xs w-full" value={ingredient.qty_base} onChange={(e) => updateIngredient(index, { qty_base: e.target.value })} />
+                              </div>
                             </td>
-                            <td className="px-4 py-3 pt-5 text-center">
-                              <input type="checkbox" checked={Boolean(ingredient.optional)} onChange={(e) => updateIngredient(index, { optional: e.target.checked })} className="w-4 h-4 rounded text-primary border-slate-300" title="Marcar como ingrediente" />
+                            <td className="px-4 py-3 align-top sm:align-middle">
+                              <div className="min-w-[70px]">
+                                <select className="input text-xs w-full" value={ingredient.unit} onChange={(e) => updateIngredient(index, { unit: e.target.value })}>
+                                  {UNIT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                </select>
+                              </div>
                             </td>
-                            <td className="px-4 py-3 text-center pt-3.5">
+                            <td className="px-4 py-3 text-center">
+                              <input type="checkbox" checked={Boolean(ingredient.optional)} onChange={(e) => updateIngredient(index, { optional: e.target.checked })} className="w-4 h-4 rounded text-primary border-slate-300" title="Marcar como opcional" />
+                            </td>
+                            <td className="px-4 py-3 text-center">
                               <button type="button" onClick={() => removeIngredient(index)} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors mx-auto" title="Remover">
                                 <span className="material-symbols-outlined text-[18px]">delete</span>
                               </button>
