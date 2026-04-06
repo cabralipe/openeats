@@ -257,6 +257,85 @@ export interface PnaeDashboardSummary {
   monthly_execution_open: number;
 }
 
+export interface PnaeAcceptabilityTest {
+  id: string;
+  school: string;
+  school_name: string;
+  municipality_name?: string;
+  menu?: string | null;
+  menu_name?: string;
+  recipe?: string | null;
+  recipe_name?: string;
+  previous_test?: string | null;
+  previous_test_preparation_name?: string;
+  method: 'HEDONIC' | 'LUDIC' | 'REST_INGESTION' | 'WITHIN_OUTSIDE';
+  method_display?: string;
+  objective: 'NEW_OR_ATYPICAL' | 'RECURRING_MENU' | 'PROCUREMENT_SAMPLE';
+  objective_display?: string;
+  analysis_scope: 'PREPARATION' | 'MENU' | 'PRODUCT';
+  analysis_scope_display?: string;
+  service_mode: 'CAFETERIA' | 'CLASSROOM' | 'SELF_SERVICE' | 'PROCUREMENT_PANEL';
+  service_mode_display?: string;
+  preparation_name: string;
+  target_group?: string;
+  respondent_profile?: 'NOT_INFORMED' | 'STUDENT' | 'PROFESSIONAL';
+  respondent_profile_display?: string;
+  respondent_entries?: Array<{
+    respondent_type: 'STUDENT' | 'PROFESSIONAL';
+    label?: string;
+    group_label?: string;
+    response_code: 'LOVED' | 'LIKED' | 'INDIFFERENT' | 'DISLIKED' | 'HATED' | 'WITHIN' | 'OUTSIDE';
+  }>;
+  classes_sampled?: string;
+  test_date: string;
+  weekday_label?: string;
+  weather_context?: string;
+  serving_time?: string;
+  participants_count: number;
+  eligible_students_count?: number | null;
+  adhered_students_count?: number | null;
+  loved_count: number;
+  liked_count: number;
+  indifferent_count: number;
+  disliked_count: number;
+  hated_count: number;
+  within_count: number;
+  outside_count: number;
+  prepared_weight: string | number;
+  leftover_weight: string | number;
+  plate_waste_weight: string | number;
+  non_edible_weight: string | number;
+  distributed_weight: string | number;
+  attempt_number: number;
+  minimum_threshold: string | number;
+  rejection_index: string | number;
+  acceptance_index: string | number;
+  adhesion_index: string | number;
+  adhesion_classification?: 'HIGH' | 'MEDIUM' | 'LOW' | 'VERY_LOW' | 'NOT_INFORMED';
+  adhesion_classification_display?: string;
+  approved: boolean;
+  next_retest_date?: string | null;
+  recommendation?: string;
+  positive_feedback?: string;
+  negative_feedback?: string;
+  notes?: string;
+  guidance_alerts?: string[];
+  created_by?: string;
+  created_by_name?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PnaeAcceptabilityDashboard {
+  total_tests: number;
+  approved_tests: number;
+  failed_tests: number;
+  pending_retest: number;
+  low_adhesion_tests: number;
+  tests_by_method: Record<string, number>;
+  latest_tests: PnaeAcceptabilityTest[];
+}
+
 export interface PnaeAcceptanceScenarioDefinition {
   id: string;
   title: string;

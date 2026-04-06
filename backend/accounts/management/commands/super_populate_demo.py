@@ -12,6 +12,7 @@ from inventory.models import (
     Delivery,
     DeliveryItem,
     DeliveryItemLot,
+    DeliveryNutritionistSignature,
     LotBalanceCentral,
     LotBalanceSchool,
     Notification,
@@ -28,8 +29,21 @@ from inventory.models import (
 )
 from inventory.services.lots import credit_lot_central, credit_lot_school, get_or_create_supply_lot, regenerate_delivery_item_lot_plan_fefo
 from menus.models import MealServiceEntry, MealServiceReport, Menu, MenuItem
+from pnae.models import (
+    PnaeAcceptabilityTest,
+    PnaeAnnualAction,
+    PnaeAnnualBudgetItem,
+    PnaeAnnualEvaluationTool,
+    PnaeAnnualGoal,
+    PnaeAnnualPlan,
+    PnaeAnnualPlanItem,
+    PnaeAnnualPlanMonthlyExecution,
+    PnaeAnnualPlanWorkflowEvent,
+    PnaeAnnualScheduleEntry,
+)
+from production.models import PublicCalculatorLink, SupplyAlias, SupplyConsumptionRule
 from recipes.models import Recipe, RecipeIngredient
-from schools.models import School
+from schools.models import EducationModality, EducationStage, Municipality, School
 
 
 DEMO_MARKER = "[SUPER_DEMO]"
@@ -48,8 +62,11 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         with transaction.atomic():
-            users = self._ensure_users()
-            schools = self._ensure_schools()
+            municipalities = self._ensure_municipalities()
+            education_stages = self._ensure_education_stages()
+            education_modalities = self._ensure_education_modalities()
+            users = self._ensure_users(municipalities)
+            schools = self._ensure_schools(municipalities, education_stages, education_modalities)
             supplies = self._ensure_supplies()
             responsibles = self._ensure_responsibles()
 
@@ -63,8 +80,11 @@ class Command(BaseCommand):
             self._attach_recipes_to_menus(recipes)
             self._ensure_meal_service_reports(schools)
             deliveries = self._ensure_deliveries(users["admin"], schools, supplies, responsibles)
+            self._ensure_delivery_nutritionist_signatures(deliveries, users)
             suppliers = self._ensure_suppliers_and_receipts(users["admin"], schools, supplies)
             self._ensure_lot_tracking_data(schools, supplies, suppliers, deliveries)
+            self._ensure_production_data(schools, supplies)
+            self._ensure_pnae_data(users, schools, education_stages, education_modalities, recipes)
             self._ensure_notifications(schools, deliveries)
             self._ensure_audit_logs(users)
 
@@ -76,10 +96,76 @@ class Command(BaseCommand):
                 f"- {school.name}: /public/meal-service?slug={school.public_slug}&token={school.public_token}"
             )
 
-    def _ensure_users(self):
+    def _ensure_municipalities(self):
+        municipalities = {}
+        specs = [
+            {"name": "Maceio", "state": "AL", "code": "2704302", "is_active": True},
+            {"name": "Arapiraca", "state": "AL", "code": "2700300", "is_active": True},
+        ]
+        for spec in specs:
+            municipality, _ = Municipality.objects.get_or_create(
+                code=spec["code"],
+                defaults=spec,
+            )
+            for field, value in spec.items():
+                setattr(municipality, field, value)
+            municipality.save()
+            municipalities[spec["name"]] = municipality
+        return municipalities
+
+    def _ensure_education_stages(self):
+        stages = {}
+        specs = [
+            ("Creche I", "CRECHE-I", 0, 3),
+            ("Pre-escola", "PRE", 4, 5),
+            ("Ensino Fundamental I", "EFI", 6, 10),
+            ("Ensino Fundamental II", "EFII", 11, 14),
+            ("EJA", "EJA", 15, None),
+        ]
+        for name, code, age_start, age_end in specs:
+            stage, _ = EducationStage.objects.get_or_create(
+                code=code,
+                defaults={
+                    "name": name,
+                    "age_range_start": age_start,
+                    "age_range_end": age_end,
+                    "is_active": True,
+                },
+            )
+            stage.name = name
+            stage.age_range_start = age_start
+            stage.age_range_end = age_end
+            stage.is_active = True
+            stage.save()
+            stages[code] = stage
+        return stages
+
+    def _ensure_education_modalities(self):
+        modalities = {}
+        specs = [
+            ("Regular", "REG"),
+            ("Integral", "INT"),
+            ("Quilombola", "QUIL"),
+            ("Indigena", "IND"),
+            ("EJA", "EJA"),
+        ]
+        for name, code in specs:
+            modality, _ = EducationModality.objects.get_or_create(
+                code=code,
+                defaults={"name": name, "is_active": True},
+            )
+            modality.name = name
+            modality.is_active = True
+            modality.save()
+            modalities[code] = modality
+        return modalities
+
+    def _ensure_users(self, municipalities):
         User = get_user_model()
         admin_email = os.getenv("SEED_ADMIN_EMAIL", "admin@semed.local")
         admin_password = os.getenv("SEED_ADMIN_PASSWORD", "Admin123!")
+        maceio = municipalities["Maceio"]
+        arapiraca = municipalities["Arapiraca"]
 
         admin, _ = User.objects.get_or_create(
             email=admin_email,
@@ -92,42 +178,109 @@ class Command(BaseCommand):
         )
         admin.name = admin.name or "Admin SEMED"
         admin.role = User.Roles.SEMED_ADMIN
+        admin.function_role = "Administrador da plataforma"
+        admin.municipality = maceio
         admin.is_staff = True
         admin.is_superuser = True
+        admin.is_active = True
         admin.set_password(admin_password)
         admin.save()
 
-        nutritionist, _ = User.objects.get_or_create(
-            email="nutri.demo@semed.local",
-            defaults={
-                "name": "Ana Paula Nutricionista",
-                "role": User.Roles.NUTRITIONIST,
-                "is_staff": True,
-                "is_superuser": False,
-            },
-        )
-        nutritionist.name = "Ana Paula Nutricionista"
-        nutritionist.role = User.Roles.NUTRITIONIST
-        nutritionist.is_staff = True
-        nutritionist.is_active = True
-        nutritionist.set_password("Nutri123!")
-        nutritionist.save()
-        return {"admin": admin, "nutritionist": nutritionist}
+        users = {"admin": admin}
+        role_specs = [
+            ("nutritionist", "nutri.demo@semed.local", "Ana Paula Nutricionista", User.Roles.NUTRITIONIST, maceio, True, "CRN-6 12345", "Responsavel tecnica"),
+            ("municipal_manager", "gestor.demo@semed.local", "Carlos Gestor Municipal", User.Roles.MUNICIPAL_MANAGER, maceio, True, "", "Gestao municipal"),
+            ("school_coordinator", "coordenacao.escolar@semed.local", "Mariana Coordenadora", User.Roles.SCHOOL_FEEDING_COORDINATOR, maceio, False, "", "Coordenacao escolar"),
+            ("school_director", "direcao.demo@semed.local", "Juliana Diretora", User.Roles.SCHOOL_DIRECTOR, maceio, False, "", "Direcao escolar"),
+            ("school_operator", "merendeira.demo@semed.local", "Rita Merendeira", User.Roles.SCHOOL_OPERATOR, maceio, False, "", "Merendeira"),
+            ("stock_operator", "estoque.demo@semed.local", "Roberto Estoquista", User.Roles.STOCK_OPERATOR, maceio, False, "", "Operador de estoque"),
+            ("cae", "cae.demo@semed.local", "Paulo Conselheiro", User.Roles.CAE_COUNCILOR, maceio, False, "", "Conselheiro CAE"),
+            ("external_manager", "gestor.arapiraca@semed.local", "Fernanda Gestora Externa", User.Roles.MUNICIPAL_MANAGER, arapiraca, False, "", "Gestao municipal"),
+        ]
+        for key, email, name, role, municipality, is_staff, crn, function_role in role_specs:
+            user, _ = User.objects.get_or_create(
+                email=email,
+                defaults={
+                    "name": name,
+                    "role": role,
+                    "municipality": municipality,
+                    "is_staff": is_staff,
+                    "is_superuser": False,
+                    "crn": crn,
+                    "function_role": function_role,
+                },
+            )
+            user.name = name
+            user.role = role
+            user.municipality = municipality
+            user.is_staff = is_staff
+            user.is_superuser = False
+            user.is_active = True
+            user.crn = crn
+            user.function_role = function_role
+            user.set_password("Demo123!")
+            user.save()
+            users[key] = user
 
-    def _ensure_schools(self):
+        return users
+
+    def _ensure_schools(self, municipalities, education_stages, education_modalities):
         schools_data = [
-            {"name": "Escola Municipal Joao Cordeiro", "city": "Maceio", "address": "Centro", "is_active": True},
-            {"name": "Escola Municipal Maria Lucia", "city": "Maceio", "address": "Benedito Bentes", "is_active": True},
-            {"name": "Escola Municipal Santa Rosa", "city": "Maceio", "address": "Tabuleiro", "is_active": True},
-            {"name": "Escola Municipal Paulo Freire", "city": "Maceio", "address": "Jacintinho", "is_active": True},
-            {"name": "Escola Municipal Desativada Piloto", "city": "Maceio", "address": "Ponta Grossa", "is_active": False},
+            {
+                "name": "Escola Municipal Joao Cordeiro",
+                "city": "Maceio",
+                "address": "Centro",
+                "is_active": True,
+                "municipality": municipalities["Maceio"],
+                "stages": ["EFI", "EFII"],
+                "modalities": ["REG", "INT"],
+            },
+            {
+                "name": "Escola Municipal Maria Lucia",
+                "city": "Maceio",
+                "address": "Benedito Bentes",
+                "is_active": True,
+                "municipality": municipalities["Maceio"],
+                "stages": ["PRE", "EFI"],
+                "modalities": ["REG", "INT"],
+            },
+            {
+                "name": "Escola Municipal Santa Rosa",
+                "city": "Maceio",
+                "address": "Tabuleiro",
+                "is_active": True,
+                "municipality": municipalities["Maceio"],
+                "stages": ["CRECHE-I", "PRE", "EFI"],
+                "modalities": ["REG", "QUIL"],
+            },
+            {
+                "name": "Escola Municipal Paulo Freire",
+                "city": "Maceio",
+                "address": "Jacintinho",
+                "is_active": True,
+                "municipality": municipalities["Maceio"],
+                "stages": ["EFI", "EFII", "EJA"],
+                "modalities": ["REG", "EJA"],
+            },
+            {
+                "name": "Escola Municipal Desativada Piloto",
+                "city": "Maceio",
+                "address": "Ponta Grossa",
+                "is_active": False,
+                "municipality": municipalities["Maceio"],
+                "stages": ["EFI"],
+                "modalities": ["REG"],
+            },
         ]
         schools = {}
         for data in schools_data:
-            school, _ = School.objects.get_or_create(name=data["name"], defaults=data)
-            for field, value in data.items():
+            defaults = {key: value for key, value in data.items() if key not in {"stages", "modalities"}}
+            school, _ = School.objects.get_or_create(name=data["name"], defaults=defaults)
+            for field, value in defaults.items():
                 setattr(school, field, value)
             school.save()
+            school.education_stages.set([education_stages[code] for code in data["stages"]])
+            school.education_modalities.set([education_modalities[code] for code in data["modalities"]])
             schools[data["name"]] = school
         return schools
 
@@ -689,6 +842,403 @@ class Command(BaseCommand):
                         )
 
         return deliveries
+
+    def _ensure_delivery_nutritionist_signatures(self, deliveries, users):
+        if "conferred_recent" in deliveries:
+            DeliveryNutritionistSignature.objects.update_or_create(
+                delivery=deliveries["conferred_recent"],
+                name=users["nutritionist"].name,
+                defaults={
+                    "crn": users["nutritionist"].crn,
+                    "function_role": users["nutritionist"].function_role,
+                    "signature_data": FAKE_SIGNATURE,
+                },
+            )
+
+    def _ensure_production_data(self, schools, supplies):
+        alias_specs = [
+            ("Arroz Agulhinha", ["arroz branco", "arroz tipo 1", "arroz beneficiado"]),
+            ("Feijao Carioca", ["feijao", "feijao tipo carioca"]),
+            ("Leite Integral", ["leite", "leite uht"]),
+            ("Banana Prata", ["banana", "banana prata"]),
+            ("Suco de Caju", ["suco", "suco caju"]),
+        ]
+        for supply_name, aliases in alias_specs:
+            supply = supplies[supply_name]
+            for alias in aliases:
+                SupplyAlias.objects.get_or_create(supply=supply, alias=alias)
+
+        self._upsert_public_calculator_link(
+            schools["Escola Municipal Joao Cordeiro"],
+            PublicCalculatorLink.AllowedScope.MENU_WEEK,
+        )
+        self._upsert_public_calculator_link(
+            schools["Escola Municipal Maria Lucia"],
+            PublicCalculatorLink.AllowedScope.MENU_DAY,
+        )
+        self._upsert_public_calculator_link(
+            schools["Escola Municipal Santa Rosa"],
+            PublicCalculatorLink.AllowedScope.RECIPE_ONLY,
+        )
+
+        rules = [
+            ("Escola Municipal Joao Cordeiro", "Arroz Agulhinha", MenuItem.MealType.LUNCH, "0.080", Supply.Units.KG, "Base para almoco regular"),
+            ("Escola Municipal Joao Cordeiro", "Feijao Carioca", MenuItem.MealType.LUNCH, "0.060", Supply.Units.KG, "Feijao por aluno"),
+            ("Escola Municipal Maria Lucia", "Leite Integral", MenuItem.MealType.BREAKFAST_1, "0.200", Supply.Units.L, "Copo de leite"),
+            ("Escola Municipal Maria Lucia", "Biscoito Integral", MenuItem.MealType.BREAKFAST_1, "0.030", Supply.Units.KG, "Biscoito por aluno"),
+            ("Escola Municipal Santa Rosa", "Suco de Caju", MenuItem.MealType.SNACK_2, "0.180", Supply.Units.L, "Lanche vespertino"),
+            ("Escola Municipal Santa Rosa", "Banana Prata", MenuItem.MealType.SNACK_2, "0.070", Supply.Units.KG, "Fruta por aluno"),
+            ("Escola Municipal Paulo Freire", "Macarrao Espaguete", MenuItem.MealType.LUNCH, "0.075", Supply.Units.KG, "Preparacao de massa"),
+            ("Escola Municipal Paulo Freire", "Carne Moida", MenuItem.MealType.LUNCH, "0.045", Supply.Units.KG, "Proteina principal"),
+        ]
+        for school_name, supply_name, meal_type, qty_per_student, unit, notes in rules:
+            SupplyConsumptionRule.objects.update_or_create(
+                school=schools[school_name],
+                supply=supplies[supply_name],
+                meal_type=meal_type,
+                defaults={
+                    "qty_per_student": Decimal(qty_per_student),
+                    "unit": unit,
+                    "active": True,
+                    "notes": f"{DEMO_MARKER} {notes}",
+                },
+            )
+
+    def _upsert_public_calculator_link(self, school, allowed_scope):
+        existing_links = PublicCalculatorLink.objects.filter(school=school).order_by("created_at")
+        link = existing_links.first()
+        if link is None:
+            return PublicCalculatorLink.objects.create(
+                school=school,
+                allowed_scope=allowed_scope,
+                is_active=True,
+            )
+
+        existing_links.exclude(pk=link.pk).delete()
+        link.allowed_scope = allowed_scope
+        link.is_active = True
+        link.save(update_fields=["allowed_scope", "is_active", "updated_at"])
+        return link
+
+    def _ensure_pnae_data(self, users, schools, education_stages, education_modalities, recipes):
+        current_year = date.today().year
+        plan_specs = [
+            {
+                "school": schools["Escola Municipal Joao Cordeiro"],
+                "year": current_year,
+                "title": f"Plano PNAE Integrado {current_year} {DEMO_MARKER}",
+                "status": PnaeAnnualPlan.Status.APPROVED,
+                "review_comment": f"{DEMO_MARKER} Plano aprovado para operacao anual.",
+                "workflow": [
+                    (PnaeAnnualPlanWorkflowEvent.Action.CREATED, '', PnaeAnnualPlan.Status.DRAFT, 'Plano criado para demonstracao.'),
+                    (PnaeAnnualPlanWorkflowEvent.Action.SUBMITTED, PnaeAnnualPlan.Status.DRAFT, PnaeAnnualPlan.Status.IN_REVIEW, f'{DEMO_MARKER} Submetido para revisao.'),
+                    (PnaeAnnualPlanWorkflowEvent.Action.APPROVED, PnaeAnnualPlan.Status.IN_REVIEW, PnaeAnnualPlan.Status.APPROVED, f'{DEMO_MARKER} Aprovado para execucao.'),
+                ],
+            },
+            {
+                "school": schools["Escola Municipal Maria Lucia"],
+                "year": current_year,
+                "title": f"Plano PNAE em Revisao {current_year} {DEMO_MARKER}",
+                "status": PnaeAnnualPlan.Status.IN_REVIEW,
+                "review_comment": f"{DEMO_MARKER} Aguardando parecer do gestor.",
+                "workflow": [
+                    (PnaeAnnualPlanWorkflowEvent.Action.CREATED, '', PnaeAnnualPlan.Status.DRAFT, 'Plano criado para demonstracao.'),
+                    (PnaeAnnualPlanWorkflowEvent.Action.SUBMITTED, PnaeAnnualPlan.Status.DRAFT, PnaeAnnualPlan.Status.IN_REVIEW, f'{DEMO_MARKER} Submetido para revisao.'),
+                ],
+            },
+            {
+                "school": schools["Escola Municipal Santa Rosa"],
+                "year": current_year,
+                "title": f"Plano PNAE Reprovado {current_year} {DEMO_MARKER}",
+                "status": PnaeAnnualPlan.Status.REJECTED,
+                "review_comment": f"{DEMO_MARKER} Ajustar indicadores e cronograma.",
+                "workflow": [
+                    (PnaeAnnualPlanWorkflowEvent.Action.CREATED, '', PnaeAnnualPlan.Status.DRAFT, 'Plano criado para demonstracao.'),
+                    (PnaeAnnualPlanWorkflowEvent.Action.SUBMITTED, PnaeAnnualPlan.Status.DRAFT, PnaeAnnualPlan.Status.IN_REVIEW, f'{DEMO_MARKER} Submetido para revisao.'),
+                    (PnaeAnnualPlanWorkflowEvent.Action.REJECTED, PnaeAnnualPlan.Status.IN_REVIEW, PnaeAnnualPlan.Status.REJECTED, f'{DEMO_MARKER} Reprovado para ajustes.'),
+                ],
+            },
+        ]
+
+        approved_actor = users["municipal_manager"]
+        plans = {}
+        for spec in plan_specs:
+            plan, _ = PnaeAnnualPlan.objects.get_or_create(
+                school=spec["school"],
+                year=spec["year"],
+                defaults={
+                    "title": spec["title"],
+                    "created_by": users["admin"],
+                },
+            )
+            plan.title = spec["title"]
+            plan.created_by = users["admin"]
+            plan.responsible_nutritionist = users["nutritionist"]
+            plan.justification = f"{DEMO_MARKER} Fortalecer a seguranca alimentar e nutricional da unidade."
+            plan.diagnosis_summary = f"{DEMO_MARKER} Diagnostico com base em consumo, estoque e aceitabilidade."
+            plan.general_objectives = "Garantir oferta regular, adequada e monitorada da alimentacao escolar."
+            plan.operational_strategy = "Integracao entre cardapio, estoque, recebimentos, producao e acompanhamento mensal."
+            plan.execution_locations = "Cozinha escolar, almoxarifado central e unidades escolares."
+            plan.executing_agency = "SEMED / Coordenacao de Alimentacao Escolar"
+            plan.financial_schedule_notes = f"{DEMO_MARKER} Cronograma financeiro distribuido por trimestre."
+            plan.status = spec["status"]
+            plan.notes = f"{DEMO_MARKER} Plano gerado automaticamente para demonstracao completa."
+            plan.last_review_comment = spec["review_comment"]
+            plan.submitted_by = users["school_coordinator"]
+            plan.submitted_at = timezone.now() - timedelta(days=20)
+            plan.approved_by = approved_actor if spec["status"] == PnaeAnnualPlan.Status.APPROVED else None
+            plan.approved_at = timezone.now() - timedelta(days=15) if spec["status"] == PnaeAnnualPlan.Status.APPROVED else None
+            plan.rejected_by = approved_actor if spec["status"] == PnaeAnnualPlan.Status.REJECTED else None
+            plan.rejected_at = timezone.now() - timedelta(days=10) if spec["status"] == PnaeAnnualPlan.Status.REJECTED else None
+            plan.save()
+            plans[spec["school"].name] = plan
+
+            plan.goals.all().delete()
+            plan.actions.all().delete()
+            plan.schedule_entries.all().delete()
+            plan.budget_items.all().delete()
+            plan.evaluation_tools.all().delete()
+            plan.items.all().delete()
+            plan.workflow_events.all().delete()
+            plan.monthly_executions.all().delete()
+
+            PnaeAnnualGoal.objects.bulk_create([
+                PnaeAnnualGoal(plan=plan, title='Elevar aceitabilidade media', description='Ampliar aprovacao das preparacoes testadas.', indicator='Aceitabilidade', target_value=Decimal('90'), current_value=Decimal('82'), order=1),
+                PnaeAnnualGoal(plan=plan, title='Reduzir ruptura de estoque', description='Acompanhar itens criticos nas escolas.', indicator='Ruptura mensal', target_value=Decimal('1'), current_value=Decimal('3'), order=2),
+            ])
+            PnaeAnnualAction.objects.bulk_create([
+                PnaeAnnualAction(plan=plan, title='Capacitar equipes escolares', description='Treinamento sobre boas praticas e porcionamento.', responsible_sector='Nutricao Escolar', start_date=date(current_year, 2, 10), end_date=date(current_year, 3, 20), status=PnaeAnnualAction.Status.COMPLETED if spec["status"] == PnaeAnnualPlan.Status.APPROVED else PnaeAnnualAction.Status.IN_PROGRESS, order=1),
+                PnaeAnnualAction(plan=plan, title='Rodar testes de aceitabilidade', description='Aplicar testes conforme manual FNDE.', responsible_sector='Nutricionistas e escolas', start_date=date(current_year, 4, 1), end_date=date(current_year, 8, 30), status=PnaeAnnualAction.Status.IN_PROGRESS, order=2),
+            ])
+            PnaeAnnualScheduleEntry.objects.bulk_create([
+                PnaeAnnualScheduleEntry(plan=plan, month=3, activity='Diagnostico e consolidacao de dados', expected_result='Base anual consolidada', order=1),
+                PnaeAnnualScheduleEntry(plan=plan, month=5, activity='Aplicacao dos testes de aceitabilidade', expected_result='Relatorios por escola', order=2),
+                PnaeAnnualScheduleEntry(plan=plan, month=8, activity='Revisao de cardapio e compras', expected_result='Ajustes operacionais', order=3),
+            ])
+            PnaeAnnualBudgetItem.objects.bulk_create([
+                PnaeAnnualBudgetItem(plan=plan, category='Generos alimenticios', description='Aquisição regular da rede', funding_source='FNDE/PNAE', estimated_amount=Decimal('185000.00'), executed_amount=Decimal('92000.00'), order=1),
+                PnaeAnnualBudgetItem(plan=plan, category='Capacitacao', description='Formacao das equipes e materiais', funding_source='Municipio', estimated_amount=Decimal('14000.00'), executed_amount=Decimal('6000.00'), order=2),
+            ])
+            PnaeAnnualEvaluationTool.objects.bulk_create([
+                PnaeAnnualEvaluationTool(plan=plan, name='Teste de aceitabilidade', description='Aplicacao de escala hedonica e resto-ingestao.', frequency='Bimestral', target_audience='Estudantes e equipes', order=1),
+                PnaeAnnualEvaluationTool(plan=plan, name='Painel de execucao mensal', description='Acompanhamento de metas e desvios.', frequency='Mensal', target_audience='SEMED e nutricionistas', order=2),
+            ])
+            PnaeAnnualPlanItem.objects.bulk_create([
+                PnaeAnnualPlanItem(plan=plan, education_stage=education_stages['EFI'], education_modality=education_modalities['REG'], month=4, meal_type=MenuItem.MealType.LUNCH, recipe=recipes['Arroz com Frango e Legumes'], servings_planned=420, weekly_frequency=5, notes=f'{DEMO_MARKER} Almoco base do ciclo.' ),
+                PnaeAnnualPlanItem(plan=plan, education_stage=education_stages['EFI'], education_modality=education_modalities['REG'], month=4, meal_type=MenuItem.MealType.BREAKFAST_1, recipe=recipes['Leite com Biscoito'], servings_planned=420, weekly_frequency=5, notes=f'{DEMO_MARKER} Desjejum base.' ),
+                PnaeAnnualPlanItem(plan=plan, education_stage=education_stages['EFI'], education_modality=education_modalities['REG'], month=4, meal_type=MenuItem.MealType.SNACK_2, recipe=recipes['Suco de Caju com Banana'], servings_planned=380, weekly_frequency=5, notes=f'{DEMO_MARKER} Lanche vespertino.' ),
+            ])
+            for action, from_status, to_status, comment in spec["workflow"]:
+                actor = users["school_coordinator"] if action == PnaeAnnualPlanWorkflowEvent.Action.SUBMITTED else approved_actor
+                if action == PnaeAnnualPlanWorkflowEvent.Action.CREATED:
+                    actor = users["admin"]
+                PnaeAnnualPlanWorkflowEvent.objects.create(
+                    plan=plan,
+                    action=action,
+                    from_status=from_status,
+                    to_status=to_status,
+                    comment=f"{DEMO_MARKER} {comment}",
+                    actor=actor,
+                )
+            for month, status, progress, planned, executed in [
+                (3, PnaeAnnualPlanMonthlyExecution.Status.COMPLETED, 100, 900, 910),
+                (4, PnaeAnnualPlanMonthlyExecution.Status.IN_PROGRESS, 72, 980, 700),
+                (5, PnaeAnnualPlanMonthlyExecution.Status.NOT_STARTED, 0, 1020, 0),
+            ]:
+                PnaeAnnualPlanMonthlyExecution.objects.create(
+                    plan=plan,
+                    month=month,
+                    status=status,
+                    progress_percent=progress,
+                    planned_servings=planned,
+                    executed_servings=executed,
+                    execution_notes=f"{DEMO_MARKER} Execucao do mes {month}.",
+                    deviation_notes='' if progress >= 70 else f'{DEMO_MARKER} Ajustar entrega e equipe.',
+                    evidence_links=[f'https://demo.local/pnae/{plan.id}/mes-{month}'],
+                    last_updated_by=users["nutritionist"],
+                )
+
+        PnaeAcceptabilityTest.objects.filter(notes__icontains=DEMO_MARKER).delete()
+        approved_plan = plans["Escola Municipal Joao Cordeiro"]
+        review_plan = plans["Escola Municipal Maria Lucia"]
+        rejected_plan = plans["Escola Municipal Santa Rosa"]
+        approved_menu = (
+            Menu.objects.filter(
+                school=approved_plan.school,
+                status=Menu.Status.PUBLISHED,
+            )
+            .order_by("-week_start")
+            .first()
+        )
+        PnaeAcceptabilityTest.objects.create(
+            school=approved_plan.school,
+            menu=approved_menu,
+            recipe=recipes["Arroz com Frango e Legumes"],
+            method=PnaeAcceptabilityTest.Method.HEDONIC,
+            objective=PnaeAcceptabilityTest.Objective.NEW_OR_ATYPICAL,
+            analysis_scope=PnaeAcceptabilityTest.AnalysisScope.PREPARATION,
+            service_mode=PnaeAcceptabilityTest.ServiceMode.CAFETERIA,
+            preparation_name='Arroz com Frango e Legumes',
+            target_group='Ensino Fundamental I',
+            respondent_profile=PnaeAcceptabilityTest.RespondentProfile.STUDENT,
+            respondent_entries=[
+                {"respondent_type": "STUDENT", "label": "Aluno 01", "group_label": "5A", "response_code": "LOVED"},
+                {"respondent_type": "STUDENT", "label": "Aluno 02", "group_label": "5A", "response_code": "LIKED"},
+                {"respondent_type": "STUDENT", "label": "Aluno 03", "group_label": "5B", "response_code": "LIKED"},
+                {"respondent_type": "STUDENT", "label": "Aluno 04", "group_label": "5B", "response_code": "LOVED"},
+                {"respondent_type": "STUDENT", "label": "Aluno 05", "group_label": "5C", "response_code": "INDIFFERENT"},
+            ],
+            classes_sampled='5A, 5B e 5C',
+            test_date=date.today() - timedelta(days=25),
+            weather_context='Dia ensolarado',
+            serving_time='11:30',
+            eligible_students_count=120,
+            adhered_students_count=109,
+            positive_feedback=f'{DEMO_MARKER} Boa textura e sabor do frango.',
+            negative_feedback='Alguns alunos pediram mais tempero.',
+            notes=f'{DEMO_MARKER} Teste hedônico da preparação principal.',
+            created_by=users["nutritionist"],
+        )
+        initial_failed_test = PnaeAcceptabilityTest.objects.create(
+            school=review_plan.school,
+            recipe=recipes["Suco de Caju com Banana"],
+            method=PnaeAcceptabilityTest.Method.HEDONIC,
+            objective=PnaeAcceptabilityTest.Objective.RECURRING_MENU,
+            analysis_scope=PnaeAcceptabilityTest.AnalysisScope.PREPARATION,
+            service_mode=PnaeAcceptabilityTest.ServiceMode.CLASSROOM,
+            preparation_name='Suco de Caju com Banana',
+            target_group='Pre-escola',
+            respondent_profile=PnaeAcceptabilityTest.RespondentProfile.STUDENT,
+            respondent_entries=[
+                {"respondent_type": "STUDENT", "label": "Aluno 01", "group_label": "PRE-A", "response_code": "LIKED"},
+                {"respondent_type": "STUDENT", "label": "Aluno 02", "group_label": "PRE-A", "response_code": "INDIFFERENT"},
+                {"respondent_type": "STUDENT", "label": "Aluno 03", "group_label": "PRE-B", "response_code": "DISLIKED"},
+                {"respondent_type": "STUDENT", "label": "Aluno 04", "group_label": "PRE-B", "response_code": "HATED"},
+            ],
+            classes_sampled='PRE-A e PRE-B',
+            test_date=date.today() - timedelta(days=90),
+            weather_context='Manha chuvosa',
+            serving_time='09:20',
+            eligible_students_count=70,
+            adhered_students_count=40,
+            positive_feedback='A fruta foi bem aceita.',
+            negative_feedback=f'{DEMO_MARKER} Bebida pouco gelada e doce.',
+            notes=f'{DEMO_MARKER} Primeira tentativa abaixo do corte.',
+            created_by=users["nutritionist"],
+        )
+        PnaeAcceptabilityTest.objects.create(
+            school=review_plan.school,
+            recipe=recipes["Suco de Caju com Banana"],
+            previous_test=initial_failed_test,
+            method=PnaeAcceptabilityTest.Method.HEDONIC,
+            objective=PnaeAcceptabilityTest.Objective.RECURRING_MENU,
+            analysis_scope=PnaeAcceptabilityTest.AnalysisScope.PREPARATION,
+            service_mode=PnaeAcceptabilityTest.ServiceMode.CLASSROOM,
+            preparation_name='Suco de Caju com Banana',
+            target_group='Pre-escola',
+            respondent_profile=PnaeAcceptabilityTest.RespondentProfile.STUDENT,
+            respondent_entries=[
+                {"respondent_type": "STUDENT", "label": "Aluno 05", "group_label": "PRE-A", "response_code": "LOVED"},
+                {"respondent_type": "STUDENT", "label": "Aluno 06", "group_label": "PRE-A", "response_code": "LIKED"},
+                {"respondent_type": "STUDENT", "label": "Aluno 07", "group_label": "PRE-B", "response_code": "LIKED"},
+                {"respondent_type": "STUDENT", "label": "Aluno 08", "group_label": "PRE-B", "response_code": "INDIFFERENT"},
+                {"respondent_type": "STUDENT", "label": "Aluno 09", "group_label": "PRE-B", "response_code": "DISLIKED"},
+            ],
+            classes_sampled='PRE-A e PRE-B',
+            test_date=date.today() - timedelta(days=15),
+            weather_context='Dia ameno',
+            serving_time='09:20',
+            eligible_students_count=72,
+            adhered_students_count=54,
+            positive_feedback='Temperatura ajustada e melhor aceitação.',
+            negative_feedback=f'{DEMO_MARKER} Ainda necessita pequena revisão.',
+            notes=f'{DEMO_MARKER} Segunda tentativa do suco.',
+            created_by=users["nutritionist"],
+        )
+        PnaeAcceptabilityTest.objects.create(
+            school=rejected_plan.school,
+            recipe=recipes["Leite com Biscoito"],
+            method=PnaeAcceptabilityTest.Method.LUDIC,
+            objective=PnaeAcceptabilityTest.Objective.NEW_OR_ATYPICAL,
+            analysis_scope=PnaeAcceptabilityTest.AnalysisScope.PREPARATION,
+            service_mode=PnaeAcceptabilityTest.ServiceMode.CLASSROOM,
+            preparation_name="Leite com Biscoito",
+            target_group="Creche e pre-escola",
+            respondent_profile=PnaeAcceptabilityTest.RespondentProfile.STUDENT,
+            respondent_entries=[
+                {"respondent_type": "STUDENT", "label": "Crianca 01", "group_label": "Creche A", "response_code": "LOVED"},
+                {"respondent_type": "STUDENT", "label": "Crianca 02", "group_label": "Creche A", "response_code": "LIKED"},
+                {"respondent_type": "STUDENT", "label": "Crianca 03", "group_label": "Creche B", "response_code": "LIKED"},
+                {"respondent_type": "STUDENT", "label": "Crianca 04", "group_label": "Creche B", "response_code": "LOVED"},
+                {"respondent_type": "STUDENT", "label": "Crianca 05", "group_label": "Creche B", "response_code": "LIKED"},
+            ],
+            classes_sampled="Creche A e Creche B",
+            test_date=date.today() - timedelta(days=11),
+            weather_context="Turno da manha",
+            serving_time="08:40",
+            eligible_students_count=58,
+            adhered_students_count=46,
+            positive_feedback="Boa resposta visual e rapidez no consumo.",
+            negative_feedback=f"{DEMO_MARKER} Parte do grupo pediu porcao menor de biscoito.",
+            notes=f"{DEMO_MARKER} Cartelas ludicas com publico infantil.",
+            created_by=users["nutritionist"],
+        )
+        PnaeAcceptabilityTest.objects.create(
+            school=approved_plan.school,
+            menu=approved_menu,
+            method=PnaeAcceptabilityTest.Method.REST_INGESTION,
+            objective=PnaeAcceptabilityTest.Objective.RECURRING_MENU,
+            analysis_scope=PnaeAcceptabilityTest.AnalysisScope.MENU,
+            service_mode=PnaeAcceptabilityTest.ServiceMode.CAFETERIA,
+            preparation_name='Almoco completo de quarta-feira',
+            target_group='Ensino Fundamental',
+            respondent_profile=PnaeAcceptabilityTest.RespondentProfile.NOT_INFORMED,
+            test_date=date.today() - timedelta(days=7),
+            weather_context='Temperatura elevada',
+            serving_time='11:40',
+            eligible_students_count=210,
+            adhered_students_count=182,
+            prepared_weight=Decimal('48.00'),
+            leftover_weight=Decimal('5.50'),
+            plate_waste_weight=Decimal('3.10'),
+            non_edible_weight=Decimal('0.00'),
+            positive_feedback='Boa adesão geral ao almoço.',
+            negative_feedback=f'{DEMO_MARKER} Resto maior na turma do turno vespertino.',
+            notes=f'{DEMO_MARKER} Teste por resto-ingestao.',
+            created_by=users["nutritionist"],
+        )
+        PnaeAcceptabilityTest.objects.create(
+            school=approved_plan.school,
+            method=PnaeAcceptabilityTest.Method.WITHIN_OUTSIDE,
+            objective=PnaeAcceptabilityTest.Objective.PROCUREMENT_SAMPLE,
+            analysis_scope=PnaeAcceptabilityTest.AnalysisScope.PRODUCT,
+            service_mode=PnaeAcceptabilityTest.ServiceMode.PROCUREMENT_PANEL,
+            preparation_name="Amostra de iogurte de morango",
+            target_group="Painel tecnico de profissionais",
+            respondent_profile=PnaeAcceptabilityTest.RespondentProfile.PROFESSIONAL,
+            respondent_entries=[
+                {"respondent_type": "PROFESSIONAL", "label": "Nutricionista 01", "group_label": "Nutricao", "response_code": "WITHIN"},
+                {"respondent_type": "PROFESSIONAL", "label": "Nutricionista 02", "group_label": "Nutricao", "response_code": "WITHIN"},
+                {"respondent_type": "PROFESSIONAL", "label": "Conselheiro 01", "group_label": "CAE", "response_code": "WITHIN"},
+                {"respondent_type": "PROFESSIONAL", "label": "Conselheiro 02", "group_label": "CAE", "response_code": "WITHIN"},
+                {"respondent_type": "PROFESSIONAL", "label": "Diretora 01", "group_label": "Gestao escolar", "response_code": "WITHIN"},
+                {"respondent_type": "PROFESSIONAL", "label": "Diretora 02", "group_label": "Gestao escolar", "response_code": "WITHIN"},
+                {"respondent_type": "PROFESSIONAL", "label": "Merendeira 01", "group_label": "Cozinha", "response_code": "WITHIN"},
+                {"respondent_type": "PROFESSIONAL", "label": "Merendeira 02", "group_label": "Cozinha", "response_code": "WITHIN"},
+                {"respondent_type": "PROFESSIONAL", "label": "Almoxarife 01", "group_label": "Suprimentos", "response_code": "WITHIN"},
+                {"respondent_type": "PROFESSIONAL", "label": "Almoxarife 02", "group_label": "Suprimentos", "response_code": "WITHIN"},
+                {"respondent_type": "PROFESSIONAL", "label": "Profissional 11", "group_label": "Apoio", "response_code": "OUTSIDE"},
+                {"respondent_type": "PROFESSIONAL", "label": "Profissional 12", "group_label": "Apoio", "response_code": "OUTSIDE"},
+            ],
+            classes_sampled="Painel tecnico intersetorial",
+            test_date=date.today() - timedelta(days=4),
+            weather_context="Sala climatizada",
+            serving_time="14:10",
+            positive_feedback="Textura e acidez aprovadas pela maior parte do painel.",
+            negative_feedback=f"{DEMO_MARKER} Ajustar leve excesso de dulcor.",
+            notes=f"{DEMO_MARKER} Teste dentro-fora do padrao com profissionais.",
+            created_by=users["nutritionist"],
+        )
 
     def _ensure_suppliers_and_receipts(self, admin, schools, supplies):
         suppliers_data = [

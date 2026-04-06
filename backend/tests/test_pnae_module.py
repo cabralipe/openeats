@@ -1,9 +1,11 @@
+from datetime import date, timedelta
+
 from django.contrib.auth import get_user_model
 import pytest
 from rest_framework.test import APIClient
 
 from inventory.models import Supply
-from pnae.models import PnaeAnnualPlan, PnaeAnnualPlanItem
+from pnae.models import PnaeAcceptabilityTest, PnaeAnnualPlan, PnaeAnnualPlanItem
 from recipes.models import Recipe, RecipeIngredient
 from schools.models import EducationModality, EducationStage, Municipality, School
 
@@ -391,6 +393,210 @@ def test_cae_role_sees_only_non_draft_plans(api_client, cae_user, manager_user, 
     assert response.status_code == 200, response.data
     assert len(response.data) == 1
     assert response.data[0]['id'] == str(approved_plan.id)
+
+
+def test_acceptability_test_hedonic_uses_manual_threshold(api_client, manager_user, school):
+    client = _auth(api_client, manager_user)
+
+    response = client.post(
+        '/api/pnae/acceptability-tests/',
+        {
+            'school': str(school.id),
+            'method': 'HEDONIC',
+            'objective': 'NEW_OR_ATYPICAL',
+            'analysis_scope': 'PREPARATION',
+            'service_mode': 'CAFETERIA',
+            'preparation_name': 'Arroz colorido',
+            'test_date': '2026-04-06',
+            'loved_count': 10,
+            'liked_count': 7,
+            'indifferent_count': 2,
+            'disliked_count': 1,
+            'hated_count': 0,
+            'eligible_students_count': 120,
+            'adhered_students_count': 96,
+        },
+        format='json',
+    )
+
+    assert response.status_code == 201, response.data
+    created = PnaeAcceptabilityTest.objects.get(id=response.data['id'])
+    assert float(created.acceptance_index) == pytest.approx(85.0)
+    assert float(created.minimum_threshold) == pytest.approx(85.0)
+    assert created.approved is True
+    assert created.adhesion_classification == PnaeAcceptabilityTest.AdhesionClassification.HIGH
+
+
+def test_acceptability_test_accepts_individual_entries(api_client, manager_user, school):
+    client = _auth(api_client, manager_user)
+
+    response = client.post(
+        '/api/pnae/acceptability-tests/',
+        {
+            'school': str(school.id),
+            'method': 'HEDONIC',
+            'objective': 'NEW_OR_ATYPICAL',
+            'analysis_scope': 'PREPARATION',
+            'service_mode': 'CAFETERIA',
+            'preparation_name': 'Bolo de milho',
+            'respondent_profile': 'STUDENT',
+            'respondent_entries': [
+                {'respondent_type': 'STUDENT', 'label': 'Aluno 1', 'group_label': '5A', 'response_code': 'LOVED'},
+                {'respondent_type': 'STUDENT', 'label': 'Aluno 2', 'group_label': '5A', 'response_code': 'LIKED'},
+                {'respondent_type': 'STUDENT', 'label': 'Aluno 3', 'group_label': '5A', 'response_code': 'LIKED'},
+                {'respondent_type': 'STUDENT', 'label': 'Aluno 4', 'group_label': '5A', 'response_code': 'INDIFFERENT'},
+            ],
+            'test_date': '2026-04-06',
+            'eligible_students_count': 30,
+        },
+        format='json',
+    )
+
+    assert response.status_code == 201, response.data
+    created = PnaeAcceptabilityTest.objects.get(id=response.data['id'])
+    assert created.participants_count == 4
+    assert created.loved_count == 1
+    assert created.liked_count == 2
+    assert created.indifferent_count == 1
+    assert len(created.respondent_entries) == 4
+    assert float(created.acceptance_index) == pytest.approx(75.0)
+    assert created.approved is False
+
+
+def test_acceptability_test_rest_ingestion_calculates_rejection(api_client, manager_user, school):
+    client = _auth(api_client, manager_user)
+
+    response = client.post(
+        '/api/pnae/acceptability-tests/',
+        {
+            'school': str(school.id),
+            'method': 'REST_INGESTION',
+            'objective': 'RECURRING_MENU',
+            'analysis_scope': 'MENU',
+            'service_mode': 'CAFETERIA',
+            'preparation_name': 'Almoco de segunda',
+            'test_date': '2026-04-06',
+            'prepared_weight': 20,
+            'leftover_weight': 2,
+            'plate_waste_weight': 1,
+            'non_edible_weight': 0,
+        },
+        format='json',
+    )
+
+    assert response.status_code == 201, response.data
+    created = PnaeAcceptabilityTest.objects.get(id=response.data['id'])
+    assert float(created.distributed_weight) == pytest.approx(18.0)
+    assert float(created.rejection_index) == pytest.approx(5.56, abs=0.01)
+    assert float(created.acceptance_index) == pytest.approx(94.44, abs=0.01)
+    assert float(created.minimum_threshold) == pytest.approx(90.0)
+    assert created.approved is True
+
+
+def test_acceptability_retest_requires_minimum_bimester(api_client, manager_user, school):
+    client = _auth(api_client, manager_user)
+    failed_test = PnaeAcceptabilityTest.objects.create(
+        school=school,
+        method=PnaeAcceptabilityTest.Method.HEDONIC,
+        objective=PnaeAcceptabilityTest.Objective.NEW_OR_ATYPICAL,
+        analysis_scope=PnaeAcceptabilityTest.AnalysisScope.PREPARATION,
+        service_mode=PnaeAcceptabilityTest.ServiceMode.CAFETERIA,
+        preparation_name='Sopa de legumes',
+        test_date=date(2026, 4, 1),
+        loved_count=2,
+        liked_count=4,
+        indifferent_count=4,
+        disliked_count=3,
+        hated_count=2,
+        created_by=manager_user,
+    )
+
+    early_response = client.post(
+        '/api/pnae/acceptability-tests/',
+        {
+            'school': str(school.id),
+            'previous_test': str(failed_test.id),
+            'method': 'HEDONIC',
+            'objective': 'NEW_OR_ATYPICAL',
+            'analysis_scope': 'PREPARATION',
+            'service_mode': 'CAFETERIA',
+            'preparation_name': 'Sopa de legumes',
+            'test_date': '2026-05-15',
+            'loved_count': 4,
+            'liked_count': 5,
+            'indifferent_count': 2,
+            'disliked_count': 1,
+            'hated_count': 0,
+        },
+        format='json',
+    )
+
+    assert early_response.status_code == 400
+    assert 'bimestre' in str(early_response.data).lower()
+
+    valid_response = client.post(
+        '/api/pnae/acceptability-tests/',
+        {
+            'school': str(school.id),
+            'previous_test': str(failed_test.id),
+            'method': 'HEDONIC',
+            'objective': 'NEW_OR_ATYPICAL',
+            'analysis_scope': 'PREPARATION',
+            'service_mode': 'CAFETERIA',
+            'preparation_name': 'Sopa de legumes',
+            'test_date': '2026-06-10',
+            'loved_count': 8,
+            'liked_count': 7,
+            'indifferent_count': 1,
+            'disliked_count': 1,
+            'hated_count': 0,
+        },
+        format='json',
+    )
+
+    assert valid_response.status_code == 201, valid_response.data
+    created = PnaeAcceptabilityTest.objects.get(id=valid_response.data['id'])
+    assert created.attempt_number == failed_test.attempt_number + 1
+
+
+def test_cae_role_sees_only_approved_acceptability_tests(api_client, cae_user, manager_user, school):
+    PnaeAcceptabilityTest.objects.create(
+        school=school,
+        method=PnaeAcceptabilityTest.Method.HEDONIC,
+        objective=PnaeAcceptabilityTest.Objective.NEW_OR_ATYPICAL,
+        analysis_scope=PnaeAcceptabilityTest.AnalysisScope.PREPARATION,
+        service_mode=PnaeAcceptabilityTest.ServiceMode.CAFETERIA,
+        preparation_name='Panqueca de banana',
+        test_date=date.today() - timedelta(days=80),
+        loved_count=10,
+        liked_count=8,
+        indifferent_count=1,
+        disliked_count=1,
+        hated_count=0,
+        created_by=manager_user,
+    )
+    PnaeAcceptabilityTest.objects.create(
+        school=school,
+        method=PnaeAcceptabilityTest.Method.HEDONIC,
+        objective=PnaeAcceptabilityTest.Objective.NEW_OR_ATYPICAL,
+        analysis_scope=PnaeAcceptabilityTest.AnalysisScope.PREPARATION,
+        service_mode=PnaeAcceptabilityTest.ServiceMode.CAFETERIA,
+        preparation_name='Pure de batata',
+        test_date=date.today(),
+        loved_count=2,
+        liked_count=3,
+        indifferent_count=4,
+        disliked_count=3,
+        hated_count=2,
+        created_by=manager_user,
+    )
+
+    client = _auth(api_client, cae_user)
+    response = client.get('/api/pnae/acceptability-tests/')
+
+    assert response.status_code == 200, response.data
+    assert len(response.data) == 1
+    assert response.data[0]['preparation_name'] == 'Panqueca de banana'
 
 
 def test_pnae_acceptance_suite_runs_inside_platform_and_rolls_back(api_client, manager_user):

@@ -2,6 +2,7 @@ from rest_framework.routers import DefaultRouter
 
 from .acceptance import PnaeAcceptanceSuiteViewSet
 from .views import (
+    PnaeAcceptabilityTestViewSet,
     PnaeAnnualActionViewSet,
     PnaeAnnualBudgetItemViewSet,
     PnaeAnnualEvaluationToolViewSet,
@@ -15,6 +16,7 @@ from .views import (
 router = DefaultRouter()
 router.register(r'plans', PnaeAnnualPlanViewSet, basename='pnae-annual-plan')
 router.register(r'acceptance-tests', PnaeAcceptanceSuiteViewSet, basename='pnae-acceptance-tests')
+router.register(r'acceptability-tests', PnaeAcceptabilityTestViewSet, basename='pnae-acceptability-test')
 router.register(r'plan-items', PnaeAnnualPlanItemViewSet, basename='pnae-annual-plan-item')
 router.register(r'plan-goals', PnaeAnnualGoalViewSet, basename='pnae-annual-goal')
 router.register(r'plan-actions', PnaeAnnualActionViewSet, basename='pnae-annual-action')

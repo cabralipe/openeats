@@ -351,6 +351,118 @@ export async function getPnaeDashboard() {
   return apiFetch('/api/pnae/plans/dashboard/');
 }
 
+export async function getPnaeAcceptabilityDashboard() {
+  return apiFetch('/api/pnae/acceptability-tests/dashboard/');
+}
+
+export async function getPnaeAcceptabilityTests(params?: {
+  school?: string;
+  method?: string;
+  approved?: boolean;
+  objective?: string;
+  date_from?: string;
+  date_to?: string;
+}) {
+  const search = buildQueryString(params);
+  return apiFetch(`/api/pnae/acceptability-tests/${search ? `?${search}` : ''}`);
+}
+
+export async function createPnaeAcceptabilityTest(payload: {
+  school: string;
+  menu?: string | null;
+  recipe?: string | null;
+  previous_test?: string | null;
+  method: string;
+  objective: string;
+  analysis_scope: string;
+  service_mode: string;
+  preparation_name: string;
+  target_group?: string;
+  respondent_profile?: string;
+  respondent_entries?: Array<{
+    respondent_type: string;
+    label?: string;
+    group_label?: string;
+    response_code: string;
+  }>;
+  classes_sampled?: string;
+  test_date: string;
+  weather_context?: string;
+  serving_time?: string;
+  eligible_students_count?: number | null;
+  adhered_students_count?: number | null;
+  loved_count?: number;
+  liked_count?: number;
+  indifferent_count?: number;
+  disliked_count?: number;
+  hated_count?: number;
+  within_count?: number;
+  outside_count?: number;
+  prepared_weight?: number | string;
+  leftover_weight?: number | string;
+  plate_waste_weight?: number | string;
+  non_edible_weight?: number | string;
+  positive_feedback?: string;
+  negative_feedback?: string;
+  notes?: string;
+}) {
+  return apiFetch('/api/pnae/acceptability-tests/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updatePnaeAcceptabilityTest(id: string, payload: Partial<{
+  school: string;
+  menu: string | null;
+  recipe: string | null;
+  previous_test: string | null;
+  method: string;
+  objective: string;
+  analysis_scope: string;
+  service_mode: string;
+  preparation_name: string;
+  target_group: string;
+  respondent_profile: string;
+  respondent_entries: Array<{
+    respondent_type: string;
+    label?: string;
+    group_label?: string;
+    response_code: string;
+  }>;
+  classes_sampled: string;
+  test_date: string;
+  weather_context: string;
+  serving_time: string;
+  eligible_students_count: number | null;
+  adhered_students_count: number | null;
+  loved_count: number;
+  liked_count: number;
+  indifferent_count: number;
+  disliked_count: number;
+  hated_count: number;
+  within_count: number;
+  outside_count: number;
+  prepared_weight: number | string;
+  leftover_weight: number | string;
+  plate_waste_weight: number | string;
+  non_edible_weight: number | string;
+  positive_feedback: string;
+  negative_feedback: string;
+  notes: string;
+}>) {
+  return apiFetch(`/api/pnae/acceptability-tests/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deletePnaeAcceptabilityTest(id: string) {
+  return apiFetch(`/api/pnae/acceptability-tests/${id}/`, {
+    method: 'DELETE',
+  });
+}
+
 export async function getPnaeAcceptanceCatalog() {
   return apiFetch('/api/pnae/acceptance-tests/');
 }

@@ -113,7 +113,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       '/admin/supplier-receipts': 'Recebimentos',
       '/admin/recipes': 'Receitas',
       '/admin/pnae': 'Planejamento PNAE',
-      '/admin/pnae-tests': 'Testes PNAE',
+      '/admin/pnae-tests': 'Aceitabilidade PNAE',
       '/admin/editor': 'Editor de Cardápio',
       '/admin/reports': 'Relatórios',
       '/admin/audit': 'Auditoria',
@@ -181,7 +181,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           <NavItem icon="receipt_long" label="Recebimentos" path="/admin/supplier-receipts" current={location.pathname} onClick={() => navigate('/admin/supplier-receipts')} />
           <NavItem icon="menu_book" label="Receitas" path="/admin/recipes" current={location.pathname} onClick={() => navigate('/admin/recipes')} />
           {canAccessPnae ? <NavItem icon="assignment" label="PNAE" path="/admin/pnae" current={location.pathname} onClick={() => navigate('/admin/pnae')} /> : null}
-          {canAccessPnae ? <NavItem icon="fact_check" label="Testes PNAE" path="/admin/pnae-tests" current={location.pathname} onClick={() => navigate('/admin/pnae-tests')} /> : null}
+          {canAccessPnae ? <NavItem icon="fact_check" label="Aceitabilidade PNAE" path="/admin/pnae-tests" current={location.pathname} onClick={() => navigate('/admin/pnae-tests')} /> : null}
 
           <div className="pt-4 pb-2">
             <p className="px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Operações</p>

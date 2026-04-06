@@ -12,6 +12,7 @@ from rest_framework.response import Response
 from accounts.permissions import CanAccessPnaeModule, scope_queryset_by_municipality
 
 from .models import (
+    PnaeAcceptabilityTest,
     PnaeAnnualAction,
     PnaeAnnualBudgetItem,
     PnaeAnnualEvaluationTool,
@@ -23,6 +24,7 @@ from .models import (
     PnaeAnnualScheduleEntry,
 )
 from .serializers import (
+    PnaeAcceptabilityTestSerializer,
     PnaeAnnualActionSerializer,
     PnaeAnnualBudgetItemSerializer,
     PnaeAnnualEvaluationToolSerializer,
@@ -450,3 +452,69 @@ class PnaeAnnualPlanMonthlyExecutionViewSet(PlanScopedQuerysetMixin, viewsets.Mo
         if serializer.instance.plan.status != PnaeAnnualPlan.Status.APPROVED:
             raise PermissionDenied('A execucao mensal so pode ser atualizada para planos aprovados.')
         serializer.save(last_updated_by=self.request.user)
+
+
+class PnaeAcceptabilityTestViewSet(viewsets.ModelViewSet):
+    queryset = PnaeAcceptabilityTest.objects.select_related(
+        'school',
+        'school__municipality',
+        'menu',
+        'recipe',
+        'previous_test',
+        'created_by',
+    ).all()
+    serializer_class = PnaeAcceptabilityTestSerializer
+    permission_classes = [permissions.IsAuthenticated, CanAccessPnaeModule]
+
+    def get_queryset(self):
+        queryset = scope_queryset_by_municipality(super().get_queryset(), self.request.user, lookup='school__municipality_id')
+        if getattr(self.request.user, 'is_pnae_viewer_restricted', False):
+            queryset = queryset.filter(approved=True)
+        school = self.request.query_params.get('school')
+        method = self.request.query_params.get('method')
+        approved = self.request.query_params.get('approved')
+        objective = self.request.query_params.get('objective')
+        date_from = self.request.query_params.get('date_from')
+        date_to = self.request.query_params.get('date_to')
+        if school:
+            queryset = queryset.filter(school_id=school)
+        if method:
+            queryset = queryset.filter(method=method)
+        if objective:
+            queryset = queryset.filter(objective=objective)
+        if approved in {'true', 'false'}:
+            queryset = queryset.filter(approved=approved == 'true')
+        if date_from:
+            queryset = queryset.filter(test_date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(test_date__lte=date_to)
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+    @action(detail=False, methods=['get'], url_path='dashboard')
+    def dashboard(self, request):
+        queryset = self.get_queryset()
+        method_counts = {
+            method: queryset.filter(method=method).count()
+            for method, _ in PnaeAcceptabilityTest.Method.choices
+        }
+        approved_count = queryset.filter(approved=True).count()
+        failed_count = queryset.filter(approved=False).count()
+        pending_retest = queryset.filter(approved=False, next_retest_date__isnull=False).count()
+        low_adhesion = queryset.filter(
+            adhesion_classification__in=[
+                PnaeAcceptabilityTest.AdhesionClassification.LOW,
+                PnaeAcceptabilityTest.AdhesionClassification.VERY_LOW,
+            ]
+        ).count()
+        return Response({
+            'total_tests': queryset.count(),
+            'approved_tests': approved_count,
+            'failed_tests': failed_count,
+            'pending_retest': pending_retest,
+            'low_adhesion_tests': low_adhesion,
+            'tests_by_method': method_counts,
+            'latest_tests': PnaeAcceptabilityTestSerializer(queryset[:5], many=True, context={'request': request}).data,
+        })

@@ -28,7 +28,7 @@ const navItems: NavItem[] = [
 const moreNavItems: NavItem[] = [
   { icon: 'menu_book', label: 'Receitas', path: '/admin/recipes' },
   { icon: 'assignment', label: 'PNAE', path: '/admin/pnae' },
-  { icon: 'fact_check', label: 'Testes PNAE', path: '/admin/pnae-tests' },
+  { icon: 'fact_check', label: 'Aceitabilidade PNAE', path: '/admin/pnae-tests' },
   { icon: 'edit_calendar', label: 'Editor', path: '/admin/editor' },
   { icon: 'calculate', label: 'Calculadora Produção', path: '/admin/production-calculator' },
   { icon: 'insert_chart', label: 'Relatórios', path: '/admin/reports' },

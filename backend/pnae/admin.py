@@ -1,6 +1,7 @@
 from django.contrib import admin
 
 from .models import (
+    PnaeAcceptabilityTest,
     PnaeAnnualAction,
     PnaeAnnualBudgetItem,
     PnaeAnnualEvaluationTool,
@@ -157,3 +158,46 @@ class PnaeAnnualPlanMonthlyExecutionAdmin(admin.ModelAdmin):
     search_fields = ('plan__school__name', 'execution_notes', 'deviation_notes', 'last_updated_by__email')
     autocomplete_fields = ('plan', 'last_updated_by')
     readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(PnaeAcceptabilityTest)
+class PnaeAcceptabilityTestAdmin(admin.ModelAdmin):
+    list_display = (
+        'test_date',
+        'school',
+        'preparation_name',
+        'method',
+        'analysis_scope',
+        'acceptance_index',
+        'minimum_threshold',
+        'approved',
+        'attempt_number',
+    )
+    list_filter = (
+        'method',
+        'objective',
+        'analysis_scope',
+        'service_mode',
+        'approved',
+        'school__municipality',
+        'school',
+    )
+    search_fields = ('preparation_name', 'school__name', 'target_group', 'notes')
+    autocomplete_fields = ('school', 'menu', 'recipe', 'previous_test', 'created_by')
+    readonly_fields = (
+        'weekday_label',
+        'participants_count',
+        'distributed_weight',
+        'attempt_number',
+        'minimum_threshold',
+        'rejection_index',
+        'acceptance_index',
+        'adhesion_index',
+        'adhesion_classification',
+        'approved',
+        'next_retest_date',
+        'recommendation',
+        'created_at',
+        'updated_at',
+    )
+    date_hierarchy = 'test_date'
