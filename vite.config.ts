@@ -25,7 +25,7 @@ export default defineConfig(({ mode }) => {
     return {
       base: assetBase,
       server: {
-        port: 3000,
+        port: 5173,
         host: '0.0.0.0',
         proxy,
       },
