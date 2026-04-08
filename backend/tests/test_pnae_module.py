@@ -1,11 +1,23 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 import pytest
 from rest_framework.test import APIClient
 
 from inventory.models import Supply
-from pnae.models import PnaeAcceptabilityTest, PnaeAnnualPlan, PnaeAnnualPlanItem
+from pnae.models import (
+    PnaeAcceptabilityTest,
+    PnaeAnnualAction,
+    PnaeAnnualBudgetItem,
+    PnaeAnnualEvaluationTool,
+    PnaeAnnualGoal,
+    PnaeAnnualPlan,
+    PnaeAnnualPlanItem,
+    PnaeAnnualPlanMonthlyExecution,
+    PnaeAnnualPlanWorkflowEvent,
+    PnaeAnnualScheduleEntry,
+)
 from recipes.models import Recipe, RecipeIngredient
 from schools.models import EducationModality, EducationStage, Municipality, School
 
@@ -297,6 +309,33 @@ def test_workflow_actions_lock_plan_after_approval(api_client, manager_user, sch
     assert 'bloqueado' in str(patch_response.data).lower()
 
 
+def test_archived_plan_can_be_reopened_with_workflow_event(api_client, manager_user, school):
+    client = _auth(api_client, manager_user)
+    plan = PnaeAnnualPlan.objects.create(
+        school=school,
+        year=2026,
+        title='Plano arquivado',
+        created_by=manager_user,
+        status=PnaeAnnualPlan.Status.ARCHIVED,
+    )
+
+    response = client.post(
+        f'/api/pnae/plans/{plan.id}/reopen/',
+        {'comment': 'Retornar para ajustes finais.'},
+        format='json',
+    )
+
+    assert response.status_code == 200, response.data
+    plan.refresh_from_db()
+    assert plan.status == PnaeAnnualPlan.Status.DRAFT
+    assert plan.last_review_comment == 'Retornar para ajustes finais.'
+
+    event = plan.workflow_events.get(action=PnaeAnnualPlanWorkflowEvent.Action.REOPENED)
+    assert event.actor == manager_user
+    assert event.from_status == PnaeAnnualPlan.Status.ARCHIVED
+    assert event.to_status == PnaeAnnualPlan.Status.DRAFT
+
+
 def test_operational_summary_aggregates_recipe_demand_and_stock_gaps(
     api_client,
     manager_user,
@@ -343,6 +382,134 @@ def test_operational_summary_aggregates_recipe_demand_and_stock_gaps(
     assert detail['procurement'][0]['supply_name'] == 'Arroz'
     assert detail['procurement'][0]['school_shortage'] > 0
     assert detail['menu_projection']
+
+
+def test_pnae_plan_export_pdf_returns_formal_accountability_document(
+    api_client,
+    manager_user,
+    school,
+    stage,
+    modality,
+):
+    client = _auth(api_client, manager_user)
+    school.education_stages.add(stage)
+    school.education_modalities.add(modality)
+
+    supply = Supply.objects.create(name='Feijao', unit='kg', min_stock=0)
+    recipe = Recipe.objects.create(name='Feijao tropeiro', servings_base=100)
+    RecipeIngredient.objects.create(
+        recipe=recipe,
+        supply=supply,
+        qty_base=7,
+        unit='kg',
+        net_weight=7,
+        unit_cost=4.5,
+    )
+
+    plan = PnaeAnnualPlan.objects.create(
+        school=school,
+        year=2026,
+        title='Plano anual formal',
+        justification='Consolidar o atendimento alimentar da rede municipal.',
+        diagnosis_summary='Diagnostico com foco em regularidade de abastecimento e aceitabilidade.',
+        general_objectives='Garantir oferta regular, adequada e monitorada.',
+        operational_strategy='Execucao com planejamento mensal, monitoramento e reposicao preventiva.',
+        execution_locations='Cozinha escolar e refeitorio.',
+        executing_agency='Secretaria Municipal de Educacao',
+        financial_schedule_notes='Prestacao com acompanhamento por categoria de despesa.',
+        notes='Documento emitido para arquivo institucional e auditoria.',
+        created_by=manager_user,
+        status=PnaeAnnualPlan.Status.APPROVED,
+        approved_by=manager_user,
+        approved_at=timezone.make_aware(datetime(2026, 2, 20, 9, 0)),
+        submitted_by=manager_user,
+    )
+    PnaeAnnualPlanItem.objects.create(
+        plan=plan,
+        education_stage=stage,
+        education_modality=modality,
+        month=3,
+        meal_type='LUNCH',
+        recipe=recipe,
+        servings_planned=180,
+        weekly_frequency=5,
+        notes='Preparacao central para turma regular.',
+    )
+    PnaeAnnualGoal.objects.create(
+        plan=plan,
+        title='Ampliar regularidade de atendimento',
+        description='Meta voltada ao atendimento continuo das refeicoes.',
+        indicator='Percentual de cobertura mensal',
+        target_value=98,
+        current_value=92,
+        due_date=date(2026, 12, 20),
+        order=1,
+    )
+    PnaeAnnualAction.objects.create(
+        plan=plan,
+        title='Monitorar consumo e estoque',
+        description='Acompanhamento mensal com registro de desvios e reposicoes.',
+        responsible_sector='Nutricao escolar',
+        start_date=date(2026, 3, 1),
+        end_date=date(2026, 11, 30),
+        status=PnaeAnnualAction.Status.IN_PROGRESS,
+        order=1,
+    )
+    PnaeAnnualScheduleEntry.objects.create(
+        plan=plan,
+        month=3,
+        activity='Conferencia de cardapio e estoque',
+        expected_result='Abastecimento regular e validado.',
+        order=1,
+    )
+    PnaeAnnualBudgetItem.objects.create(
+        plan=plan,
+        category='Generos alimenticios',
+        description='Compra regular de itens secos e proteicos.',
+        funding_source='FNDE / PNAE',
+        estimated_amount=12000,
+        executed_amount=8450,
+        order=1,
+    )
+    PnaeAnnualEvaluationTool.objects.create(
+        plan=plan,
+        name='Checklist mensal',
+        description='Instrumento padrao para conformidade operacional.',
+        frequency='Mensal',
+        target_audience='Equipe escolar',
+        order=1,
+    )
+    PnaeAnnualPlanMonthlyExecution.objects.create(
+        plan=plan,
+        month=3,
+        status=PnaeAnnualPlanMonthlyExecution.Status.IN_PROGRESS,
+        progress_percent=76,
+        planned_servings=720,
+        executed_servings=548,
+        execution_notes='Execucao mantida com ajuste pontual de insumo.',
+        deviation_notes='Atraso pontual de entrega no inicio do mes.',
+        evidence_links=['https://example.local/evidencia/marco'],
+        last_updated_by=manager_user,
+    )
+    PnaeAnnualPlanWorkflowEvent.objects.create(
+        plan=plan,
+        action=PnaeAnnualPlanWorkflowEvent.Action.APPROVED,
+        actor=manager_user,
+        from_status=PnaeAnnualPlan.Status.IN_REVIEW,
+        to_status=PnaeAnnualPlan.Status.APPROVED,
+        comment='Plano homologado para execucao e prestacao de contas.',
+    )
+
+    response = client.get(f'/api/pnae/plans/{plan.id}/export-pdf/?month=3')
+
+    assert response.status_code == 200, response.content[:200]
+    assert response['Content-Type'].startswith('application/pdf')
+    assert response['Content-Disposition'] == f'attachment; filename="pnae-{plan.id}.pdf"'
+    assert response.content.startswith(b'%PDF')
+    assert len(response.content) > 12000
+    assert b'Programa Nacional de Alimentacao Escolar' in response.content
+    assert b'Sumario' in response.content
+    assert b'Plano anual formal' in response.content
 
 
 def test_municipality_scope_limits_non_admin_visibility(

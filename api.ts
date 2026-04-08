@@ -118,7 +118,7 @@ export async function ensureValidAccessToken(): Promise<string | null> {
   return token;
 }
 
-async function apiFetch<T>(path: string, options: RetryableFetchOptions = {}): Promise<T> {
+async function apiFetch<T = any>(path: string, options: RetryableFetchOptions = {}): Promise<T> {
   const headers = new Headers(options.headers || {});
   headers.set('Content-Type', 'application/json');
 
@@ -222,6 +222,35 @@ export async function getSchools(params?: { q?: string; city?: string; address?:
 
 export async function getSchoolStock(schoolId: string) {
   return apiFetch(`/api/schools/${schoolId}/stock/`);
+}
+
+export async function getSchoolConsumption(schoolId: string) {
+  return apiFetch(`/api/schools/${schoolId}/consumption/`);
+}
+
+export async function submitSchoolConsumption(
+  schoolId: string,
+  payload: { items: Array<{ supply: string; quantity: number; movement_date: string; note?: string }> },
+) {
+  return apiFetch(`/api/schools/${schoolId}/consumption/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getSchoolMealService(schoolId: string, serviceDate?: string) {
+  const search = buildQueryString({ date: serviceDate });
+  return apiFetch(`/api/schools/${schoolId}/meal-service/${search ? `?${search}` : ''}`);
+}
+
+export async function submitSchoolMealService(
+  schoolId: string,
+  payload: { service_date: string; items: Array<{ meal_type: string; served_count: number }> },
+) {
+  return apiFetch(`/api/schools/${schoolId}/meal-service/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 
@@ -495,6 +524,13 @@ export async function rejectPnaePlan(id: string, comment?: string) {
   });
 }
 
+export async function reopenPnaePlan(id: string, comment?: string) {
+  return apiFetch(`/api/pnae/plans/${id}/reopen/`, {
+    method: 'POST',
+    body: JSON.stringify({ comment: comment || '' }),
+  });
+}
+
 export async function getPnaeOperationalSummary(id: string, params?: { month?: string | number }) {
   const search = buildQueryString(params);
   return apiFetch(`/api/pnae/plans/${id}/operational-summary/${search ? `?${search}` : ''}`);
@@ -512,6 +548,16 @@ export async function generatePnaeDeliveryDraft(id: string, payload: { month: nu
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+export function exportPnaePlanPdf(id: string, params?: { month?: string | number }) {
+  const search = buildQueryString(params);
+  openAuthenticatedUrl(`/api/pnae/plans/${id}/export-pdf/${search ? `?${search}` : ''}`);
+}
+
+export function exportPnaePlanXlsx(id: string, params?: { month?: string | number }) {
+  const search = buildQueryString(params);
+  openAuthenticatedUrl(`/api/pnae/plans/${id}/export-xlsx/${search ? `?${search}` : ''}`);
 }
 
 export async function createPnaePlan(payload: {
@@ -872,6 +918,21 @@ export async function createSupplier(payload: {
   });
 }
 
+export async function updateSupplier(id: string, payload: Partial<{
+  name: string;
+  document: string;
+  contact_name: string;
+  phone: string;
+  email: string;
+  address: string;
+  is_active: boolean;
+}>) {
+  return apiFetch(`/api/suppliers/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function deleteSupplier(id: string) {
   return apiFetch(`/api/suppliers/${id}/`, {
     method: 'DELETE',
@@ -1014,9 +1075,36 @@ export async function createSupplierReceipt(payload: {
   });
 }
 
+export async function updateSupplierReceipt(receiptId: string, payload: Partial<{
+  supplier: string;
+  school: string | null;
+  expected_date: string;
+  status: string;
+  notes: string;
+  items: Array<{
+    supply?: string | null;
+    raw_name?: string;
+    category?: string;
+    unit: string;
+    expected_quantity: number;
+  }>;
+}>) {
+  return apiFetch(`/api/supplier-receipts/${receiptId}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function deleteSupplierReceipt(receiptId: string) {
   return apiFetch(`/api/supplier-receipts/${receiptId}/`, {
     method: 'DELETE',
+  });
+}
+
+export async function cancelSupplierReceipt(receiptId: string, comment?: string) {
+  return apiFetch(`/api/supplier-receipts/${receiptId}/cancel/`, {
+    method: 'POST',
+    body: JSON.stringify({ comment: comment || '' }),
   });
 }
 
@@ -1594,12 +1682,38 @@ export function exportSupplierReceiptsPdf(params?: {
   openAuthenticatedUrl(`/api/exports/supplier-receipts/pdf/${search ? `?${search}` : ''}`);
 }
 
+export function exportSupplierReceiptsXlsx(params?: {
+  supplier?: string;
+  school?: string;
+  status?: string;
+  date_from?: string;
+  date_to?: string;
+}) {
+  const cleanParams = params
+    ? Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
+    : undefined;
+  const search = cleanParams ? new URLSearchParams(cleanParams as Record<string, string>).toString() : '';
+  openAuthenticatedUrl(`/api/exports/supplier-receipts/xlsx/${search ? `?${search}` : ''}`);
+}
+
 // Helper to open URLs with authentication token as query parameter
-function openAuthenticatedUrl(url: string) {
-  const token = tokenStore.getAccess();
+async function openAuthenticatedUrl(url: string) {
+  const popup = window.open('', '_blank', 'noopener');
+  if (!popup) {
+    throw new Error('O navegador bloqueou a abertura da janela de exportacao.');
+  }
+
+  popup.document.write('<title>Gerando arquivo...</title><p style="font-family: sans-serif; padding: 16px;">Gerando arquivo...</p>');
+
+  const token = await ensureValidAccessToken();
+  if (!token) {
+    popup.close();
+    notifyAuthExpired();
+    throw new Error('Sessao expirada. Faca login novamente.');
+  }
+
   const separator = url.includes('?') ? '&' : '?';
-  const authenticatedUrl = token ? `${url}${separator}token=${token}` : url;
-  window.open(authenticatedUrl, '_blank');
+  popup.location.href = `${url}${separator}token=${encodeURIComponent(token)}`;
 }
 
 // ============ NOTIFICATIONS ============

@@ -3,6 +3,7 @@ from datetime import date, timedelta
 import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from auditlog.models import AuditLog
 from inventory.models import Delivery, DeliveryItem, Notification, SchoolStockBalance, StockBalance, StockMovement, Supply
@@ -562,3 +563,109 @@ def test_public_meal_service_get_and_submit(api_client, admin_user):
 
     report = MealServiceReport.objects.get(school=school, service_date=service_date)
     assert MealServiceEntry.objects.filter(report=report).count() == 2
+
+
+def test_admin_school_consumption_get_and_submit(api_client, admin_user):
+    api_client.force_authenticate(user=admin_user)
+    school = School.objects.create(name='Escola Consumo Admin')
+    supply = Supply.objects.create(name='Arroz Integral', category='Graos', unit=Supply.Units.KG, min_stock=4)
+    SchoolStockBalance.objects.create(school=school, supply=supply, quantity=20, min_stock=5)
+
+    list_response = api_client.get(f'/api/schools/{school.id}/consumption/')
+    assert list_response.status_code == 200
+    assert list_response.data['summary']['available_items'] == 1
+    assert list_response.data['items'][0]['supply']['name'] == 'Arroz Integral'
+
+    post_response = api_client.post(
+        f'/api/schools/{school.id}/consumption/',
+        {
+            'items': [
+                {
+                    'supply': str(supply.id),
+                    'quantity': '3.00',
+                    'movement_date': date.today().isoformat(),
+                    'note': 'Almoco regular',
+                },
+            ],
+        },
+        format='json',
+    )
+    assert post_response.status_code == 200
+    assert post_response.data['items_processed'] == 1
+    assert post_response.data['processed_items'][0]['supply_name'] == 'Arroz Integral'
+
+    school_balance = SchoolStockBalance.objects.get(school=school, supply=supply)
+    assert float(school_balance.quantity) == 17.0
+    movement = StockMovement.objects.get(school=school, supply=supply, type=StockMovement.Types.OUT)
+    assert float(movement.quantity) == 3.0
+    assert movement.created_by == admin_user
+
+
+def test_admin_school_meal_service_get_and_submit(api_client, admin_user):
+    api_client.force_authenticate(user=admin_user)
+    school = School.objects.create(name='Escola Refeicoes Admin')
+    week_start = date.today() - timedelta(days=date.today().weekday())
+    week_end = week_start + timedelta(days=4)
+    menu = Menu.objects.create(
+        school=school,
+        week_start=week_start,
+        week_end=week_end,
+        status=Menu.Status.PUBLISHED,
+        created_by=admin_user,
+    )
+    MenuItem.objects.create(
+        menu=menu,
+        day_of_week=MenuItem.DayOfWeek.MON,
+        meal_type=MenuItem.MealType.BREAKFAST_1,
+        description='Leite com pao',
+    )
+    MenuItem.objects.create(
+        menu=menu,
+        day_of_week=MenuItem.DayOfWeek.MON,
+        meal_type=MenuItem.MealType.LUNCH,
+        description='Arroz, feijao e frango',
+    )
+
+    service_date = week_start
+    get_response = api_client.get(f'/api/schools/{school.id}/meal-service/?date={service_date.isoformat()}')
+    assert get_response.status_code == 200
+    assert len(get_response.data['categories']) == 2
+
+    post_response = api_client.post(
+        f'/api/schools/{school.id}/meal-service/',
+        {
+            'service_date': service_date.isoformat(),
+            'items': [
+                {'meal_type': MenuItem.MealType.BREAKFAST_1, 'served_count': 42},
+                {'meal_type': MenuItem.MealType.LUNCH, 'served_count': 78},
+            ],
+        },
+        format='json',
+    )
+    assert post_response.status_code == 200
+    assert post_response.data['total_served'] == 120
+
+    report = MealServiceReport.objects.get(school=school, service_date=service_date)
+    assert MealServiceEntry.objects.filter(report=report).count() == 2
+
+
+def test_consumption_export_pdf_accepts_query_param_jwt(api_client, admin_user):
+    school = School.objects.create(name='Escola Exportacao')
+    supply = Supply.objects.create(name='Feijao Preto', category='Graos', unit=Supply.Units.KG, min_stock=2)
+    StockMovement.objects.create(
+        supply=supply,
+        school=school,
+        type=StockMovement.Types.OUT,
+        quantity='5.00',
+        movement_date=date.today(),
+        created_by=admin_user,
+    )
+
+    token = str(RefreshToken.for_user(admin_user).access_token)
+    api_client.force_authenticate(user=None)
+    response = api_client.get(
+        f'/api/exports/consumption/pdf/?school={school.id}&date_from={date.today().isoformat()}&date_to={date.today().isoformat()}&token={token}'
+    )
+
+    assert response.status_code == 200
+    assert response['Content-Type'] == 'application/pdf'

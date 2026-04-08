@@ -2,8 +2,6 @@ import io
 
 from openpyxl import Workbook
 from django.http import HttpResponse
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -23,6 +21,7 @@ from .models import (
     PnaeAnnualPlanWorkflowEvent,
     PnaeAnnualScheduleEntry,
 )
+from .pdf import build_pnae_plan_pdf
 from .serializers import (
     PnaeAcceptabilityTestSerializer,
     PnaeAnnualActionSerializer,
@@ -46,6 +45,7 @@ from .services import (
     generate_delivery_draft_from_plan,
     generate_menu_drafts_from_plan,
     record_workflow_event,
+    reopen_plan,
     reject_plan,
     submit_plan_for_review,
     sync_monthly_execution_snapshots,
@@ -204,6 +204,17 @@ class PnaeAnnualPlanViewSet(viewsets.ModelViewSet):
             raise ValidationError({'detail': str(exc)}) from exc
         return Response(PnaeAnnualPlanSerializer(plan, context={'request': request}).data)
 
+    @action(detail=True, methods=['post'], url_path='reopen')
+    def reopen(self, request, pk=None):
+        plan = self.get_object()
+        serializer = PnaeWorkflowActionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            reopen_plan(plan, request.user, serializer.validated_data.get('comment', ''))
+        except PnaeWorkflowError as exc:
+            raise ValidationError({'detail': str(exc)}) from exc
+        return Response(PnaeAnnualPlanSerializer(plan, context={'request': request}).data)
+
     @action(detail=True, methods=['get'], url_path='operational-summary')
     def operational_summary(self, request, pk=None):
         plan = self.get_object()
@@ -311,46 +322,8 @@ class PnaeAnnualPlanViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         selected_month = serializer.validated_data.get('month')
         operational = build_operational_summary(plan, selected_month=selected_month)
-        buffer = io.BytesIO()
-        pdf = canvas.Canvas(buffer, pagesize=A4)
-        width, height = A4
-        top = height - 40
-        pdf.setFont('Helvetica-Bold', 16)
-        pdf.drawString(40, top, 'Resumo do Plano PNAE')
-        pdf.setFont('Helvetica', 10)
-        lines = [
-            f'Plano: {plan.title or f"{plan.school.name} {plan.year}"}',
-            f'Escola: {plan.school.name}',
-            f'Municipio: {plan.school.municipality.name if plan.school.municipality else plan.city}',
-            f'Status: {plan.get_status_display()}',
-            f'Mes operacional: {operational["selected_month_label"]}',
-            f'Porcoes projetadas: {operational["detail"]["summary"]["projected_servings"]}',
-            f'Custo estimado: R$ {operational["detail"]["summary"]["estimated_cost"]:.2f}',
-            f'Itens com falta na escola: {operational["detail"]["summary"]["supplies_with_shortage"]}',
-        ]
-        cursor = top - 30
-        for line in lines:
-            pdf.drawString(40, cursor, line)
-            cursor -= 16
-        cursor -= 8
-        pdf.setFont('Helvetica-Bold', 12)
-        pdf.drawString(40, cursor, 'Compras / Estoque')
-        cursor -= 20
-        pdf.setFont('Helvetica', 9)
-        for item in operational['detail']['procurement'][:18]:
-            pdf.drawString(
-                40,
-                cursor,
-                f"{item['supply_name']} | {item['qty_needed']} {item['unit']} | falta escola {item['school_shortage']}",
-            )
-            cursor -= 14
-            if cursor < 60:
-                pdf.showPage()
-                cursor = height - 40
-                pdf.setFont('Helvetica', 9)
-        pdf.showPage()
-        pdf.save()
-        response = HttpResponse(buffer.getvalue(), content_type='application/pdf')
+        pdf_bytes = build_pnae_plan_pdf(plan, operational, generated_by=request.user)
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename="pnae-{plan.id}.pdf"'
         return response
 

@@ -2,6 +2,8 @@ import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
+pytestmark = pytest.mark.django_db
+
 
 @pytest.fixture
 def api_client():

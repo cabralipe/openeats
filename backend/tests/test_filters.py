@@ -5,6 +5,8 @@ from rest_framework.test import APIClient
 from menus.models import Menu
 from schools.models import School
 
+pytestmark = pytest.mark.django_db
+
 
 @pytest.fixture
 def api_client():

@@ -399,6 +399,7 @@ export interface PnaeAnnualPlanDetail extends PnaeAnnualPlanSummary {
   can_edit?: boolean;
   can_submit?: boolean;
   can_approve?: boolean;
+  can_reopen?: boolean;
   items: PnaeAnnualPlanItem[];
   goals: PnaeAnnualGoal[];
   actions: PnaeAnnualAction[];
@@ -438,4 +439,57 @@ export interface ConsumptionEntry {
   type: string;
   served: number;
   repetitions: number;
+}
+
+export interface SchoolConsumptionItem {
+  id: string;
+  school: string;
+  school_name: string;
+  supply: {
+    id: string;
+    name: string;
+    category: string;
+    unit: string;
+    min_stock: number;
+    is_active: boolean;
+  };
+  quantity: number;
+  min_stock: number;
+  is_low_stock: boolean;
+  status: string;
+  last_updated?: string;
+}
+
+export interface SchoolConsumptionPayload {
+  school: {
+    id: string;
+    name: string;
+    municipality_name?: string;
+  };
+  summary: {
+    available_items: number;
+    low_stock: number;
+    normal_stock: number;
+  };
+  items: SchoolConsumptionItem[];
+}
+
+export interface SchoolMealServiceCategory {
+  meal_type: string;
+  meal_label: string;
+  items: string[];
+}
+
+export interface SchoolMealServicePayload {
+  school: string;
+  school_name: string;
+  service_date: string;
+  weekday: string;
+  menu: {
+    id: string;
+    week_start: string;
+    week_end: string;
+  } | null;
+  categories: SchoolMealServiceCategory[];
+  existing_entries: Record<string, number>;
 }

@@ -1,7 +1,6 @@
 from datetime import date
 from django.http import HttpResponse
 
-from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from django.db import transaction
 from django.utils import timezone
@@ -11,20 +10,26 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from inventory.models import Delivery, SchoolStockBalance, StockBalance, StockMovement, Supply
-from inventory.models import DeliveryItemLot, LotBalanceSchool, SupplyLot
+from inventory.models import DeliveryItemLot, SupplyLot
 from inventory.serializers import (
     DeliveryConferenceInputSerializer,
     PublicConsumptionInputSerializer,
     PublicDeliverySerializer,
     SupplySerializer,
 )
-from inventory.services.lots import credit_lot_school, debit_lot_central, debit_lot_school, fefo_suggestion_service
-from menus.models import MealServiceEntry, MealServiceReport, Menu, MenuItem
+from inventory.services.lots import credit_lot_school, debit_lot_central
+from menus.models import Menu, MenuItem
 from menus.serializers import MenuSerializer
 from menus.utils import generate_menu_pdf
 from production.serializers import MenuProductionCalculateSerializer
 from production.services.production_calc import calculate_for_menu
 from schools.models import School
+from schools.operations import (
+    MealServiceInputSerializer,
+    apply_school_consumption,
+    get_meal_service_payload,
+    save_meal_service_report,
+)
 from schools.serializers import SchoolPublicSerializer
 
 
@@ -240,7 +245,218 @@ class PublicDeliveryCurrentView(PublicBaseView):
             if delivery.status not in (Delivery.Status.SENT, Delivery.Status.IN_CONFERENCE):
                 raise PermissionDenied('Entrega ainda nao enviada pela SEMED.')
 
-            step = serializer.validated_data['step']
+            payload_items = serializer.validated_data.get('items')
+            step = serializer.validated_data.get('step')
+            if not step:
+                if payload_items:
+                    step = 'legacy_complete'
+                else:
+                    raise PermissionDenied('Etapa da conferencia obrigatoria.')
+
+            def apply_item_conference(items_payload):
+                if not items_payload:
+                    raise PermissionDenied('Itens obrigatorios nesta etapa.')
+
+                delivery_items = {str(item.id): item for item in delivery.items.all()}
+                payload_ids = {str(entry['item_id']) for entry in items_payload}
+                missing_ids = set(delivery_items.keys()) - payload_ids
+                if missing_ids:
+                    raise PermissionDenied('Envie a conferencia de todos os itens da entrega.')
+
+                for entry in items_payload:
+                    item = delivery_items.get(str(entry['item_id']))
+                    if not item:
+                        raise PermissionDenied('Item da conferencia nao pertence a entrega.')
+                    item.received_quantity = entry['received_quantity']
+                    item.divergence_note = entry.get('note', '')
+                    item.save(update_fields=['received_quantity', 'divergence_note'])
+
+                    lot_rows = list(DeliveryItemLot.objects.select_for_update().select_related('lot').filter(delivery_item=item))
+                    lot_payload = entry.get('lots') or []
+                    if not lot_rows:
+                        continue
+
+                    if lot_payload:
+                        payload_by_lot = {}
+                        for lp in lot_payload:
+                            lot_id = str(lp.get('delivery_item_lot') or lp.get('id') or '')
+                            if not lot_id:
+                                raise PermissionDenied('delivery_item_lot obrigatorio na conferencia por lote.')
+                            if lot_id in payload_by_lot:
+                                raise PermissionDenied('Lotes duplicados na conferencia do item.')
+                            try:
+                                payload_by_lot[lot_id] = {
+                                    'received_quantity': Decimal(str(lp['received_quantity'])),
+                                    'note': lp.get('note', ''),
+                                }
+                            except KeyError:
+                                raise PermissionDenied('received_quantity obrigatorio na conferencia por lote.')
+
+                        if {str(row.id) for row in lot_rows} != set(payload_by_lot.keys()):
+                            raise PermissionDenied('Envie a conferencia de todos os lotes planejados do item.')
+
+                        total_lot_received = sum(payload_by_lot[str(row.id)]['received_quantity'] for row in lot_rows)
+                        if total_lot_received != entry['received_quantity']:
+                            raise PermissionDenied('Soma recebida dos lotes deve ser igual ao total do item.')
+
+                        for row in lot_rows:
+                            lot_entry = payload_by_lot[str(row.id)]
+                            row.received_quantity = lot_entry['received_quantity']
+                            row.divergence_note = lot_entry['note']
+                            row.save(update_fields=['received_quantity', 'divergence_note'])
+                        continue
+
+                    if entry['received_quantity'] != item.planned_quantity:
+                        raise PermissionDenied('Divergencia agregada com lotes planejados exige conferencia por lote.')
+                    for row in lot_rows:
+                        row.received_quantity = row.planned_quantity
+                        row.divergence_note = ''
+                        row.save(update_fields=['received_quantity', 'divergence_note'])
+
+            def finalize_delivery(*, require_signatures, receiver_sig='', receiver_name=''):
+                if require_signatures:
+                    if not receiver_sig or not receiver_name:
+                        raise PermissionDenied('Assinatura e nome do receptor obrigatorios nesta etapa.')
+                    if not delivery.sender_signature:
+                        raise PermissionDenied('Assinatura do remetente e necessaria antes de finalizar.')
+
+                delivery_items = list(delivery.items.all())
+                for item in delivery_items:
+                    if item.received_quantity is None:
+                        raise PermissionDenied('Item da entrega pendente de conferencia.')
+
+                    lot_rows = list(DeliveryItemLot.objects.select_for_update().select_related('lot').filter(delivery_item=item))
+                    for row in lot_rows:
+                        if row.received_quantity is None:
+                            raise PermissionDenied('Lote pendente de conferencia.')
+
+                for item in delivery_items:
+                    school_balance, _ = SchoolStockBalance.objects.select_for_update().get_or_create(
+                        school=school,
+                        supply=item.supply,
+                        defaults={'quantity': 0},
+                    )
+                    school_balance.quantity += item.received_quantity
+                    school_balance.save()
+
+                    lot_rows = list(DeliveryItemLot.objects.select_related('lot').filter(delivery_item=item))
+                    for row in lot_rows:
+                        received_lot_qty = row.received_quantity
+                        if received_lot_qty > 0:
+                            credit_lot_school(school=school, lot=row.lot, quantity=received_lot_qty)
+
+                    StockMovement.objects.create(
+                        supply=item.supply,
+                        school=school,
+                        type=StockMovement.Types.IN,
+                        quantity=item.received_quantity,
+                        movement_date=delivery.delivery_date,
+                        note=f"Entrada confirmada da entrega {delivery.id}.",
+                        created_by=delivery.created_by,
+                    )
+
+                for item in delivery_items:
+                    lot_rows = list(DeliveryItemLot.objects.select_for_update().select_related('lot').filter(delivery_item=item))
+                    if lot_rows:
+                        balance, _ = StockBalance.objects.select_for_update().get_or_create(supply=item.supply)
+                        for row in lot_rows:
+                            received_lot_qty = row.received_quantity
+                            adjustment = row.planned_quantity - received_lot_qty
+                            if adjustment == 0:
+                                continue
+                            if adjustment > 0:
+                                from inventory.services.lots import credit_lot_central
+
+                                credit_lot_central(row.lot, adjustment)
+                                balance.quantity += adjustment
+                                movement_type = StockMovement.Types.IN
+                                movement_note = f"Ajuste de conferencia por lote (falta) da entrega {delivery.id} lote {row.lot.lot_code}."
+                                movement_quantity = adjustment
+                            else:
+                                movement_quantity = abs(adjustment)
+                                debit_lot_central(row.lot, movement_quantity)
+                                if balance.quantity - movement_quantity < 0:
+                                    raise PermissionDenied('Saldo insuficiente para ajustar a conferencia.')
+                                balance.quantity -= movement_quantity
+                                movement_type = StockMovement.Types.OUT
+                                movement_note = f"Ajuste de conferencia por lote (excesso) da entrega {delivery.id} lote {row.lot.lot_code}."
+                            balance.save(update_fields=['quantity'])
+                            StockMovement.objects.create(
+                                supply=item.supply,
+                                school=school,
+                                type=movement_type,
+                                quantity=movement_quantity,
+                                movement_date=delivery.delivery_date,
+                                note=movement_note,
+                                created_by=delivery.created_by,
+                            )
+                        continue
+
+                    adjustment = item.planned_quantity - item.received_quantity
+                    if adjustment == 0:
+                        continue
+                    balance, _ = StockBalance.objects.select_for_update().get_or_create(supply=item.supply)
+                    if adjustment > 0:
+                        balance.quantity += adjustment
+                        movement_type = StockMovement.Types.IN
+                        movement_note = f"Ajuste de conferencia (falta) da entrega {delivery.id}."
+                        movement_quantity = adjustment
+                    else:
+                        movement_quantity = abs(adjustment)
+                        if balance.quantity - movement_quantity < 0:
+                            raise PermissionDenied('Saldo insuficiente para ajustar a conferencia.')
+                        balance.quantity -= movement_quantity
+                        movement_type = StockMovement.Types.OUT
+                        movement_note = f"Ajuste de conferencia (excesso) da entrega {delivery.id}."
+                    balance.save()
+                    StockMovement.objects.create(
+                        supply=item.supply,
+                        school=school,
+                        type=movement_type,
+                        quantity=movement_quantity,
+                        movement_date=delivery.delivery_date,
+                        note=movement_note,
+                        created_by=delivery.created_by,
+                    )
+
+                delivery.status = Delivery.Status.CONFERRED
+                delivery.conference_submitted_at = timezone.now()
+                delivery.receiver_signature = receiver_sig or delivery.receiver_signature
+                delivery.receiver_signed_by = receiver_name or delivery.receiver_signed_by
+                delivery.conference_signature = delivery.receiver_signature
+                delivery.conference_signed_by = delivery.receiver_signed_by
+                delivery.save(update_fields=[
+                    'status',
+                    'conference_submitted_at',
+                    'receiver_signature',
+                    'receiver_signed_by',
+                    'conference_signature',
+                    'conference_signed_by',
+                    'updated_at',
+                ])
+
+                from inventory.models import Notification
+
+                has_notes = any(item.divergence_note.strip() for item in delivery_items)
+                if has_notes:
+                    Notification.objects.create(
+                        notification_type=Notification.NotificationType.DELIVERY_WITH_NOTE,
+                        title=f'Entrega com observacao - {school.name}',
+                        message=f'A entrega de {delivery.delivery_date} para {school.name} foi conferida com observacoes. Verificar os itens.',
+                        delivery=delivery,
+                        school=school,
+                        is_alert=True,
+                    )
+                else:
+                    signed_by_suffix = f' por {delivery.receiver_signed_by}' if delivery.receiver_signed_by else ''
+                    Notification.objects.create(
+                        notification_type=Notification.NotificationType.DELIVERY_CONFERRED,
+                        title=f'Entrega conferida - {school.name}',
+                        message=f'A entrega de {delivery.delivery_date} para {school.name} foi conferida{signed_by_suffix}.',
+                        delivery=delivery,
+                        school=school,
+                        is_alert=False,
+                    )
 
             if step == 'sender':
                 sender_sig = serializer.validated_data.get('sender_signature_data')
@@ -254,67 +470,16 @@ class PublicDeliveryCurrentView(PublicBaseView):
                 return Response(PublicDeliverySerializer(delivery).data)
 
             elif step == 'items':
-                payload_items = serializer.validated_data.get('items')
-                if not payload_items:
-                    raise PermissionDenied('Itens obrigatorios nesta etapa.')
-                
-                delivery_items = {str(item.id): item for item in delivery.items.all()}
-                payload_ids = {str(entry['item_id']) for entry in payload_items}
-
-                missing_ids = set(delivery_items.keys()) - payload_ids
-                if missing_ids:
-                    raise PermissionDenied('Envie a conferencia de todos os itens da entrega.')
-
-                for entry in payload_items:
-                    item = delivery_items.get(str(entry['item_id']))
-                    if not item:
-                        raise PermissionDenied('Item da conferencia nao pertence a entrega.')
-                    item.received_quantity = entry['received_quantity']
-                    item.divergence_note = entry.get('note', '')
-                    item.save(update_fields=['received_quantity', 'divergence_note'])
-
-                    lot_rows = list(DeliveryItemLot.objects.select_for_update().select_related('lot').filter(delivery_item=item))
-                    lot_payload = entry.get('lots') or []
-                    if lot_rows:
-                        if lot_payload:
-                            payload_by_lot = {}
-                            for lp in lot_payload:
-                                lot_id = str(lp.get('delivery_item_lot') or lp.get('id') or '')
-                                if not lot_id:
-                                    raise PermissionDenied('delivery_item_lot obrigatorio na conferencia por lote.')
-                                if lot_id in payload_by_lot:
-                                    raise PermissionDenied('Lotes duplicados na conferencia do item.')
-                                try:
-                                    payload_by_lot[lot_id] = {
-                                        'received_quantity': lp['received_quantity'],
-                                        'note': lp.get('note', ''),
-                                    }
-                                except KeyError:
-                                    raise PermissionDenied('received_quantity obrigatorio na conferencia por lote.')
-                            if {str(r.id) for r in lot_rows} != set(payload_by_lot.keys()):
-                                raise PermissionDenied('Envie a conferencia de todos os lotes planejados do item.')
-                            total_lot_received = sum(payload_by_lot[str(r.id)]['received_quantity'] for r in lot_rows)
-                            if total_lot_received != entry['received_quantity']:
-                                raise PermissionDenied('Soma recebida dos lotes deve ser igual ao total do item.')
-                            for row in lot_rows:
-                                lp = payload_by_lot[str(row.id)]
-                                row.received_quantity = lp['received_quantity']
-                                row.divergence_note = lp['note']
-                                row.save(update_fields=['received_quantity', 'divergence_note'])
-                        else:
-                            if entry['received_quantity'] != item.planned_quantity:
-                                raise PermissionDenied(
-                                    'Divergencia agregada com lotes planejados exige conferencia por lote.'
-                                )
-                            for row in lot_rows:
-                                row.received_quantity = row.planned_quantity
-                                row.divergence_note = ''
-                                row.save(update_fields=['received_quantity', 'divergence_note'])
+                apply_item_conference(payload_items)
                 return Response(PublicDeliverySerializer(delivery).data)
 
             elif step == 'receiver':
                 receiver_sig = serializer.validated_data.get('receiver_signature_data')
                 receiver_name = serializer.validated_data.get('receiver_signer_name')
+                if payload_items:
+                    apply_item_conference(payload_items)
+                finalize_delivery(require_signatures=True, receiver_sig=receiver_sig, receiver_name=receiver_name)
+                return Response(PublicDeliverySerializer(delivery).data)
                 if not receiver_sig or not receiver_name:
                     raise PermissionDenied('Assinatura e nome do receptor obrigatorios nesta etapa.')
                 if not delivery.sender_signature:
@@ -449,6 +614,11 @@ class PublicDeliveryCurrentView(PublicBaseView):
                         is_alert=False,
                     )
 
+            elif step == 'legacy_complete':
+                apply_item_conference(payload_items)
+                finalize_delivery(require_signatures=False)
+                return Response(PublicDeliverySerializer(delivery).data)
+
         delivery = self._get_delivery(school, delivery_id=delivery_id)
         return Response(PublicDeliverySerializer(delivery).data)
 
@@ -473,6 +643,8 @@ class PublicConsumptionView(PublicBaseView):
 
         serializer = PublicConsumptionInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        result = apply_school_consumption(school, serializer.validated_data['items'])
+        return Response({'detail': result['detail']})
         items = serializer.validated_data['items']
 
         supply_ids = [item['supply'] for item in items]
@@ -641,6 +813,7 @@ class PublicMealServiceView(PublicBaseView):
             service_date = date.fromisoformat(raw_date) if raw_date else date.today()
         except ValueError:
             raise PermissionDenied('Data invalida. Use o formato YYYY-MM-DD.')
+        return Response(get_meal_service_payload(school, service_date))
 
         menu = self._resolve_menu(school, service_date)
         categories = self._build_categories(menu, service_date)
@@ -678,8 +851,20 @@ class PublicMealServiceView(PublicBaseView):
         token = request.query_params.get('token')
         self._validate_token(school, token)
 
-        serializer = PublicMealServiceInputSerializer(data=request.data)
+        serializer = MealServiceInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        report, total_served = save_meal_service_report(
+            school,
+            serializer.validated_data['service_date'],
+            serializer.validated_data['items'],
+        )
+        return Response(
+            {
+                'detail': 'Refeicoes servidas registradas com sucesso.',
+                'report_id': str(report.id),
+                'total_served': total_served,
+            }
+        )
 
         service_date = serializer.validated_data['service_date']
         menu = self._resolve_menu(school, service_date)

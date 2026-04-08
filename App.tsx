@@ -6,10 +6,12 @@ import Schools from './pages/Schools';
 import Inventory from './pages/Inventory';
 import Recipes from './pages/Recipes';
 import PnaePlanning from './pages/PnaePlanning';
+import PnaeAcceptanceSuite from './pages/PnaeAcceptanceSuite';
 import PnaeAcceptanceTests from './pages/PnaeAcceptanceTests';
 import MenuEditor from './pages/MenuEditor';
 import Deliveries from './pages/Deliveries';
 import SupplierReceipts from './pages/SupplierReceipts';
+import ConsumptionRegistry from './pages/ConsumptionRegistry';
 import Reports from './pages/Reports';
 import Audit from './pages/Audit';
 import PublicMenu from './pages/PublicMenu';
@@ -111,8 +113,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       '/admin/inventory': 'Estoque',
       '/admin/deliveries': 'Entregas',
       '/admin/supplier-receipts': 'Recebimentos',
+      '/admin/consumption-registry': 'Consumo Escolar',
       '/admin/recipes': 'Receitas',
       '/admin/pnae': 'Planejamento PNAE',
+      '/admin/pnae-suite': 'Suite PNAE',
       '/admin/pnae-tests': 'Aceitabilidade PNAE',
       '/admin/editor': 'Editor de Cardápio',
       '/admin/reports': 'Relatórios',
@@ -130,8 +134,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       '/admin/inventory': 'inventory_2',
       '/admin/deliveries': 'local_shipping',
       '/admin/supplier-receipts': 'receipt_long',
+      '/admin/consumption-registry': 'restaurant',
       '/admin/recipes': 'menu_book',
       '/admin/pnae': 'assignment',
+      '/admin/pnae-suite': 'rule',
       '/admin/pnae-tests': 'fact_check',
       '/admin/editor': 'edit_calendar',
       '/admin/reports': 'insert_chart',
@@ -179,8 +185,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           <NavItem icon="inventory_2" label="Estoque" path="/admin/inventory" current={location.pathname} onClick={() => navigate('/admin/inventory')} />
           <NavItem icon="local_shipping" label="Entregas" path="/admin/deliveries" current={location.pathname} onClick={() => navigate('/admin/deliveries')} />
           <NavItem icon="receipt_long" label="Recebimentos" path="/admin/supplier-receipts" current={location.pathname} onClick={() => navigate('/admin/supplier-receipts')} />
+          <NavItem icon="restaurant" label="Consumo Escolar" path="/admin/consumption-registry" current={location.pathname} onClick={() => navigate('/admin/consumption-registry')} />
           <NavItem icon="menu_book" label="Receitas" path="/admin/recipes" current={location.pathname} onClick={() => navigate('/admin/recipes')} />
           {canAccessPnae ? <NavItem icon="assignment" label="PNAE" path="/admin/pnae" current={location.pathname} onClick={() => navigate('/admin/pnae')} /> : null}
+          {canAccessPnae ? <NavItem icon="rule" label="Suite PNAE" path="/admin/pnae-suite" current={location.pathname} onClick={() => navigate('/admin/pnae-suite')} /> : null}
           {canAccessPnae ? <NavItem icon="fact_check" label="Aceitabilidade PNAE" path="/admin/pnae-tests" current={location.pathname} onClick={() => navigate('/admin/pnae-tests')} /> : null}
 
           <div className="pt-4 pb-2">
@@ -424,8 +432,10 @@ const App: React.FC = () => {
                 <Route path="/inventory" element={<Inventory />} />
                 <Route path="/deliveries" element={<Deliveries />} />
                 <Route path="/supplier-receipts" element={<SupplierReceipts />} />
+                <Route path="/consumption-registry" element={<ConsumptionRegistry />} />
                 <Route path="/recipes" element={<Recipes />} />
                 <Route path="/pnae" element={<PnaePlanning />} />
+                <Route path="/pnae-suite" element={<PnaeAcceptanceSuite />} />
                 <Route path="/pnae-tests" element={<PnaeAcceptanceTests />} />
                 <Route path="/editor" element={<MenuEditor />} />
                 <Route path="/production-calculator" element={<MenuProductionCalculator />} />

@@ -37,6 +37,7 @@ const mealSlots = [
 
 type DayKey = typeof days[number]['key'];
 type MealKey = typeof mealSlots[number]['key'];
+type ApiMealKey = MealKey | 'BREAKFAST' | 'SNACK';
 
 type MealContent = {
   meal_name: string;
@@ -204,7 +205,7 @@ const MenuEditor: React.FC = () => {
       const day = item.day_of_week as DayKey;
       if (!nextItems[day]) return;
 
-      let slotKey = item.meal_type as MealKey;
+      let slotKey = String(item.meal_type || '') as ApiMealKey;
       if (slotKey === 'BREAKFAST') slotKey = 'BREAKFAST1';
       if (slotKey === 'SNACK') slotKey = 'SNACK1';
       if (!nextItems[day][slotKey]) return;

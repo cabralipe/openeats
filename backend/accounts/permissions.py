@@ -54,7 +54,7 @@ class CanAccessPnaeModule(BasePermission):
             'export_xlsx',
         }:
             return bool(getattr(user, 'can_view_pnae', False))
-        if action in {'submit_review'}:
+        if action in {'submit_review', 'reopen'}:
             return bool(getattr(user, 'can_submit_pnae', False))
         if action in {'approve', 'reject'}:
             return bool(getattr(user, 'can_approve_pnae', False))

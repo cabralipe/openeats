@@ -196,6 +196,7 @@ class PnaeAnnualPlanSerializer(serializers.ModelSerializer):
     can_edit = serializers.SerializerMethodField()
     can_submit = serializers.SerializerMethodField()
     can_approve = serializers.SerializerMethodField()
+    can_reopen = serializers.SerializerMethodField()
 
     class Meta:
         model = PnaeAnnualPlan
@@ -211,6 +212,7 @@ class PnaeAnnualPlanSerializer(serializers.ModelSerializer):
             'updated_at', 'items', 'goals', 'actions', 'schedule_entries',
             'budget_items', 'evaluation_tools', 'workflow_events',
             'monthly_executions', 'can_edit', 'can_submit', 'can_approve',
+            'can_reopen',
         ]
         read_only_fields = [
             'id', 'created_by', 'created_by_name', 'responsible_nutritionist_name',
@@ -218,7 +220,7 @@ class PnaeAnnualPlanSerializer(serializers.ModelSerializer):
             'submitted_by', 'submitted_at', 'approved_by', 'approved_at',
             'rejected_by', 'rejected_at', 'created_at', 'updated_at',
             'workflow_events', 'monthly_executions', 'can_edit', 'can_submit',
-            'can_approve', 'municipality_name',
+            'can_approve', 'can_reopen', 'municipality_name',
         ]
         validators = [
             UniqueTogetherValidator(
@@ -272,6 +274,11 @@ class PnaeAnnualPlanSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         user = getattr(request, 'user', None) if request else None
         return bool(user and getattr(user, 'can_approve_pnae', False) and obj.status == PnaeAnnualPlan.Status.IN_REVIEW)
+
+    def get_can_reopen(self, obj):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None) if request else None
+        return bool(user and getattr(user, 'can_submit_pnae', False) and obj.status == PnaeAnnualPlan.Status.ARCHIVED)
 
 
 class PnaeAnnualPlanSummarySerializer(serializers.ModelSerializer):

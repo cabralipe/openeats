@@ -46,6 +46,25 @@ def test_create_supplier(api_client, admin_user):
     assert response.data['name'] == 'Fornecedor Alfa'
 
 
+def test_update_supplier(api_client, admin_user):
+    api_client.force_authenticate(user=admin_user)
+    supplier = Supplier.objects.create(
+        name='Fornecedor Ajuste',
+        document='00.000.000/0001-00',
+        contact_name='Contato Antigo',
+    )
+
+    response = api_client.patch(f'/api/suppliers/{supplier.id}/', {
+        'contact_name': 'Contato Novo',
+        'phone': '82988887777',
+    }, format='json')
+
+    assert response.status_code == 200
+    supplier.refresh_from_db()
+    assert supplier.contact_name == 'Contato Novo'
+    assert supplier.phone == '82988887777'
+
+
 def test_create_supplier_receipt_with_items(api_client, admin_user):
     api_client.force_authenticate(user=admin_user)
     supplier_response = api_client.post('/api/suppliers/', {'name': 'Fornecedor Beta'}, format='json')
@@ -88,6 +107,50 @@ def test_create_supplier_receipt_with_items(api_client, admin_user):
     assert receipt.items.count() == 2
 
 
+def test_update_supplier_receipt_replaces_items(api_client, admin_user):
+    api_client.force_authenticate(user=admin_user)
+    supplier = Supplier.objects.create(name='Fornecedor Patch')
+    school = School.objects.create(name='Escola Patch')
+    rice = Supply.objects.create(name='Arroz Patch', category='Graos', unit=Supply.Units.KG, min_stock=0)
+    beans = Supply.objects.create(name='Feijao Patch', category='Graos', unit=Supply.Units.KG, min_stock=0)
+
+    receipt = SupplierReceipt.objects.create(
+        supplier=supplier,
+        school=school,
+        expected_date=date.today(),
+        status=SupplierReceipt.Status.EXPECTED,
+        created_by=admin_user,
+        notes='Recebimento inicial',
+    )
+    SupplierReceiptItem.objects.create(
+        receipt=receipt,
+        supply=rice,
+        raw_name='',
+        category='Graos',
+        unit=Supply.Units.KG,
+        expected_quantity='10.00',
+    )
+
+    response = api_client.patch(f'/api/supplier-receipts/{receipt.id}/', {
+        'notes': 'Recebimento ajustado',
+        'items': [
+            {
+                'supply': str(beans.id),
+                'raw_name': '',
+                'category': 'Graos',
+                'unit': Supply.Units.KG,
+                'expected_quantity': '18.00',
+            },
+        ],
+    }, format='json')
+
+    assert response.status_code == 200, response.data
+    receipt.refresh_from_db()
+    assert receipt.notes == 'Recebimento ajustado'
+    assert receipt.items.count() == 1
+    assert receipt.items.first().supply == beans
+
+
 def test_filter_supplier_receipts(api_client, admin_user):
     api_client.force_authenticate(user=admin_user)
     supplier_response = api_client.post('/api/suppliers/', {'name': 'Fornecedor Gama'}, format='json')
@@ -112,6 +175,28 @@ def test_filter_supplier_receipts(api_client, admin_user):
     response = api_client.get(f'/api/supplier-receipts/?supplier={supplier_id}&status={SupplierReceipt.Status.EXPECTED}')
     assert response.status_code == 200
     assert len(response.data) == 1
+
+
+def test_cancel_supplier_receipt(api_client, admin_user):
+    api_client.force_authenticate(user=admin_user)
+    supplier = Supplier.objects.create(name='Fornecedor Cancelamento')
+    receipt = SupplierReceipt.objects.create(
+        supplier=supplier,
+        expected_date=date.today(),
+        status=SupplierReceipt.Status.EXPECTED,
+        created_by=admin_user,
+    )
+
+    response = api_client.post(
+        f'/api/supplier-receipts/{receipt.id}/cancel/',
+        {'comment': 'Entrega reagendada pelo fornecedor.'},
+        format='json',
+    )
+
+    assert response.status_code == 200, response.data
+    receipt.refresh_from_db()
+    assert receipt.status == SupplierReceipt.Status.CANCELLED
+    assert 'Cancelado: Entrega reagendada pelo fornecedor.' in receipt.notes
 
 
 def test_delete_supplier_without_history_removes_record(api_client, admin_user):
@@ -399,3 +484,28 @@ def test_supplier_receipt_submit_conference_requires_signatures(api_client, admi
         'receiver_signer_name': 'Recebedor',
     }, format='json')
     assert submit_response.status_code == 400
+
+
+def test_export_supplier_receipts_xlsx(api_client, admin_user):
+    api_client.force_authenticate(user=admin_user)
+    supplier = Supplier.objects.create(name='Fornecedor Exportacao')
+    receipt = SupplierReceipt.objects.create(
+        supplier=supplier,
+        expected_date=date.today(),
+        status=SupplierReceipt.Status.EXPECTED,
+        created_by=admin_user,
+    )
+    SupplierReceiptItem.objects.create(
+        receipt=receipt,
+        raw_name='Item Exportacao',
+        category='Mercearia',
+        unit=Supply.Units.UNIT,
+        expected_quantity='7.00',
+    )
+
+    response = api_client.get('/api/exports/supplier-receipts/xlsx/')
+
+    assert response.status_code == 200
+    assert response['Content-Type'] == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    assert response['Content-Disposition'] == 'attachment; filename="supplier_receipts.xlsx"'
+    assert len(response.content) > 100

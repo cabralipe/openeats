@@ -67,6 +67,28 @@ class EducationStage(models.Model):
         return self.name
 
 
+class SchoolManager(models.Manager):
+    def bulk_create(self, objs, **kwargs):
+        used_slugs = set(
+            self.get_queryset().values_list('public_slug', flat=True)
+        )
+        for obj in objs:
+            if obj.municipality and obj.city != obj.municipality.name:
+                obj.city = obj.municipality.name
+            if not obj.public_token:
+                obj.public_token = generate_token()
+            if not obj.public_slug:
+                base_slug = slugify(obj.name) or str(obj.id)
+                slug = base_slug
+                idx = 1
+                while slug in used_slugs:
+                    idx += 1
+                    slug = f"{base_slug}-{idx}"
+                obj.public_slug = slug
+                used_slugs.add(slug)
+        return super().bulk_create(objs, **kwargs)
+
+
 class School(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
@@ -86,6 +108,8 @@ class School(models.Model):
     public_token = models.CharField(unique=True, max_length=64, default=generate_token)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    objects = SchoolManager()
 
     def _generate_unique_slug(self):
         base_slug = slugify(self.name) or str(self.id)

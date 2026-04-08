@@ -161,11 +161,11 @@ const Dashboard: React.FC = () => {
   };
 
   const schoolsOptions = useMemo(
-    () => Array.from(new Set(servedBySchoolCategory.map((item) => item.school_name))).sort((a, b) => a.localeCompare(b)),
+    () => Array.from(new Set<string>(servedBySchoolCategory.map((item) => item.school_name))).sort((a, b) => a.localeCompare(b)),
     [servedBySchoolCategory],
   );
   const categories = useMemo(
-    () => Array.from(new Set(servedBySchoolCategory.map((item) => item.meal_label))),
+    () => Array.from(new Set<string>(servedBySchoolCategory.map((item) => item.meal_label))),
     [servedBySchoolCategory],
   );
   const categoryKeys = useMemo(

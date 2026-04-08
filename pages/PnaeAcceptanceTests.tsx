@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   createPnaeAcceptabilityTest,
   deletePnaeAcceptabilityTest,
+  getMe,
   getMenus,
   getPnaeAcceptabilityDashboard,
   getPnaeAcceptabilityTests,
@@ -23,6 +24,14 @@ type SimpleRecipe = {
   id: string;
   name: string;
   category?: string;
+};
+
+type CurrentUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  role_display?: string;
 };
 
 type AcceptabilityForm = {
@@ -95,6 +104,22 @@ const METHOD_CARDS = {
     note: 'Voltado para amostras de aquisicao. Painel recomendado de 10 a 15 provadores.',
   },
 } as const;
+
+const VIEWER_ROLES = new Set([
+  'SEMED_ADMIN',
+  'MUNICIPAL_MANAGER',
+  'NUTRITIONIST',
+  'SCHOOL_FEEDING_COORDINATOR',
+  'SCHOOL_DIRECTOR',
+  'CAE_COUNCILOR',
+]);
+
+const MANAGER_ROLES = new Set([
+  'SEMED_ADMIN',
+  'MUNICIPAL_MANAGER',
+  'NUTRITIONIST',
+  'SCHOOL_FEEDING_COORDINATOR',
+]);
 
 const OBJECTIVE_LABELS = {
   NEW_OR_ATYPICAL: 'Preparacao nova ou atipica',
@@ -178,6 +203,9 @@ const badgeTone = (approved: boolean) =>
     ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800'
     : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800';
 
+const parseErrorMessage = (error: unknown, fallback: string) =>
+  error instanceof Error && error.message.trim() ? error.message : fallback;
+
 const getResponseOptions = (method: AcceptabilityForm['method']) => (
   method === 'WITHIN_OUTSIDE'
     ? [
@@ -258,12 +286,14 @@ const SummaryCard: React.FC<{ label: string; value: string; tone?: string }> = (
 );
 
 const PnaeAcceptanceTests: React.FC = () => {
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [dashboard, setDashboard] = useState<PnaeAcceptabilityDashboard | null>(null);
   const [tests, setTests] = useState<PnaeAcceptabilityTest[]>([]);
   const [schools, setSchools] = useState<School[]>([]);
   const [menus, setMenus] = useState<SimpleMenu[]>([]);
   const [recipes, setRecipes] = useState<SimpleRecipe[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isBootstrapping, setBootstrapping] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState({ school: '', method: '', approved: '' });
@@ -294,6 +324,8 @@ const PnaeAcceptanceTests: React.FC = () => {
     () => tests.filter((item) => item.school === form.school && item.method === form.method && !item.approved && item.id !== editingTest?.id),
     [tests, form.school, form.method, editingTest?.id],
   );
+  const canViewPnae = currentUser ? VIEWER_ROLES.has(currentUser.role) : false;
+  const canManagePnae = currentUser ? MANAGER_ROLES.has(currentUser.role) : false;
 
   const loadTests = async () => {
     const response = (await getPnaeAcceptabilityTests({
@@ -318,18 +350,43 @@ const PnaeAcceptanceTests: React.FC = () => {
       setRecipes(recipeResponse as SimpleRecipe[]);
       await loadTests();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Nao foi possivel carregar a tela.');
+      setError(parseErrorMessage(err, 'Nao foi possivel carregar a tela.'));
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    void loadBase();
+    let cancelled = false;
+    const bootstrap = async () => {
+      setBootstrapping(true);
+      setError(null);
+      try {
+        const me = (await getMe()) as CurrentUser;
+        if (cancelled) return;
+        setCurrentUser(me);
+        if (VIEWER_ROLES.has(me.role)) {
+          await loadBase();
+        } else {
+          setLoading(false);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(parseErrorMessage(err, 'Nao foi possivel validar a sessao atual.'));
+          setLoading(false);
+        }
+      } finally {
+        if (!cancelled) setBootstrapping(false);
+      }
+    };
+    void bootstrap();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
-    if (!loading) {
+    if (!loading && !isBootstrapping && canViewPnae) {
       void loadTests().catch((err) => setError(err instanceof Error ? err.message : 'Falha ao atualizar lista.'));
     }
   }, [filters.school, filters.method, filters.approved]);
@@ -343,6 +400,7 @@ const PnaeAcceptanceTests: React.FC = () => {
   }, [form.school]);
 
   const openCreate = () => {
+    if (!canManagePnae) return;
     setEditingTest(null);
     setForm(emptyForm());
     setParticipantDraft(emptyParticipantDraft());
@@ -350,6 +408,7 @@ const PnaeAcceptanceTests: React.FC = () => {
   };
 
   const openEdit = (item: PnaeAcceptabilityTest) => {
+    if (!canManagePnae) return;
     setEditingTest(item);
     setForm({
       school: item.school,
@@ -441,6 +500,7 @@ const PnaeAcceptanceTests: React.FC = () => {
   };
 
   const handleSave = async () => {
+    if (!canManagePnae) return;
     setSaving(true);
     setError(null);
     try {
@@ -472,21 +532,46 @@ const PnaeAcceptanceTests: React.FC = () => {
       setModalOpen(false);
       await loadBase();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Nao foi possivel salvar o teste.');
+      setError(parseErrorMessage(err, 'Nao foi possivel salvar o teste.'));
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (id: string) => {
+    if (!canManagePnae) return;
     if (!window.confirm('Excluir este teste de aceitabilidade?')) return;
     try {
       await deletePnaeAcceptabilityTest(id);
       await loadBase();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Nao foi possivel excluir o teste.');
+      setError(parseErrorMessage(err, 'Nao foi possivel excluir o teste.'));
     }
   };
+
+  if (isBootstrapping) {
+    return <div className="p-8 text-sm text-slate-500 dark:text-slate-400">Carregando modulo PNAE...</div>;
+  }
+
+  if (currentUser && !canViewPnae) {
+    return (
+      <div className="min-h-full bg-slate-50 dark:bg-slate-950">
+        <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+          <section className="rounded-[2rem] border border-slate-200 bg-white px-6 py-8 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="text-xs font-bold uppercase tracking-[0.24em] text-blue-600">PNAE | TESTE DE ACEITABILIDADE</div>
+            <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-900 dark:text-white">Acesso indisponivel</h1>
+            <p className="mt-3 text-base leading-7 text-slate-600 dark:text-slate-300">
+              Seu perfil atual nao possui permissao para acessar este modulo.
+            </p>
+          </section>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return <div className="p-8 text-sm text-slate-500 dark:text-slate-400">{error || 'Nao foi possivel validar a sessao atual.'}</div>;
+  }
 
   if (loading) {
     return <div className="p-8 text-sm text-slate-500 dark:text-slate-400">Carregando testes de aceitabilidade...</div>;
@@ -503,10 +588,17 @@ const PnaeAcceptanceTests: React.FC = () => {
               <p className="mt-3 text-base leading-7 text-slate-600 dark:text-slate-300">
                 A plataforma registra escala hedonica, cartelas ludicas, resto-ingestao e dentro-fora do padrao com as regras de aprovacao, reteste e adesao do manual de 2017.
               </p>
+              {!canManagePnae ? (
+                <p className="mt-3 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                  Perfil somente leitura
+                </p>
+              ) : null}
             </div>
-            <button onClick={openCreate} className="inline-flex items-center justify-center rounded-2xl bg-blue-600 px-6 py-3 font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700">
-              Novo teste
-            </button>
+            {canManagePnae ? (
+              <button onClick={openCreate} className="inline-flex items-center justify-center rounded-2xl bg-blue-600 px-6 py-3 font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700">
+                Novo teste
+              </button>
+            ) : null}
           </div>
         </section>
 
@@ -554,7 +646,9 @@ const PnaeAcceptanceTests: React.FC = () => {
         <section className="mt-6 space-y-4">
           {tests.length === 0 ? (
             <div className="rounded-[2rem] border border-dashed border-slate-300 bg-white px-8 py-16 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-              Nenhum teste registrado ainda. Use o botao acima para iniciar o primeiro registro conforme o manual.
+              {canManagePnae
+                ? 'Nenhum teste registrado ainda. Use o botao acima para iniciar o primeiro registro conforme o manual.'
+                : 'Nenhum teste registrado para os filtros atuais.'}
             </div>
           ) : tests.map((item) => (
             <article key={item.id} className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -579,15 +673,17 @@ const PnaeAcceptanceTests: React.FC = () => {
                   <div className="rounded-2xl bg-slate-50 px-4 py-3 dark:bg-slate-950"><div className="text-xs uppercase tracking-[0.18em] text-slate-500">Reteste minimo</div><div className="mt-2 text-lg font-bold text-slate-900 dark:text-white">{formatDate(item.next_retest_date)}</div></div>
                 </div>
               </div>
-              <div className="mt-5 flex flex-wrap gap-3">
-                <button onClick={() => openEdit(item)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Editar</button>
-                <button onClick={() => handleDelete(item.id)} className="rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/30">Excluir</button>
-              </div>
+              {canManagePnae ? (
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <button onClick={() => openEdit(item)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Editar</button>
+                  <button onClick={() => handleDelete(item.id)} className="rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/30">Excluir</button>
+                </div>
+              ) : null}
             </article>
           ))}
         </section>
       </div>
-      {isModalOpen ? (
+      {isModalOpen && canManagePnae ? (
         <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-slate-950/60 px-4 py-8">
           <div className="w-full max-w-6xl rounded-[2rem] bg-white p-6 shadow-2xl dark:bg-slate-900">
             <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[1.4fr_0.9fr]">

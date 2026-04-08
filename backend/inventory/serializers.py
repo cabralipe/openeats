@@ -579,7 +579,7 @@ class DeliveryConferenceItemInputSerializer(serializers.Serializer):
 
 
 class DeliveryConferenceInputSerializer(serializers.Serializer):
-    step = serializers.ChoiceField(choices=['sender', 'items', 'receiver'], required=True)
+    step = serializers.ChoiceField(choices=['sender', 'items', 'receiver'], required=False)
     items = DeliveryConferenceItemInputSerializer(many=True, required=False)
     # Sender (who delivered) signature
     sender_signature_data = serializers.CharField(required=False, allow_blank=True)

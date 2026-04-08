@@ -56,13 +56,21 @@ class DashboardView(APIView):
         today = timezone.localdate()
         current_month_start = today.replace(day=1)
         
-        # Meals served = sum of MealServiceEntry.served_count for the current month
+        # Prefer tracked school outflows because the dashboard series is based on
+        # stock consumption. Fallback to meal-service reports when that module is
+        # being used without matching stock outflow records yet.
         meals_served = 0
         try:
-            meals_served = MealServiceEntry.objects.filter(
+            movement_total = StockMovement.objects.filter(
+                type=StockMovement.Types.OUT,
+                school__isnull=False,
+                movement_date__gte=current_month_start,
+            ).aggregate(total=Sum('quantity'))['total'] or 0
+            meal_service_total = MealServiceEntry.objects.filter(
                 report__service_date__gte=current_month_start,
                 report__school__isnull=False,
             ).aggregate(total=Sum('served_count'))['total'] or 0
+            meals_served = movement_total or meal_service_total
         except DatabaseError:
             meals_served = 0
 

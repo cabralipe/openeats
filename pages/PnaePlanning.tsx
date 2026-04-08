@@ -30,8 +30,11 @@ import {
   getPnaePlans,
   getRecipes,
   getSchools,
+  exportPnaePlanPdf,
+  exportPnaePlanXlsx,
   generatePnaeDeliveryDraft,
   generatePnaeMenuDrafts,
+  reopenPnaePlan,
   rejectPnaePlan,
   submitPnaePlanReview,
   updateEducationModality,
@@ -1201,7 +1204,7 @@ const PnaePlanning: React.FC = () => {
   };
 
   const handlePlanWorkflow = async (
-    action: "submit" | "approve" | "reject",
+    action: "submit" | "approve" | "reject" | "reopen",
   ) => {
     if (!detailPlan) return;
     const comment =
@@ -1210,7 +1213,9 @@ const PnaePlanning: React.FC = () => {
           ? "Observacoes para a submissao (opcional)"
           : action === "approve"
             ? "Parecer de aprovacao (opcional)"
-            : "Motivo da reprovação",
+            : action === "reopen"
+              ? "Motivo da reabertura (opcional)"
+              : "Motivo da reprovação",
         detailPlan.last_review_comment || "",
       ) || "";
     setError("");
@@ -1221,6 +1226,9 @@ const PnaePlanning: React.FC = () => {
       } else if (action === "approve") {
         await approvePnaePlan(detailPlan.id, comment);
         setSuccess("Plano aprovado.");
+      } else if (action === "reopen") {
+        await reopenPnaePlan(detailPlan.id, comment);
+        setSuccess("Plano reaberto para ajustes.");
       } else {
         await rejectPnaePlan(detailPlan.id, comment);
         setSuccess("Plano reprovado.");
@@ -1276,6 +1284,22 @@ const PnaePlanning: React.FC = () => {
         ),
       );
     }
+  };
+
+  const handleExportPlanPdf = () => {
+    if (!detailPlan) return;
+    setError("");
+    exportPnaePlanPdf(detailPlan.id, {
+      month: selectedOperationalMonth || undefined,
+    });
+  };
+
+  const handleExportPlanXlsx = () => {
+    if (!detailPlan) return;
+    setError("");
+    exportPnaePlanXlsx(detailPlan.id, {
+      month: selectedOperationalMonth || undefined,
+    });
   };
 
   const handleSaveStage = async (event: React.FormEvent) => {
@@ -3973,6 +3997,16 @@ const PnaePlanning: React.FC = () => {
                     Reprovar
                   </button>
                 ) : null}
+                {detailPlan.can_reopen ? (
+                  <button
+                    type="button"
+                    onClick={() => handlePlanWorkflow("reopen")}
+                    className="btn-secondary"
+                  >
+                    <span className="material-symbols-outlined">history</span>
+                    Reabrir
+                  </button>
+                ) : null}
                 {canManagePnae && detailPlan.can_edit ? (
                   <button
                     type="button"
@@ -4147,6 +4181,26 @@ const PnaePlanning: React.FC = () => {
                         Gerar entrega
                       </button>
                     ) : null}
+                    <button
+                      type="button"
+                      onClick={handleExportPlanPdf}
+                      className="btn-secondary"
+                    >
+                      <span className="material-symbols-outlined">
+                        picture_as_pdf
+                      </span>
+                      Exportar PDF
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExportPlanXlsx}
+                      className="btn-secondary"
+                    >
+                      <span className="material-symbols-outlined">
+                        table_view
+                      </span>
+                      Exportar XLSX
+                    </button>
                   </div>
                 </div>
 

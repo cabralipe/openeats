@@ -1,12 +1,16 @@
+from datetime import date
+
 from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from accounts.permissions import IsPnaeManager, scope_queryset_by_municipality
 from inventory.models import SchoolStockBalance
-from inventory.serializers import SchoolStockBalanceSerializer
+from inventory.serializers import PublicConsumptionInputSerializer, SchoolStockBalanceSerializer
 
 from .models import EducationModality, EducationStage, Municipality, School, generate_token
+from .operations import MealServiceInputSerializer, apply_school_consumption, get_meal_service_payload, save_meal_service_report
 from .serializers import (
     EducationModalitySerializer,
     EducationStageSerializer,
@@ -143,4 +147,69 @@ class SchoolViewSet(viewsets.ModelViewSet):
                 'normal_stock': total - low_stock,
             },
             'items': serializer.data,
+        })
+
+    @action(detail=True, methods=['get', 'post'], url_path='consumption')
+    def consumption(self, request, pk=None):
+        school = self.get_object()
+
+        if request.method == 'GET':
+            balances = SchoolStockBalance.objects.select_related('supply').filter(
+                school=school,
+                quantity__gt=0,
+                supply__is_active=True,
+            ).order_by('supply__category', 'supply__name')
+            total = balances.count()
+            low_stock = sum(
+                1 for balance in balances
+                if balance.quantity < (balance.min_stock if balance.min_stock > 0 else balance.supply.min_stock)
+            )
+
+            serializer = SchoolStockBalanceSerializer(balances, many=True)
+            return Response({
+                'school': {
+                    'id': str(school.id),
+                    'name': school.name,
+                    'municipality_name': school.municipality.name if school.municipality else '',
+                },
+                'summary': {
+                    'available_items': total,
+                    'low_stock': low_stock,
+                    'normal_stock': total - low_stock,
+                },
+                'items': serializer.data,
+            })
+
+        serializer = PublicConsumptionInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = apply_school_consumption(
+            school,
+            serializer.validated_data['items'],
+            created_by_id=request.user.id,
+        )
+        return Response(result)
+
+    @action(detail=True, methods=['get', 'post'], url_path='meal-service')
+    def meal_service(self, request, pk=None):
+        school = self.get_object()
+
+        if request.method == 'GET':
+            raw_date = request.query_params.get('date')
+            try:
+                service_date = date.fromisoformat(raw_date) if raw_date else date.today()
+            except ValueError:
+                raise PermissionDenied('Data invalida. Use o formato YYYY-MM-DD.')
+            return Response(get_meal_service_payload(school, service_date))
+
+        serializer = MealServiceInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        report, total_served = save_meal_service_report(
+            school,
+            serializer.validated_data['service_date'],
+            serializer.validated_data['items'],
+        )
+        return Response({
+            'detail': 'Refeicoes servidas registradas com sucesso.',
+            'report_id': str(report.id),
+            'total_served': total_served,
         })

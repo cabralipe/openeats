@@ -1,10 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
+  cancelSupplierReceipt,
   createSupplier,
   createSupplierReceipt,
   deleteSupplier,
   deleteSupplierReceipt,
   exportSupplierReceiptsPdf,
+  exportSupplierReceiptsXlsx,
   getSupplyCategories,
   getSchools,
   getSupplies,
@@ -12,6 +15,8 @@ import {
   getSuppliers,
   startSupplierReceiptConference,
   submitSupplierReceiptConference,
+  updateSupplier,
+  updateSupplierReceipt,
 } from '../api';
 
 type DraftReceiptItem = {
@@ -141,7 +146,17 @@ const createTextSignature = (name: string) => {
   return canvas.toDataURL('image/png');
 };
 
+const canStartConference = (receipt?: any | null) =>
+  receipt?.status === 'DRAFT' || receipt?.status === 'EXPECTED';
+
+const canEditConference = (receipt?: any | null) =>
+  Boolean(receipt) && receipt.status !== 'CONFERRED' && receipt.status !== 'CANCELLED';
+
+const canEditReceiptDraft = (receipt?: any | null) =>
+  Boolean(receipt) && (receipt.status === 'DRAFT' || receipt.status === 'EXPECTED');
+
 const SupplierReceipts: React.FC = () => {
+  const location = useLocation();
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [schools, setSchools] = useState<any[]>([]);
   const [supplies, setSupplies] = useState<any[]>([]);
@@ -152,6 +167,7 @@ const SupplierReceipts: React.FC = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [selectedReceipt, setSelectedReceipt] = useState<any | null>(null);
+  const [editingReceiptId, setEditingReceiptId] = useState<string | null>(null);
 
   const [createStep, setCreateStep] = useState<1 | 2 | 3 | 4>(1);
   const [supplierId, setSupplierId] = useState('');
@@ -170,6 +186,7 @@ const SupplierReceipts: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [showSupplierForm, setShowSupplierForm] = useState(false);
+  const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null);
   const [supplierForm, setSupplierForm] = useState({
     name: '',
     document: '',
@@ -177,6 +194,10 @@ const SupplierReceipts: React.FC = () => {
     phone: '',
     email: '',
   });
+  const receiptQueryId = useMemo(
+    () => new URLSearchParams(location.search).get('receipt') || '',
+    [location.search],
+  );
 
   const loadData = async () => {
     setLoading(true);
@@ -208,11 +229,14 @@ const SupplierReceipts: React.FC = () => {
     if (receiptsRes.status === 'fulfilled') {
       const data = receiptsRes.value as any[];
       setReceipts(data);
-      if (selectedReceipt) {
-        const updated = data.find((r) => r.id === selectedReceipt.id);
+      const preferredReceiptId = receiptQueryId || selectedReceipt?.id || '';
+      if (preferredReceiptId) {
+        const updated = data.find((r) => r.id === preferredReceiptId) || null;
         if (updated) {
           setSelectedReceipt(updated);
           initializeConferenceForm(updated);
+        } else if (selectedReceipt?.id === preferredReceiptId) {
+          setSelectedReceipt(null);
         }
       }
     }
@@ -228,7 +252,7 @@ const SupplierReceipts: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [filterStatus]);
+  }, [filterStatus, receiptQueryId]);
 
   const initializeConferenceForm = (receipt: any) => {
     const next: Record<string, ConferenceItemForm> = {};
@@ -249,6 +273,25 @@ const SupplierReceipts: React.FC = () => {
     setConferenceForm(next);
     setSenderName(receipt.sender_signed_by || '');
     setReceiverName(receipt.receiver_signed_by || '');
+  };
+
+  const resetReceiptBuilder = () => {
+    setEditingReceiptId(null);
+    setCreateStep(1);
+    setSupplierId('');
+    setDestinationMode('central');
+    setSchoolId('');
+    setExpectedDate(today);
+    setNotes('');
+    setDraftItems([]);
+    setEditingItemIndex(null);
+    setItemForm({ supply: '', raw_name: '', category: 'Outros', unit: 'kg', expected_quantity: '' });
+  };
+
+  const resetSupplierEditor = () => {
+    setEditingSupplierId(null);
+    setSupplierForm({ name: '', document: '', contact_name: '', phone: '', email: '' });
+    setShowSupplierForm(false);
   };
 
   const totalDraftQty = useMemo(
@@ -403,7 +446,7 @@ const SupplierReceipts: React.FC = () => {
     setCreateStep(target);
   };
 
-  const handleCreateReceipt = async () => {
+  const handleSaveReceipt = async () => {
     setError('');
     setSuccess('');
     if (!supplierId) {
@@ -429,7 +472,7 @@ const SupplierReceipts: React.FC = () => {
 
     setSubmitting(true);
     try {
-      await createSupplierReceipt({
+      const payload = {
         supplier: supplierId,
         school: destinationMode === 'school' ? schoolId : null,
         expected_date: expectedDate,
@@ -443,22 +486,45 @@ const SupplierReceipts: React.FC = () => {
             : (findExistingSupplyByName(item.raw_name)?.unit || item.unit),
           expected_quantity: decimalInputToNumber(item.expected_quantity),
         })),
-      });
-      setSuccess(`Recebimento criado com destino: ${destinationLabel}.`);
-      setNotes('');
-      setDraftItems([]);
-      setSchoolId('');
-      setDestinationMode('central');
-      setCreateStep(1);
+      };
+      if (editingReceiptId) {
+        await updateSupplierReceipt(editingReceiptId, payload);
+        setSuccess(`Recebimento atualizado com destino: ${destinationLabel}.`);
+      } else {
+        await createSupplierReceipt(payload);
+        setSuccess(`Recebimento criado com destino: ${destinationLabel}.`);
+      }
+      resetReceiptBuilder();
       await loadData();
     } catch (err: any) {
-      setError(err?.message || 'Não foi possível criar o recebimento.');
+      setError(err?.message || 'Não foi possível salvar o recebimento.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleCreateSupplier = async () => {
+  const openEditSupplier = () => {
+    if (!supplierId) {
+      setError('Selecione um fornecedor para editar.');
+      return;
+    }
+    const supplier = suppliers.find((item) => item.id === supplierId);
+    if (!supplier) {
+      setError('Fornecedor selecionado não encontrado.');
+      return;
+    }
+    setEditingSupplierId(supplier.id);
+    setSupplierForm({
+      name: supplier.name || '',
+      document: supplier.document || '',
+      contact_name: supplier.contact_name || '',
+      phone: supplier.phone || '',
+      email: supplier.email || '',
+    });
+    setShowSupplierForm(true);
+  };
+
+  const handleSaveSupplier = async () => {
     setError('');
     setSuccess('');
     if (!supplierForm.name.trim()) {
@@ -467,21 +533,23 @@ const SupplierReceipts: React.FC = () => {
     }
     setSubmitting(true);
     try {
-      const created = await createSupplier({
+      const payload = {
         name: supplierForm.name.trim(),
         document: supplierForm.document.trim() || undefined,
         contact_name: supplierForm.contact_name.trim() || undefined,
         phone: supplierForm.phone.trim() || undefined,
         email: supplierForm.email.trim() || undefined,
         is_active: true,
-      });
+      };
+      const saved = editingSupplierId
+        ? await updateSupplier(editingSupplierId, payload)
+        : await createSupplier(payload);
       await loadData();
-      setSupplierId(created.id);
-      setSupplierForm({ name: '', document: '', contact_name: '', phone: '', email: '' });
-      setShowSupplierForm(false);
-      setSuccess('Fornecedor cadastrado com sucesso.');
+      setSupplierId(saved.id);
+      resetSupplierEditor();
+      setSuccess(editingSupplierId ? 'Fornecedor atualizado com sucesso.' : 'Fornecedor cadastrado com sucesso.');
     } catch (err: any) {
-      setError(err?.message || 'Não foi possível cadastrar o fornecedor.');
+      setError(err?.message || 'Não foi possível salvar o fornecedor.');
     } finally {
       setSubmitting(false);
     }
@@ -503,6 +571,7 @@ const SupplierReceipts: React.FC = () => {
     try {
       const response = await deleteSupplier(supplierId) as { detail?: string } | undefined;
       await loadData();
+      resetSupplierEditor();
       setSuccess(response?.detail || 'Fornecedor excluído com sucesso.');
     } catch (err: any) {
       setError(err?.message || 'Não foi possível excluir o fornecedor.');
@@ -532,12 +601,70 @@ const SupplierReceipts: React.FC = () => {
     }
   };
 
+  const openEditReceipt = (receipt: any) => {
+    if (!canEditReceiptDraft(receipt)) {
+      setError('Somente recebimentos em rascunho ou aguardando entrega podem ser editados.');
+      return;
+    }
+    setEditingReceiptId(receipt.id);
+    setSupplierId(receipt.supplier || '');
+    setDestinationMode(receipt.school ? 'school' : 'central');
+    setSchoolId(receipt.school || '');
+    setExpectedDate(receipt.expected_date || today);
+    setNotes(receipt.notes || '');
+    setDraftItems(
+      (receipt.items || []).map((item: any) => ({
+        supply: item.supply || '',
+        raw_name: item.raw_name || '',
+        category: item.category || 'Outros',
+        unit: item.unit || 'kg',
+        expected_quantity: formatQtyBR(Number(item.expected_quantity || 0)),
+      })),
+    );
+    setCreateStep(1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCancelReceipt = async (receipt: any) => {
+    const comment = window.prompt('Motivo do cancelamento (opcional):', '') || '';
+    setError('');
+    setSuccess('');
+    setSubmitting(true);
+    try {
+      await cancelSupplierReceipt(receipt.id, comment);
+      await loadData();
+      setSuccess('Recebimento cancelado.');
+    } catch (err: any) {
+      setError(err?.message || 'Não foi possível cancelar o recebimento.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCopyConferenceLink = async (receipt?: any) => {
+    const targetId = receipt?.id || selectedReceipt?.id;
+    if (!targetId) return;
+    const link = `${window.location.origin}${window.location.pathname}#/admin/supplier-receipts?receipt=${targetId}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setSuccess('Link de conferência copiado.');
+    } catch {
+      setError('Não foi possível copiar o link de conferência.');
+    }
+  };
+
   const openConference = async (receipt: any) => {
     setError('');
+    setSuccess('');
     try {
-      const started = receipt.status === 'DRAFT' ? await startSupplierReceiptConference(receipt.id) : receipt;
+      const shouldStart = canStartConference(receipt);
+      const started = shouldStart ? await startSupplierReceiptConference(receipt.id) : receipt;
+      setReceipts((prev) => prev.map((entry) => (entry.id === started.id ? started : entry)));
       setSelectedReceipt(started);
       initializeConferenceForm(started);
+      if (shouldStart) {
+        setSuccess('Conferencia iniciada. Revise itens, lotes e assinaturas para concluir o recebimento.');
+      }
     } catch (err: any) {
       setError(err?.message || 'Não foi possível iniciar a conferência.');
     }
@@ -655,6 +782,10 @@ const SupplierReceipts: React.FC = () => {
     exportSupplierReceiptsPdf(filterStatus ? { status: filterStatus } : undefined);
   };
 
+  const handleExportXlsx = () => {
+    exportSupplierReceiptsXlsx(filterStatus ? { status: filterStatus } : undefined);
+  };
+
   return (
     <div className="flex flex-col flex-1 min-h-full bg-[#f7f9fb] text-slate-900 dark:bg-slate-950 dark:text-white">
       <header className="sticky top-0 z-10 border-b border-slate-200/80 bg-[#f7f9fb]/90 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/90">
@@ -687,6 +818,7 @@ const SupplierReceipts: React.FC = () => {
               >
                 <option value="">Todos os status</option>
                 <option value="DRAFT">Rascunho</option>
+                <option value="EXPECTED">Aguardando entrega</option>
                 <option value="IN_CONFERENCE">Em conferencia</option>
                 <option value="CONFERRED">Conferido</option>
                 <option value="CANCELLED">Cancelado</option>
@@ -706,6 +838,14 @@ const SupplierReceipts: React.FC = () => {
               >
                 <span className="material-symbols-outlined text-[18px]">picture_as_pdf</span>
                 Exportar PDF
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+                onClick={handleExportXlsx}
+              >
+                <span className="material-symbols-outlined text-[18px]">table_view</span>
+                Exportar XLSX
               </button>
             </div>
           </div>
@@ -816,14 +956,26 @@ const SupplierReceipts: React.FC = () => {
               </div>
               <div>
                 <h3 className="text-2xl font-bold text-slate-950 dark:text-white" style={{ fontFamily: 'Manrope, sans-serif' }}>
-                  Novo Recebimento
+                  {editingReceiptId ? 'Editar Recebimento' : 'Novo Recebimento'}
                 </h3>
                 <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                  Preencha cada etapa para iniciar a entrada de estoque com o destino correto.
+                  {editingReceiptId
+                    ? 'Revise as etapas abaixo para atualizar o recebimento antes da conferência.'
+                    : 'Preencha cada etapa para iniciar a entrada de estoque com o destino correto.'}
                 </p>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              {editingReceiptId && (
+                <button
+                  type="button"
+                  onClick={resetReceiptBuilder}
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] text-slate-500 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  <span className="material-symbols-outlined text-[16px]">close</span>
+                  Sair da edição
+                </button>
+              )}
               <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:bg-slate-800 dark:text-slate-300">
                 <span className="material-symbols-outlined text-[16px]">inventory_2</span>
                 {validDraftItems.length} item(ns) validos
@@ -859,12 +1011,30 @@ const SupplierReceipts: React.FC = () => {
                     <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Fornecedor</label>
                     <div className="flex items-center gap-2">
                       {supplierId && (
+                        <button type="button" onClick={openEditSupplier} disabled={submitting} className="text-[11px] font-bold text-primary hover:underline disabled:opacity-60 flex items-center gap-1">
+                          <span className="material-symbols-outlined text-sm">edit</span>
+                          Editar
+                        </button>
+                      )}
+                      {supplierId && (
                         <button type="button" onClick={handleDeleteSupplier} disabled={submitting} className="text-[11px] font-bold text-red-600 hover:underline disabled:opacity-60 flex items-center gap-1">
                           <span className="material-symbols-outlined text-sm">delete</span>
                           Excluir
                         </button>
                       )}
-                      <button type="button" onClick={() => setShowSupplierForm((prev) => !prev)} className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (showSupplierForm) {
+                            resetSupplierEditor();
+                            return;
+                          }
+                          setEditingSupplierId(null);
+                          setSupplierForm({ name: '', document: '', contact_name: '', phone: '', email: '' });
+                          setShowSupplierForm(true);
+                        }}
+                        className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1"
+                      >
                         <span className="material-symbols-outlined text-sm">{showSupplierForm ? 'close' : 'add'}</span>
                         {showSupplierForm ? 'Fechar' : 'Novo fornecedor'}
                       </button>
@@ -986,7 +1156,7 @@ const SupplierReceipts: React.FC = () => {
                   </p>
                 </div>
                 {!validDraftItems.length && (
-                  <p className="text-xs text-red-600">Nenhum item válido para criar recebimento.</p>
+                  <p className="text-xs text-red-600">Nenhum item válido para salvar o recebimento.</p>
                 )}
               </div>
             )}
@@ -1013,8 +1183,8 @@ const SupplierReceipts: React.FC = () => {
                 </button>
               )}
               {createStep === 4 && (
-                <button disabled={submitting || !validDraftItems.length} onClick={handleCreateReceipt} className="bg-primary hover:bg-blue-700 text-white px-8 py-2.5 rounded-lg font-bold transition-all shadow-md shadow-primary/20 disabled:opacity-60">
-                  {submitting ? 'Salvando...' : 'Criar Recebimento'}
+                <button disabled={submitting || !validDraftItems.length} onClick={handleSaveReceipt} className="bg-primary hover:bg-blue-700 text-white px-8 py-2.5 rounded-lg font-bold transition-all shadow-md shadow-primary/20 disabled:opacity-60">
+                  {submitting ? 'Salvando...' : editingReceiptId ? 'Atualizar Recebimento' : 'Criar Recebimento'}
                 </button>
               )}
             </div>
@@ -1074,13 +1244,53 @@ const SupplierReceipts: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="inline-flex items-center gap-2">
+                          {canEditReceiptDraft(receipt) && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEditReceipt(receipt);
+                              }}
+                              disabled={submitting}
+                              className="text-slate-500 hover:text-primary disabled:opacity-50"
+                              title="Editar recebimento"
+                            >
+                              <span className="material-symbols-outlined text-[20px]">edit</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopyConferenceLink(receipt);
+                            }}
+                            disabled={submitting}
+                            className="text-slate-500 hover:text-primary disabled:opacity-50"
+                            title="Copiar link"
+                          >
+                            <span className="material-symbols-outlined text-[20px]">link</span>
+                          </button>
+                          {receipt.status !== 'CONFERRED' && receipt.status !== 'CANCELLED' && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCancelReceipt(receipt);
+                              }}
+                              disabled={submitting}
+                              className="text-amber-500 hover:text-amber-600 disabled:opacity-50"
+                              title="Cancelar recebimento"
+                            >
+                              <span className="material-symbols-outlined text-[20px]">event_busy</span>
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               handleDeleteReceipt(receipt);
                             }}
-                            disabled={submitting}
+                            disabled={submitting || receipt.status === 'CONFERRED' || receipt.status === 'CANCELLED'}
                             className="text-red-500 hover:text-red-600 disabled:opacity-50"
                             title="Excluir recebimento"
                           >
@@ -1110,7 +1320,20 @@ const SupplierReceipts: React.FC = () => {
                 <span className={`text-xs font-bold px-2.5 py-1 rounded uppercase tracking-wide ${statusChip(selectedReceipt.status).replace('border ', '').replace(' border-', ' ')}`}>
                   {statusLabel(selectedReceipt.status)}
                 </span>
-                {selectedReceipt.status !== 'CONFERRED' && (
+                {canEditReceiptDraft(selectedReceipt) && (
+                  <button className="rounded-lg border border-slate-200 px-4 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800" onClick={() => openEditReceipt(selectedReceipt)}>
+                    Editar
+                  </button>
+                )}
+                <button className="rounded-lg border border-slate-200 px-4 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800" onClick={() => handleCopyConferenceLink(selectedReceipt)}>
+                  Copiar link
+                </button>
+                {selectedReceipt.status !== 'CONFERRED' && selectedReceipt.status !== 'CANCELLED' && (
+                  <button className="rounded-lg border border-amber-200 px-4 py-1.5 text-xs font-bold text-amber-700 transition hover:bg-amber-50 dark:border-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-950/20" onClick={() => handleCancelReceipt(selectedReceipt)}>
+                    Cancelar
+                  </button>
+                )}
+                {canStartConference(selectedReceipt) && (
                   <button className="bg-slate-800 dark:bg-slate-100 text-white dark:text-slate-800 px-4 py-1.5 rounded-lg text-xs font-bold hover:opacity-90 transition-opacity" onClick={() => openConference(selectedReceipt)}>
                     Iniciar Conferência
                   </button>
@@ -1141,7 +1364,7 @@ const SupplierReceipts: React.FC = () => {
                           inputMode="decimal"
                           value={entry.received_quantity}
                           onChange={(e) => updateConferenceItem(item.id, { received_quantity: maskDecimalBR(e.target.value) })}
-                          disabled={selectedReceipt.status === 'CONFERRED'}
+                          disabled={!canEditConference(selectedReceipt)}
                         />
                       </div>
                     </div>
@@ -1152,13 +1375,13 @@ const SupplierReceipts: React.FC = () => {
                       type="text"
                       value={entry.note}
                       onChange={(e) => updateConferenceItem(item.id, { note: e.target.value })}
-                      disabled={selectedReceipt.status === 'CONFERRED'}
+                      disabled={!canEditConference(selectedReceipt)}
                     />
 
                     <div className="space-y-4">
                       <div className="flex justify-between items-center">
                         <h5 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Lotes do Item</h5>
-                        {selectedReceipt.status !== 'CONFERRED' && (
+                        {canEditConference(selectedReceipt) && (
                           <button type="button" onClick={() => addLot(item.id)} className="text-primary hover:underline text-xs font-bold flex items-center gap-1">
                             <span className="material-symbols-outlined text-sm">add</span> Adicionar Lote
                           </button>
@@ -1168,12 +1391,12 @@ const SupplierReceipts: React.FC = () => {
                       <div className="space-y-3">
                         {(entry.lots || []).map((lot) => (
                           <div key={lot.id} className="grid grid-cols-12 gap-3">
-                            <input className="col-span-12 md:col-span-2 input rounded-lg bg-white dark:bg-slate-900 py-2 text-sm" placeholder="Código" type="text" value={lot.lot_code} onChange={(e) => updateLot(item.id, lot.id, 'lot_code', e.target.value)} disabled={selectedReceipt.status === 'CONFERRED'} />
-                            <input className="col-span-12 md:col-span-3 input rounded-lg bg-white dark:bg-slate-900 py-2 text-sm" placeholder="Fab: dd/mm/aaaa" type="text" inputMode="numeric" value={lot.manufacture_date} onChange={(e) => updateLot(item.id, lot.id, 'manufacture_date', maskDateBR(e.target.value))} disabled={selectedReceipt.status === 'CONFERRED'} />
-                            <input className="col-span-12 md:col-span-3 input rounded-lg bg-white dark:bg-slate-900 py-2 text-sm" placeholder="Val: dd/mm/aaaa" type="text" inputMode="numeric" value={lot.expiry_date} onChange={(e) => updateLot(item.id, lot.id, 'expiry_date', maskDateBR(e.target.value))} disabled={selectedReceipt.status === 'CONFERRED'} />
-                            <input className="col-span-6 md:col-span-1 input rounded-lg bg-white dark:bg-slate-900 py-2 text-sm text-center" placeholder="Qtd" type="text" inputMode="decimal" value={lot.received_quantity} onChange={(e) => updateLot(item.id, lot.id, 'received_quantity', maskDecimalBR(e.target.value))} disabled={selectedReceipt.status === 'CONFERRED'} />
-                            <input className="col-span-5 md:col-span-2 input rounded-lg bg-white dark:bg-slate-900 py-2 text-sm" placeholder="Obs do lote" type="text" value={lot.note} onChange={(e) => updateLot(item.id, lot.id, 'note', e.target.value)} disabled={selectedReceipt.status === 'CONFERRED'} />
-                            <button type="button" className="col-span-1 text-red-400 hover:text-red-500 text-xs font-bold flex items-center justify-center disabled:opacity-40" disabled={selectedReceipt.status === 'CONFERRED'} onClick={() => removeLot(item.id, lot.id)}>
+                            <input className="col-span-12 md:col-span-2 input rounded-lg bg-white dark:bg-slate-900 py-2 text-sm" placeholder="Código" type="text" value={lot.lot_code} onChange={(e) => updateLot(item.id, lot.id, 'lot_code', e.target.value)} disabled={!canEditConference(selectedReceipt)} />
+                            <input className="col-span-12 md:col-span-3 input rounded-lg bg-white dark:bg-slate-900 py-2 text-sm" placeholder="Fab: dd/mm/aaaa" type="text" inputMode="numeric" value={lot.manufacture_date} onChange={(e) => updateLot(item.id, lot.id, 'manufacture_date', maskDateBR(e.target.value))} disabled={!canEditConference(selectedReceipt)} />
+                            <input className="col-span-12 md:col-span-3 input rounded-lg bg-white dark:bg-slate-900 py-2 text-sm" placeholder="Val: dd/mm/aaaa" type="text" inputMode="numeric" value={lot.expiry_date} onChange={(e) => updateLot(item.id, lot.id, 'expiry_date', maskDateBR(e.target.value))} disabled={!canEditConference(selectedReceipt)} />
+                            <input className="col-span-6 md:col-span-1 input rounded-lg bg-white dark:bg-slate-900 py-2 text-sm text-center" placeholder="Qtd" type="text" inputMode="decimal" value={lot.received_quantity} onChange={(e) => updateLot(item.id, lot.id, 'received_quantity', maskDecimalBR(e.target.value))} disabled={!canEditConference(selectedReceipt)} />
+                            <input className="col-span-5 md:col-span-2 input rounded-lg bg-white dark:bg-slate-900 py-2 text-sm" placeholder="Obs do lote" type="text" value={lot.note} onChange={(e) => updateLot(item.id, lot.id, 'note', e.target.value)} disabled={!canEditConference(selectedReceipt)} />
+                            <button type="button" className="col-span-1 text-red-400 hover:text-red-500 text-xs font-bold flex items-center justify-center disabled:opacity-40" disabled={!canEditConference(selectedReceipt)} onClick={() => removeLot(item.id, lot.id)}>
                               <span className="material-symbols-outlined text-lg">delete_outline</span>
                             </button>
                           </div>
@@ -1192,7 +1415,7 @@ const SupplierReceipts: React.FC = () => {
                 );
               })}
 
-              {selectedReceipt.status !== 'CONFERRED' && (
+              {canEditConference(selectedReceipt) && (
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8 border-t border-slate-100 dark:border-slate-800 pt-8">
                     <div className="space-y-3">
@@ -1236,14 +1459,24 @@ const SupplierReceipts: React.FC = () => {
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={handleExportPdf}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-blue-200 bg-white px-5 py-3 text-sm font-bold text-blue-900 shadow-sm transition hover:bg-blue-50 dark:border-blue-900/40 dark:bg-slate-900 dark:text-blue-100 dark:hover:bg-slate-800"
-          >
-            <span className="material-symbols-outlined text-[18px]">download</span>
-            Baixar relatorio PDF
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={handleExportPdf}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-blue-200 bg-white px-5 py-3 text-sm font-bold text-blue-900 shadow-sm transition hover:bg-blue-50 dark:border-blue-900/40 dark:bg-slate-900 dark:text-blue-100 dark:hover:bg-slate-800"
+            >
+              <span className="material-symbols-outlined text-[18px]">download</span>
+              Baixar relatorio PDF
+            </button>
+            <button
+              type="button"
+              onClick={handleExportXlsx}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+            >
+              <span className="material-symbols-outlined text-[18px]">table_view</span>
+              Baixar XLSX
+            </button>
+          </div>
         </section>
       </main>
 
@@ -1365,9 +1598,9 @@ const SupplierReceipts: React.FC = () => {
             <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
               <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary">add_business</span>
-                Adicionar Fornecedor
+                {editingSupplierId ? 'Editar Fornecedor' : 'Adicionar Fornecedor'}
               </h3>
-              <button type="button" onClick={() => setShowSupplierForm(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors">
+              <button type="button" onClick={resetSupplierEditor} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors">
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
@@ -1423,10 +1656,10 @@ const SupplierReceipts: React.FC = () => {
               </div>
             </div>
             <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3 bg-slate-50 dark:bg-slate-800/50">
-              <button type="button" onClick={() => setShowSupplierForm(false)} className="px-5 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Cancelar</button>
-              <button type="button" onClick={handleCreateSupplier} disabled={submitting} className="px-6 py-2 bg-primary text-white rounded-lg text-sm font-bold shadow-md shadow-primary/20 hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-60">
+              <button type="button" onClick={resetSupplierEditor} className="px-5 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Cancelar</button>
+              <button type="button" onClick={handleSaveSupplier} disabled={submitting} className="px-6 py-2 bg-primary text-white rounded-lg text-sm font-bold shadow-md shadow-primary/20 hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-60">
                 <span className="material-symbols-outlined text-sm">save</span>
-                {submitting ? 'Salvando...' : 'Salvar Fornecedor'}
+                {submitting ? 'Salvando...' : editingSupplierId ? 'Atualizar Fornecedor' : 'Salvar Fornecedor'}
               </button>
             </div>
           </div>

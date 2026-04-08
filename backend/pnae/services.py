@@ -207,6 +207,25 @@ def reject_plan(plan: PnaeAnnualPlan, actor, comment: str = '') -> PnaeAnnualPla
     return plan
 
 
+@transaction.atomic
+def reopen_plan(plan: PnaeAnnualPlan, actor, comment: str = '') -> PnaeAnnualPlan:
+    if plan.status != PnaeAnnualPlan.Status.ARCHIVED:
+        raise PnaeWorkflowError('Somente planos arquivados podem ser reabertos.')
+    previous_status = plan.status
+    plan.status = PnaeAnnualPlan.Status.DRAFT
+    plan.last_review_comment = comment or ''
+    plan.save(update_fields=['status', 'last_review_comment', 'updated_at'])
+    record_workflow_event(
+        plan,
+        action=PnaeAnnualPlanWorkflowEvent.Action.REOPENED,
+        actor=actor,
+        from_status=previous_status,
+        to_status=plan.status,
+        comment=comment,
+    )
+    return plan
+
+
 def sync_monthly_execution_snapshots(plan: PnaeAnnualPlan):
     totals_by_month: dict[int, int] = defaultdict(int)
     for item in plan.items.all():

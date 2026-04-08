@@ -27,6 +27,7 @@ const navItems: NavItem[] = [
 
 const moreNavItems: NavItem[] = [
   { icon: 'menu_book', label: 'Receitas', path: '/admin/recipes' },
+  { icon: 'restaurant', label: 'Consumo Escolar', path: '/admin/consumption-registry' },
   { icon: 'assignment', label: 'PNAE', path: '/admin/pnae' },
   { icon: 'fact_check', label: 'Aceitabilidade PNAE', path: '/admin/pnae-tests' },
   { icon: 'edit_calendar', label: 'Editor', path: '/admin/editor' },

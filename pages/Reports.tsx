@@ -13,6 +13,7 @@ import {
   exportStockPdf,
   exportStockXlsx,
   exportSupplierReceiptsPdf,
+  exportSupplierReceiptsXlsx,
   getAuditLogs,
   getCentralLots,
   getDashboard,
@@ -331,6 +332,7 @@ const Reports: React.FC = () => {
           <>
             <button onClick={() => setSection('deliveries')} className="btn-secondary"><span className="material-symbols-outlined">fact_check</span>Entregas</button>
             <button onClick={() => setSection('consumption')} className="btn-secondary"><span className="material-symbols-outlined">monitoring</span>Consumo</button>
+            <button onClick={() => navigate('/admin/consumption-registry')} className="btn-secondary"><span className="material-symbols-outlined">restaurant</span>Registro diario</button>
           </>
         ),
       },
@@ -564,7 +566,12 @@ const Reports: React.FC = () => {
                 { label: 'Direto escola', value: fi(allReceipts.filter((row) => row?.school).length) },
                 { label: 'Fornecedores', value: fi(suppliers.length) },
               ]}
-              actions={<button onClick={() => exportSupplierReceiptsPdf()} className="btn-secondary"><span className="material-symbols-outlined">picture_as_pdf</span>PDF</button>}
+              actions={
+                <>
+                  <button onClick={() => exportSupplierReceiptsPdf()} className="btn-secondary"><span className="material-symbols-outlined">picture_as_pdf</span>PDF</button>
+                  <button onClick={() => exportSupplierReceiptsXlsx()} className="btn-secondary"><span className="material-symbols-outlined">table_view</span>XLSX</button>
+                </>
+              }
             />
           </div>
         ) : null}
@@ -658,6 +665,7 @@ const Reports: React.FC = () => {
             </div>
             <div className="flex flex-wrap gap-2">
               <button onClick={() => exportSupplierReceiptsPdf({ supplier: receiptSupplier || undefined, school: receiptSchool || undefined, status: receiptStatus || undefined, date_from: receiptFrom || undefined, date_to: receiptTo || undefined })} className="btn-secondary"><span className="material-symbols-outlined">picture_as_pdf</span>PDF</button>
+              <button onClick={() => exportSupplierReceiptsXlsx({ supplier: receiptSupplier || undefined, school: receiptSchool || undefined, status: receiptStatus || undefined, date_from: receiptFrom || undefined, date_to: receiptTo || undefined })} className="btn-secondary"><span className="material-symbols-outlined">table_view</span>XLSX</button>
             </div>
             <div className="space-y-3 max-h-[30rem] overflow-y-auto">
               {receiptRows.length ? receiptRows.map((row) => (

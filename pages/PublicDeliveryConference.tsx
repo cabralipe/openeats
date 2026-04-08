@@ -45,7 +45,7 @@ const PublicDeliveryConference: React.FC = () => {
   const isSenderSignatureStep = currentStep === 0;
   const isReceiverSignatureStep = currentStep === items.length + 1;
   const isComplete = delivery?.status === 'CONFERRED' || delivery?.status === 'FINALIZED';
-  const confirmedCount = Object.values(form).filter((f) => f.confirmed).length;
+  const confirmedCount = (Object.values(form) as ItemConferenceFormEntry[]).filter((f) => f.confirmed).length;
   const progress = isComplete ? 100 : Math.round((confirmedCount / Math.max(items.length, 1)) * 100);
 
   useEffect(() => {

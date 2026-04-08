@@ -449,6 +449,17 @@ class SupplierReceiptViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(expected_date__lte=date_to)
         return queryset
 
+    def perform_update(self, serializer):
+        instance = serializer.instance
+        if instance.status not in [SupplierReceipt.Status.DRAFT, SupplierReceipt.Status.EXPECTED]:
+            raise ValidationError('Somente recebimentos em rascunho ou aguardando entrega podem ser editados.')
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if instance.status in [SupplierReceipt.Status.CONFERRED, SupplierReceipt.Status.CANCELLED]:
+            raise ValidationError('Recebimentos conferidos ou cancelados nao podem ser excluidos.')
+        super().perform_destroy(instance)
+
     @action(detail=True, methods=['post'])
     def start_conference(self, request, pk=None):
         receipt = self.get_object()
@@ -458,6 +469,23 @@ class SupplierReceiptViewSet(viewsets.ModelViewSet):
             receipt.status = SupplierReceipt.Status.IN_CONFERENCE
             receipt.conference_started_at = timezone.now()
             receipt.save(update_fields=['status', 'conference_started_at', 'updated_at'])
+        return Response(self.get_serializer(receipt).data)
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        receipt = self.get_object()
+        if receipt.status == SupplierReceipt.Status.CONFERRED:
+            raise ValidationError('Recebimentos conferidos nao podem ser cancelados.')
+        if receipt.status == SupplierReceipt.Status.CANCELLED:
+            raise ValidationError('Este recebimento ja foi cancelado.')
+
+        comment = str(request.data.get('comment') or '').strip()
+        update_fields = ['status', 'updated_at']
+        if comment:
+            receipt.notes = f'{receipt.notes}\n\nCancelado: {comment}'.strip()
+            update_fields.append('notes')
+        receipt.status = SupplierReceipt.Status.CANCELLED
+        receipt.save(update_fields=update_fields)
         return Response(self.get_serializer(receipt).data)
 
     @action(detail=True, methods=['post'])
@@ -1598,6 +1626,106 @@ class SupplierReceiptExportPdfView(viewsets.ViewSet):
 
         _draw_pdf_footer(pdf, page_number)
         pdf.save()
+        return response
+
+
+class SupplierReceiptExportXlsxView(viewsets.ViewSet):
+    authentication_classes = [QueryParamJWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def list(self, request):
+        queryset = SupplierReceipt.objects.select_related('supplier', 'school').prefetch_related('items__supply', 'items__supply_created').all().order_by('-expected_date', '-created_at')
+        supplier = request.query_params.get('supplier')
+        school = request.query_params.get('school')
+        status_value = request.query_params.get('status')
+        date_from = request.query_params.get('date_from')
+        date_to = request.query_params.get('date_to')
+        if supplier:
+            queryset = queryset.filter(supplier_id=supplier)
+        if school:
+            queryset = queryset.filter(school_id=school)
+        if status_value:
+            queryset = queryset.filter(status=status_value)
+        if date_from:
+            queryset = queryset.filter(expected_date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(expected_date__lte=date_to)
+
+        workbook = Workbook()
+        summary_sheet = workbook.active
+        summary_sheet.title = 'Resumo'
+        summary_sheet.append(['Indicador', 'Valor'])
+
+        receipts_sheet = workbook.create_sheet(title='Recebimentos')
+        receipts_sheet.append([
+            'Data prevista',
+            'Fornecedor',
+            'Destino',
+            'Status',
+            'Itens',
+            'Entregador',
+            'Recebedor',
+            'Observacoes',
+        ])
+
+        items_sheet = workbook.create_sheet(title='Itens')
+        items_sheet.append([
+            'Data prevista',
+            'Fornecedor',
+            'Destino',
+            'Status',
+            'Item',
+            'Unidade',
+            'Quantidade prevista',
+            'Quantidade recebida',
+            'Observacao divergencia',
+        ])
+
+        receipts = list(queryset)
+        summary_sheet.append(['Total de recebimentos', len(receipts)])
+        summary_sheet.append(['Recebimentos conferidos', sum(1 for receipt in receipts if receipt.status == SupplierReceipt.Status.CONFERRED)])
+        summary_sheet.append(['Recebimentos cancelados', sum(1 for receipt in receipts if receipt.status == SupplierReceipt.Status.CANCELLED)])
+        summary_sheet.append(['Itens previstos', sum(receipt.items.count() for receipt in receipts)])
+
+        for receipt in receipts:
+            school_label = receipt.school.name if receipt.school else 'Estoque Central'
+            items = list(receipt.items.all())
+            receipts_sheet.append([
+                str(receipt.expected_date),
+                receipt.supplier.name,
+                school_label,
+                receipt.get_status_display(),
+                len(items),
+                receipt.sender_signed_by,
+                receipt.receiver_signed_by,
+                receipt.notes,
+            ])
+            for item in items:
+                item_name = (
+                    item.supply.name
+                    if item.supply
+                    else (item.supply_created.name if item.supply_created else item.raw_name)
+                ) or 'Item sem nome'
+                items_sheet.append([
+                    str(receipt.expected_date),
+                    receipt.supplier.name,
+                    school_label,
+                    receipt.get_status_display(),
+                    item_name,
+                    item.unit,
+                    float(item.expected_quantity or 0),
+                    float(item.received_quantity or 0),
+                    item.divergence_note,
+                ])
+
+        buffer = io.BytesIO()
+        workbook.save(buffer)
+        buffer.seek(0)
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        response['Content-Disposition'] = 'attachment; filename=\"supplier_receipts.xlsx\"'
         return response
 
 

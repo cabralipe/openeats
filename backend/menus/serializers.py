@@ -47,7 +47,10 @@ class MenuItemSerializer(serializers.ModelSerializer):
 
 
 class MenuSerializer(serializers.ModelSerializer):
-    school = serializers.PrimaryKeyRelatedField(queryset=School.objects.all())
+    school = serializers.PrimaryKeyRelatedField(
+        queryset=School.objects.all(),
+        pk_field=serializers.UUIDField(format='hex_verbose'),
+    )
     school_name = serializers.SerializerMethodField()
     created_by = serializers.UUIDField(source='created_by_id', read_only=True)
     items = MenuItemSerializer(many=True, read_only=True)
